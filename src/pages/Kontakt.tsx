@@ -1,8 +1,10 @@
 import { Helmet } from 'react-helmet-async';
-import { Phone, Mail, MapPin, MessageCircle } from 'lucide-react';
+import { Phone, Mail, MapPin, MessageCircle, Calendar } from 'lucide-react';
 import { canonical } from '@/lib/seo';
 import { NAP } from '@/lib/constants';
 import { telHref, whatsappHref } from '@/lib/utils';
+import SectionHeader from '@/components/ui/SectionHeader';
+import MultiStepForm from '@/components/forms/MultiStepForm';
 
 const TITLE = 'Kontakt — Erstgespräch in 5 Minuten | KALKU';
 const DESC =
@@ -17,11 +19,12 @@ export default function Kontakt() {
         <link rel="canonical" href={canonical('/kontakt/')} />
       </Helmet>
 
-      <section className="section">
+      {/* HERO */}
+      <section className="section-tight bg-gradient-to-br from-gray-50 to-white">
         <div className="container-page">
-          <div className="text-center max-w-2xl mx-auto mb-12">
+          <div className="text-center max-w-2xl mx-auto">
             <p className="eyebrow mb-3">Kontakt</p>
-            <h1 className="text-4xl sm:text-5xl font-bold tracking-tight text-gray-900 mb-5">
+            <h1 className="text-4xl sm:text-5xl font-bold tracking-tight text-gray-900 mb-5 leading-tight">
               Lassen Sie uns 5 Minuten sprechen.
             </h1>
             <p className="text-lg text-gray-600">
@@ -29,38 +32,62 @@ export default function Kontakt() {
               Voraussetzungen passen.
             </p>
           </div>
+        </div>
+      </section>
 
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 max-w-5xl mx-auto">
-            <a href={telHref(NAP.phone)} className="card card-hover">
-              <Phone className="w-6 h-6 text-primary-500 mb-3" />
+      {/* DIRECT CONTACT GRID */}
+      <section className="section-tight">
+        <div className="container-page">
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4 max-w-5xl mx-auto">
+            <a href={telHref(NAP.phone)} className="card card-hover text-center">
+              <Phone className="w-7 h-7 text-primary-500 mx-auto mb-3" />
               <p className="font-semibold text-gray-900 mb-1">Anrufen</p>
               <p className="text-sm text-gray-600">{NAP.phone}</p>
             </a>
             <a
-              href={whatsappHref(NAP.whatsapp, 'Hallo KALKU, ich habe eine Frage zu Ihrer Kalkulationsdienstleistung.')}
+              href={whatsappHref(NAP.whatsapp, 'Hallo KALKU, ich habe eine Frage.')}
               target="_blank"
               rel="noopener noreferrer"
-              className="card card-hover"
+              className="card card-hover text-center"
             >
-              <MessageCircle className="w-6 h-6 text-emerald-600 mb-3" />
+              <MessageCircle className="w-7 h-7 text-emerald-600 mx-auto mb-3" />
               <p className="font-semibold text-gray-900 mb-1">WhatsApp</p>
               <p className="text-sm text-gray-600">{NAP.whatsapp}</p>
             </a>
-            <a href={`mailto:${NAP.email}`} className="card card-hover">
-              <Mail className="w-6 h-6 text-primary-500 mb-3" />
+            <a href={`mailto:${NAP.email}`} className="card card-hover text-center">
+              <Mail className="w-7 h-7 text-primary-500 mx-auto mb-3" />
               <p className="font-semibold text-gray-900 mb-1">E-Mail</p>
-              <p className="text-sm text-gray-600">{NAP.email}</p>
+              <p className="text-sm text-gray-600 break-all">{NAP.email}</p>
             </a>
+            <div className="card text-center">
+              <Calendar className="w-7 h-7 text-emerald-600 mx-auto mb-3" />
+              <p className="font-semibold text-gray-900 mb-1">Termin online</p>
+              <p className="text-xs text-gray-500">Cal.com-Embed folgt</p>
+            </div>
           </div>
+        </div>
+      </section>
 
-          <div className="card mt-12 max-w-2xl mx-auto text-center">
+      {/* MULTI-STEP FORM */}
+      <section className="section bg-gray-50">
+        <div className="container-page">
+          <SectionHeader
+            eyebrow="Anfrage-Formular"
+            title="Erstgespräch vereinbaren."
+            subtitle="In drei Schritten — wir melden uns innerhalb eines Werktages."
+          />
+          <MultiStepForm />
+        </div>
+      </section>
+
+      {/* STANDORT */}
+      <section className="section">
+        <div className="container-page">
+          <div className="card-flat max-w-2xl mx-auto text-center">
             <p className="eyebrow mb-3">Standort</p>
             <p className="flex items-center justify-center gap-2 text-gray-700">
-              <MapPin className="w-4 h-4" />
+              <MapPin className="w-4 h-4 text-primary-500" />
               {NAP.street}, {NAP.postalCode} {NAP.city}
-            </p>
-            <p className="text-sm text-gray-500 mt-4">
-              Cal.com-Termin-Picker, Mehrstufen-Formular und Self-Check folgen in Phase 3.4.
             </p>
           </div>
         </div>

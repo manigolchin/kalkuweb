@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import Nav from './Nav';
 import Footer from './Footer';
+import StickyMobileCta from '@/components/StickyMobileCta';
 
 export default function Layout() {
   const { pathname } = useLocation();
@@ -18,6 +19,7 @@ export default function Layout() {
         <Outlet />
       </main>
       <Footer />
+      <StickyMobileCta />
     </div>
   );
 }
