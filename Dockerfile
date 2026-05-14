@@ -4,8 +4,10 @@ FROM node:22-alpine AS build
 WORKDIR /app
 
 # Install deps (cached layer)
+# --legacy-peer-deps because react-helmet-async@2.0.5 hasn't bumped its
+# React 19 peer dep yet but works fine in practice.
 COPY package.json package-lock.json* ./
-RUN npm install --no-audit --no-fund
+RUN npm install --no-audit --no-fund --legacy-peer-deps
 
 # Copy source + build
 COPY . .
