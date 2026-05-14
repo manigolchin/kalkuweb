@@ -1,0 +1,29 @@
+services:
+  kalku-website:
+    container_name: kalku-website
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    networks:
+      - traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
+      # Primary route
+      - "traefik.http.routers.kalku-website.rule=Host(`neu.kalku.de`) || Host(`kalku.de`) || Host(`www.kalku.de`)"
+      - "traefik.http.routers.kalku-website.entrypoints=websecure"
+      - "traefik.http.routers.kalku-website.tls=true"
+      - "traefik.http.routers.kalku-website.tls.certresolver=letsencrypt"
+      - "traefik.http.services.kalku-website.loadbalancer.server.port=80"
+      # www -> apex redirect
+      - "traefik.http.middlewares.kalku-www-redirect.redirectregex.regex=^https://www\\.kalku\\.de/(.*)"
+      - "traefik.http.middlewares.kalku-www-redirect.redirectregex.replacement=https://kalku.de/$$1"
+      - "traefik.http.middlewares.kalku-www-redirect.redirectregex.permanent=true"
+      # Basic-Auth for staging only — populate KALKU_STAGING_AUTH in .env (htpasswd format)
+      # - "traefik.http.middlewares.kalku-staging-auth.basicauth.users=${KALKU_STAGING_AUTH}"
+      # - "traefik.http.routers.kalku-website.middlewares=kalku-staging-auth"
+
+networks:
+  traefik:
+    external: true

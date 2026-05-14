@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+
+# Tool-Endpoints (kein Crawling, da serverless)
+Disallow: /api/
+
+# Tracking-Parameter aus Index halten
+Disallow: /*?utm_*
+Disallow: /*?fbclid=*
+Disallow: /*?gclid=*
+
+Sitemap: https://kalku.de/sitemap.xml
