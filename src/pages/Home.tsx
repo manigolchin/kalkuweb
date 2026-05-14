@@ -20,6 +20,9 @@ import {
   Eligibility,
   ServiceArea,
   ResourceHub,
+  LeadMagnet,
+  Differentiator,
+  CareerBanner,
 } from '@/components/sections';
 
 const TRADE_TILE_CLASSES: Record<string, string> = {
@@ -87,6 +90,10 @@ export default function Home() {
                   <Award className="w-4 h-4 text-primary-600" /> Festpreis ab 200 €
                 </span>
               </div>
+              <p className="mt-4 text-xs text-gray-500 inline-flex items-center gap-1.5">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Antwort werktags binnen 4 Stunden — schriftlich garantiert.
+              </p>
             </div>
             <HeroMockup />
           </div>
@@ -129,13 +136,16 @@ export default function Home() {
       <FadeIn><VierTeams /></FadeIn>
       <FadeIn><PullQuote /></FadeIn>
       <FadeIn><StepsTimeline /></FadeIn>
+      <FadeIn><Differentiator /></FadeIn>
       <FadeIn><Eligibility /></FadeIn>
       <FadeIn><TrustBadges /></FadeIn>
       <FadeIn><PricingTiles /></FadeIn>
       <FadeIn><CaseStudies /></FadeIn>
       <FadeIn><IrrtumFaq /></FadeIn>
+      <FadeIn><LeadMagnet /></FadeIn>
       <FadeIn><ServiceArea /></FadeIn>
       <FadeIn><FounderTrust /></FadeIn>
+      <FadeIn><CareerBanner /></FadeIn>
       <FadeIn><ResourceHub /></FadeIn>
       <FadeIn><UrgencyCta /></FadeIn>
     </>

@@ -12,3 +12,6 @@ export { default as PullQuote } from './PullQuote';
 export { default as Eligibility } from './Eligibility';
 export { default as ServiceArea } from './ServiceArea';
 export { default as ResourceHub } from './ResourceHub';
+export { default as LeadMagnet } from './LeadMagnet';
+export { default as Differentiator } from './Differentiator';
+export { default as CareerBanner } from './CareerBanner';
