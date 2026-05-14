@@ -1,4 +1,3 @@
-import SectionHeader from '@/components/ui/SectionHeader';
 import FaqItem from '@/components/ui/FaqItem';
 
 const IRRTUEMER = [

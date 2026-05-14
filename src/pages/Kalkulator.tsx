@@ -3,7 +3,6 @@ import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
 import { Plus, Trash2, Download, Mail, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { canonical } from '@/lib/seo';
-import SectionHeader from '@/components/ui/SectionHeader';
 
 type Row = {
   id: string;
