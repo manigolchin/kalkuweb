@@ -15,3 +15,5 @@ export { default as ResourceHub } from './ResourceHub';
 export { default as LeadMagnet } from './LeadMagnet';
 export { default as Differentiator } from './Differentiator';
 export { default as CareerBanner } from './CareerBanner';
+export { default as OperationalFaq } from './OperationalFaq';
+export { default as Testimonials } from './Testimonials';

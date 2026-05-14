@@ -23,6 +23,8 @@ import {
   LeadMagnet,
   Differentiator,
   CareerBanner,
+  OperationalFaq,
+  Testimonials,
 } from '@/components/sections';
 
 const TRADE_TILE_CLASSES: Record<string, string> = {
@@ -141,7 +143,9 @@ export default function Home() {
       <FadeIn><TrustBadges /></FadeIn>
       <FadeIn><PricingTiles /></FadeIn>
       <FadeIn><CaseStudies /></FadeIn>
+      <FadeIn><Testimonials /></FadeIn>
       <FadeIn><IrrtumFaq /></FadeIn>
+      <FadeIn><OperationalFaq /></FadeIn>
       <FadeIn><LeadMagnet /></FadeIn>
       <FadeIn><ServiceArea /></FadeIn>
       <FadeIn><FounderTrust /></FadeIn>
