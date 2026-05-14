@@ -64,7 +64,7 @@ export default function PricingTiles({ bare = false }: Props) {
                   featured ? 'btn-primary' : 'btn-outline',
                 )}
               >
-                Beratung vereinbaren
+                Erstgespräch vereinbaren
                 <ArrowRight className="w-4 h-4" />
               </Link>
             </div>

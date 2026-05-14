@@ -226,13 +226,14 @@ export default function Kalkulator() {
               Premium-Auswertung kostenlos per Mail.
             </h2>
             <p className="text-gray-600 mb-7">
-              Schicken Sie uns Ihre Berechnung — wir senden Ihnen einen Marktvergleich basierend
-              auf realen Kalkulationen aus 7 Gewerken. Kostenlos, einmalig, kein Abo.
+              Schicken Sie uns Ihre Berechnung — wir senden Ihnen eine Einschätzung unserer
+              Kalkulatoren zurück. Mit Hinweisen, wo wir typischerweise andere Werte ansetzen
+              würden. Kostenlos, einmalig, kein Abo.
             </p>
             {emailSent ? (
               <div className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-emerald-50 text-emerald-700">
                 <CheckCircle2 className="w-5 h-5" />
-                <span>Vielen Dank! Sie erhalten den Marktvergleich innerhalb von 24 Stunden.</span>
+                <span>Vielen Dank! Sie erhalten unsere Einschätzung innerhalb von 1–2 Werktagen.</span>
               </div>
             ) : (
               <form onSubmit={submitEmail} className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto">
@@ -254,8 +255,8 @@ export default function Kalkulator() {
               </form>
             )}
             <p className="text-xs text-gray-400 mt-4">
-              DSGVO-konform. Daten werden ausschließlich für die Marktvergleich-Lieferung verwendet.
-              Kein Newsletter, kein Spam.
+              DSGVO-konform. Daten werden ausschließlich für die Lieferung der Einschätzung
+              verwendet. Kein Newsletter, kein Spam.
             </p>
           </div>
         </div>

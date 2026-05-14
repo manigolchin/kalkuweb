@@ -3,6 +3,18 @@ import { Link } from 'react-router-dom';
 import { ArrowRight, CheckCircle2, Clock, Award } from 'lucide-react';
 import { canonical, organizationGraph, jsonLd } from '@/lib/seo';
 import { TRADES } from '@/lib/constants';
+import FadeIn from '@/components/ui/FadeIn';
+import { cn } from '@/lib/utils';
+
+const TRADE_TILE_CLASSES: Record<string, string> = {
+  emerald: 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 hover:border-emerald-200',
+  sky: 'bg-sky-50 hover:bg-sky-100 text-sky-700 hover:border-sky-200',
+  stone: 'bg-stone-50 hover:bg-stone-100 text-stone-700 hover:border-stone-200',
+  yellow: 'bg-yellow-50 hover:bg-yellow-100 text-yellow-700 hover:border-yellow-200',
+  orange: 'bg-orange-50 hover:bg-orange-100 text-orange-700 hover:border-orange-200',
+  blue: 'bg-blue-50 hover:bg-blue-100 text-blue-700 hover:border-blue-200',
+  red: 'bg-red-50 hover:bg-red-100 text-red-700 hover:border-red-200',
+};
 import {
   VierTeams,
   StepsTimeline,
@@ -91,37 +103,25 @@ export default function Home() {
               <Link
                 key={t.slug}
                 to={`/leistungen/${t.slug}/`}
-                className="card-flat card-hover text-center group py-5"
+                className={cn(
+                  'rounded-2xl border border-transparent text-center py-5 px-3 font-semibold text-sm transition-all duration-200 hover:shadow-sm hover:-translate-y-0.5',
+                  TRADE_TILE_CLASSES[t.color] ?? 'bg-gray-50 text-gray-700',
+                )}
               >
-                <div className="text-sm font-semibold text-gray-900 group-hover:text-primary-600 transition-colors">
-                  {t.short}
-                </div>
+                {t.short}
               </Link>
             ))}
           </div>
         </div>
       </section>
 
-      {/* VIER TEAMS */}
-      <VierTeams />
-
-      {/* STEPS */}
-      <StepsTimeline />
-
-      {/* PRICING (compact) */}
-      <PricingTiles />
-
-      {/* CASE STUDIES */}
-      <CaseStudies />
-
-      {/* IRRTÜMER */}
-      <IrrtumFaq />
-
-      {/* FOUNDER */}
-      <FounderTrust />
-
-      {/* URGENCY CTA */}
-      <UrgencyCta />
+      <FadeIn><VierTeams /></FadeIn>
+      <FadeIn><StepsTimeline /></FadeIn>
+      <FadeIn><PricingTiles /></FadeIn>
+      <FadeIn><CaseStudies /></FadeIn>
+      <FadeIn><IrrtumFaq /></FadeIn>
+      <FadeIn><FounderTrust /></FadeIn>
+      <FadeIn><UrgencyCta /></FadeIn>
     </>
   );
 }

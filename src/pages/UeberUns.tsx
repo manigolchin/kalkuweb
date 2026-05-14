@@ -49,12 +49,8 @@ export default function UeberUns() {
           <div className="grid lg:grid-cols-5 gap-10 lg:gap-14 items-center">
             <div className="lg:col-span-2">
               <div className="relative aspect-[4/5] rounded-3xl bg-gradient-to-br from-primary-100 via-primary-50 to-emerald-50 overflow-hidden flex items-center justify-center max-w-sm mx-auto lg:mx-0">
-                <div className="text-center px-6">
-                  <div className="w-24 h-24 rounded-full bg-primary-500/20 mx-auto mb-4 flex items-center justify-center">
-                    <span className="text-4xl font-bold text-primary-700">AC</span>
-                  </div>
-                  <p className="text-sm text-primary-700 font-medium">Foto folgt</p>
-                  <p className="text-xs text-primary-600 mt-1">Inhaber-Portrait wird ergänzt</p>
+                <div className="w-36 h-36 rounded-full bg-primary-500/15 backdrop-blur-sm flex items-center justify-center">
+                  <span className="text-6xl font-bold text-primary-700 tracking-tight">AC</span>
                 </div>
               </div>
             </div>
@@ -157,9 +153,19 @@ export default function UeberUns() {
                 </p>
               </div>
             </div>
-            <div className="aspect-[4/3] rounded-2xl bg-gradient-to-br from-emerald-50 via-white to-primary-50 flex items-center justify-center border border-gray-100">
-              <p className="text-sm text-gray-400">Map-Embed folgt</p>
-            </div>
+            <a
+              href={`https://www.openstreetmap.org/?mlat=${NAP.geo.lat}&mlon=${NAP.geo.lng}&zoom=15`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="aspect-[4/3] rounded-2xl bg-gradient-to-br from-emerald-50 via-white to-primary-50 flex items-center justify-center border border-gray-100 hover:border-primary-200 transition-colors group"
+            >
+              <div className="text-center">
+                <MapPin className="w-10 h-10 text-primary-400 mx-auto mb-3 group-hover:text-primary-600 transition-colors" />
+                <p className="text-sm text-gray-700 font-medium">{NAP.city}</p>
+                <p className="text-xs text-gray-500 mt-0.5">{NAP.geo.lat.toFixed(4)}° N · {NAP.geo.lng.toFixed(4)}° E</p>
+                <p className="text-xs text-primary-600 mt-3">Auf OpenStreetMap öffnen →</p>
+              </div>
+            </a>
           </div>
         </div>
       </section>

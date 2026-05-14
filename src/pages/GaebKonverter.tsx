@@ -45,7 +45,7 @@ const FAQ = [
   },
   {
     q: 'Was bekomme ich bei der Premium-Auswertung?',
-    a: 'Innerhalb von 24 h erhalten Sie per Mail: (1) eine saubere PDF-Druckansicht des kompletten LVs, (2) eine Excel-Tabelle aller Positionen mit Mengen, (3) eine KI-gestützte Klassifizierung pro Gewerk inkl. Material/Hersteller-Detection. Kostenlos, einmalig.',
+    a: 'Sie erhalten per Mail: (1) eine saubere PDF-Druckansicht des kompletten LVs, (2) eine Excel-Tabelle aller Positionen mit Mengen, (3) eine KI-gestützte Klassifizierung pro Gewerk inkl. Material/Hersteller-Detection. Kostenlos, einmalig — die Bearbeitungsdauer richtet sich nach LV-Umfang, in der Regel innerhalb von 1–2 Werktagen.',
   },
   {
     q: 'Kann ich das Tool auch ohne Internet nutzen?',
@@ -282,13 +282,13 @@ export default function GaebKonverter() {
                     </h3>
                     <p className="text-sm text-gray-600 mb-5">
                       Vollständige PDF-Druckansicht + Excel-Export aller Positionen +
-                      KI-Klassifizierung nach Gewerk und Hersteller. Innerhalb von 24 Stunden,
-                      kostenlos, einmalig.
+                      KI-Klassifizierung nach Gewerk und Hersteller. Kostenlos, einmalig.
+                      Bearbeitung in 1–2 Werktagen.
                     </p>
                     {submitted ? (
                       <div className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-emerald-50 text-emerald-700 text-sm">
                         <CheckCircle2 className="w-5 h-5" />
-                        Vielen Dank — wir senden Ihnen die Auswertung an {email} innerhalb von 24 Stunden.
+                        Vielen Dank — wir senden Ihnen die Auswertung an {email} innerhalb von 1–2 Werktagen.
                       </div>
                     ) : (
                       <form onSubmit={submitEmail} className="flex flex-col sm:flex-row gap-3">

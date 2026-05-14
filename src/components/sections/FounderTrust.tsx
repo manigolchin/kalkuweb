@@ -11,12 +11,8 @@ export default function FounderTrust() {
           {/* Photo placeholder — replaced with real photo in Phase 5 */}
           <div className="lg:col-span-2">
             <div className="relative aspect-[4/5] rounded-3xl bg-gradient-to-br from-primary-100 via-primary-50 to-emerald-50 overflow-hidden flex items-center justify-center max-w-sm mx-auto lg:mx-0">
-              <div className="text-center px-6">
-                <div className="w-20 h-20 rounded-full bg-primary-500/20 mx-auto mb-4 flex items-center justify-center">
-                  <span className="text-3xl font-bold text-primary-700">AC</span>
-                </div>
-                <p className="text-sm text-primary-700 font-medium">Foto folgt</p>
-                <p className="text-xs text-primary-600 mt-1">Inhaber-Portrait wird ergänzt</p>
+              <div className="w-32 h-32 rounded-full bg-primary-500/15 backdrop-blur-sm flex items-center justify-center">
+                <span className="text-5xl font-bold text-primary-700 tracking-tight">AC</span>
               </div>
             </div>
           </div>

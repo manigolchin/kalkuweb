@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowRight, ArrowLeft, CheckCircle2, Send } from 'lucide-react';
+import { ArrowRight, ArrowLeft, CheckCircle2, Send, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const GEWERKE = [
@@ -55,11 +55,23 @@ type Props = {
 export default function MultiStepForm({ defaultGewerk }: Props) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [data, setData] = useState<FormState>({ ...INITIAL, gewerk: defaultGewerk ?? '' });
+  const [touched, setTouched] = useState<Set<keyof FormState>>(new Set());
   const [sent, setSent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   function update<K extends keyof FormState>(k: K, v: FormState[K]) {
     setData((d) => ({ ...d, [k]: v }));
+  }
+
+  function markTouched(k: keyof FormState) {
+    setTouched((t) => new Set(t).add(k));
+  }
+
+  function err(k: keyof FormState, msg: string): string | null {
+    if (!touched.has(k)) return null;
+    if (k === 'email' && data.email && !data.email.includes('@')) return 'Bitte gültige E-Mail-Adresse eingeben.';
+    if (!data[k]) return msg;
+    return null;
   }
 
   const step1Valid = data.firma && data.gewerk && data.einzugsgebiet && data.radius && data.mitarbeiter;
@@ -122,21 +134,23 @@ export default function MultiStepForm({ defaultGewerk }: Props) {
       {step === 1 && (
         <div className="space-y-4">
           <h3 className="text-lg font-bold text-gray-900 mb-3">Ihr Unternehmen</h3>
-          <Field label="Firma">
+          <Field label="Firma" error={err('firma', 'Bitte Firmennamen angeben.')}>
             <input
               type="text"
               required
               value={data.firma}
               onChange={(e) => update('firma', e.target.value)}
+              onBlur={() => markTouched('firma')}
               className="input"
               placeholder="Mustermann Bau GmbH"
             />
           </Field>
-          <Field label="Branche / Gewerk">
+          <Field label="Branche / Gewerk" error={err('gewerk', 'Bitte ein Gewerk wählen.')}>
             <select
               required
               value={data.gewerk}
               onChange={(e) => update('gewerk', e.target.value)}
+              onBlur={() => markTouched('gewerk')}
               className="input"
             >
               <option value="">Bitte wählen</option>
@@ -147,22 +161,24 @@ export default function MultiStepForm({ defaultGewerk }: Props) {
               ))}
             </select>
           </Field>
-          <Field label="Einzugsgebiet">
+          <Field label="Einzugsgebiet" error={err('einzugsgebiet', 'Bitte Einzugsgebiet angeben.')}>
             <input
               type="text"
               required
               value={data.einzugsgebiet}
               onChange={(e) => update('einzugsgebiet', e.target.value)}
+              onBlur={() => markTouched('einzugsgebiet')}
               className="input"
               placeholder="z.B. Saarland + Rheinland-Pfalz"
             />
           </Field>
           <div className="grid sm:grid-cols-2 gap-4">
-            <Field label="Umkreis (km)">
+            <Field label="Umkreis (km)" error={err('radius', 'Bitte Umkreis wählen.')}>
               <select
                 required
                 value={data.radius}
                 onChange={(e) => update('radius', e.target.value)}
+                onBlur={() => markTouched('radius')}
                 className="input"
               >
                 <option value="">Bitte wählen</option>
@@ -173,11 +189,12 @@ export default function MultiStepForm({ defaultGewerk }: Props) {
                 ))}
               </select>
             </Field>
-            <Field label="Mitarbeiterzahl">
+            <Field label="Mitarbeiterzahl" error={err('mitarbeiter', 'Bitte MA-Zahl wählen.')}>
               <select
                 required
                 value={data.mitarbeiter}
                 onChange={(e) => update('mitarbeiter', e.target.value)}
+                onBlur={() => markTouched('mitarbeiter')}
                 className="input"
               >
                 <option value="">Bitte wählen</option>
@@ -334,11 +351,25 @@ export default function MultiStepForm({ defaultGewerk }: Props) {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+  error,
+}: {
+  label: string;
+  children: React.ReactNode;
+  error?: string | null;
+}) {
   return (
     <div>
       <label className="label">{label}</label>
       {children}
+      {error && (
+        <p className="mt-1.5 inline-flex items-center gap-1 text-xs text-red-600">
+          <AlertCircle className="w-3.5 h-3.5" />
+          {error}
+        </p>
+      )}
     </div>
   );
 }

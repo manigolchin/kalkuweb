@@ -59,17 +59,17 @@ export default function Kontakt() {
               <p className="font-semibold text-gray-900 mb-1">E-Mail</p>
               <p className="text-sm text-gray-600 break-all">{NAP.email}</p>
             </a>
-            <div className="card text-center">
+            <a href="#anfrage-formular" className="card card-hover text-center">
               <Calendar className="w-7 h-7 text-emerald-600 mx-auto mb-3" />
-              <p className="font-semibold text-gray-900 mb-1">Termin online</p>
-              <p className="text-xs text-gray-500">Cal.com-Embed folgt</p>
-            </div>
+              <p className="font-semibold text-gray-900 mb-1">Anfrage-Formular</p>
+              <p className="text-sm text-gray-600">in 3 Schritten</p>
+            </a>
           </div>
         </div>
       </section>
 
       {/* MULTI-STEP FORM */}
-      <section className="section bg-gray-50">
+      <section id="anfrage-formular" className="section bg-gray-50 scroll-mt-24">
         <div className="container-page">
           <SectionHeader
             eyebrow="Anfrage-Formular"

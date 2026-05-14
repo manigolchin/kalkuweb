@@ -64,7 +64,7 @@ export default function Nav() {
 
           <button
             type="button"
-            className="md:hidden p-2 -mr-2 text-gray-700"
+            className="md:hidden p-3 -mr-3 text-gray-700 min-w-[44px] min-h-[44px] flex items-center justify-center"
             onClick={() => setOpen((o) => !o)}
             aria-label={open ? 'Menü schließen' : 'Menü öffnen'}
             aria-expanded={open}

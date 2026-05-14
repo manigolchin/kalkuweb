@@ -6,6 +6,7 @@ import { TRADES } from '@/lib/constants';
 import SectionHeader from '@/components/ui/SectionHeader';
 import FaqItem from '@/components/ui/FaqItem';
 import UrgencyCta from '@/components/sections/UrgencyCta';
+import MultiStepForm from '@/components/forms/MultiStepForm';
 
 const PILL_CLASSES: Record<string, string> = {
   emerald: 'bg-emerald-100 text-emerald-700',
@@ -150,6 +151,18 @@ export default function Gewerk() {
               </Link>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* IN-PAGE FORM with prefilled gewerk */}
+      <section id="anfrage-formular" className="section bg-gray-50 scroll-mt-24">
+        <div className="container-page">
+          <SectionHeader
+            eyebrow="Anfrage-Formular"
+            title={`${trade.name}-Submission anfragen`}
+            subtitle="In drei Schritten — wir melden uns innerhalb eines Werktages."
+          />
+          <MultiStepForm defaultGewerk={trade.name} />
         </div>
       </section>
 

@@ -2,7 +2,6 @@ import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
 import { Clock, ArrowRight } from 'lucide-react';
 import { canonical } from '@/lib/seo';
-import SectionHeader from '@/components/ui/SectionHeader';
 
 const TITLE = 'Blog — Wissen für Bauunternehmer | KALKU';
 const DESC =
@@ -132,13 +131,19 @@ export default function BlogIndex() {
 
       <section className="section">
         <div className="container-page">
-          <div className="card text-center max-w-2xl mx-auto">
-            <SectionHeader
-              eyebrow="Newsletter"
-              title="Einmal im Monat. Pain-driven."
-              subtitle="Ein Artikel pro Monat per E-Mail — kein Marketing, nur Substanz. Jederzeit kündbar."
-            />
-            <p className="text-sm text-gray-400">Newsletter-Form folgt in Phase 3.4.</p>
+          <div className="card text-center max-w-xl mx-auto">
+            <p className="eyebrow mb-3">Newsletter</p>
+            <h2 className="text-2xl font-bold text-gray-900 mb-3">Einmal im Monat. Pain-driven.</h2>
+            <p className="text-gray-600 mb-7">
+              Ein Artikel pro Monat per E-Mail — kein Marketing, nur Substanz. Jederzeit kündbar.
+            </p>
+            <p className="text-xs text-gray-400">
+              Anmeldung folgt mit dem Launch der ersten Artikel. Bis dahin gerne direkt unter{' '}
+              <a href="mailto:info@kalku.de" className="text-primary-600 hover:underline">
+                info@kalku.de
+              </a>{' '}
+              vormerken.
+            </p>
           </div>
         </div>
       </section>
