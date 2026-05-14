@@ -16,6 +16,10 @@ import {
   FounderTrust,
   UrgencyCta,
   HeroMockup,
+  PullQuote,
+  Eligibility,
+  ServiceArea,
+  ResourceHub,
 } from '@/components/sections';
 
 const TRADE_TILE_CLASSES: Record<string, string> = {
@@ -123,12 +127,16 @@ export default function Home() {
       </FadeIn>
 
       <FadeIn><VierTeams /></FadeIn>
+      <FadeIn><PullQuote /></FadeIn>
       <FadeIn><StepsTimeline /></FadeIn>
+      <FadeIn><Eligibility /></FadeIn>
       <FadeIn><TrustBadges /></FadeIn>
       <FadeIn><PricingTiles /></FadeIn>
       <FadeIn><CaseStudies /></FadeIn>
       <FadeIn><IrrtumFaq /></FadeIn>
+      <FadeIn><ServiceArea /></FadeIn>
       <FadeIn><FounderTrust /></FadeIn>
+      <FadeIn><ResourceHub /></FadeIn>
       <FadeIn><UrgencyCta /></FadeIn>
     </>
   );
