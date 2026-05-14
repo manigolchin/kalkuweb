@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
-import { Send, Mail, Phone, MapPin } from 'lucide-react';
-import { NAP } from '@/lib/constants';
-import { telHref } from '@/lib/utils';
+import { Send, Mail, Phone, MapPin, Facebook, Instagram, MessageCircle } from 'lucide-react';
+import { NAP, SERVICES } from '@/lib/constants';
+import { telHref, whatsappHref } from '@/lib/utils';
 
 const COL_LEISTUNGEN = [
   { to: '/leistungen/galabau/', label: 'GaLaBau' },
@@ -85,11 +85,39 @@ export default function Footer() {
           </div>
         </div>
 
-        <div className="border-t border-gray-800 mt-12 pt-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 text-xs text-gray-500">
-          <p>
+        <div className="border-t border-gray-800 mt-12 pt-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <p className="text-xs text-gray-500">
             © {year} {NAP.legalName}. USt-ID {NAP.vatId}.
           </p>
-          <p>Made with care in {NAP.city}.</p>
+          <div className="flex items-center gap-3">
+            <a
+              href={SERVICES.facebookUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="KALKU auf Facebook"
+              className="w-9 h-9 rounded-lg border border-gray-700 hover:border-white hover:bg-gray-800 flex items-center justify-center text-gray-400 hover:text-white transition-colors"
+            >
+              <Facebook className="w-4 h-4" />
+            </a>
+            <a
+              href={SERVICES.instagramUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="KALKU auf Instagram"
+              className="w-9 h-9 rounded-lg border border-gray-700 hover:border-white hover:bg-gray-800 flex items-center justify-center text-gray-400 hover:text-white transition-colors"
+            >
+              <Instagram className="w-4 h-4" />
+            </a>
+            <a
+              href={whatsappHref(NAP.whatsapp)}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="KALKU auf WhatsApp kontaktieren"
+              className="w-9 h-9 rounded-lg border border-gray-700 hover:border-emerald-500 hover:bg-emerald-900/20 flex items-center justify-center text-gray-400 hover:text-emerald-400 transition-colors"
+            >
+              <MessageCircle className="w-4 h-4" />
+            </a>
+          </div>
         </div>
       </div>
     </footer>

@@ -5,6 +5,7 @@ import { NAP } from '@/lib/constants';
 import { telHref, whatsappHref } from '@/lib/utils';
 import SectionHeader from '@/components/ui/SectionHeader';
 import MultiStepForm from '@/components/forms/MultiStepForm';
+import CalendlyEmbed from '@/components/CalendlyEmbed';
 
 const TITLE = 'Kontakt — Erstgespräch in 5 Minuten | KALKU';
 const DESC =
@@ -59,22 +60,36 @@ export default function Kontakt() {
               <p className="font-semibold text-gray-900 mb-1">E-Mail</p>
               <p className="text-sm text-gray-600 break-all">{NAP.email}</p>
             </a>
-            <a href="#anfrage-formular" className="card card-hover text-center">
+            <a href="#termin" className="card card-hover text-center">
               <Calendar className="w-7 h-7 text-emerald-600 mx-auto mb-3" />
-              <p className="font-semibold text-gray-900 mb-1">Anfrage-Formular</p>
-              <p className="text-sm text-gray-600">in 3 Schritten</p>
+              <p className="font-semibold text-gray-900 mb-1">Termin online</p>
+              <p className="text-sm text-gray-600">Calendly</p>
             </a>
           </div>
         </div>
       </section>
 
-      {/* MULTI-STEP FORM */}
-      <section id="anfrage-formular" className="section bg-gray-50 scroll-mt-24">
+      {/* CALENDLY */}
+      <section id="termin" className="section bg-gray-50 scroll-mt-24">
         <div className="container-page">
           <SectionHeader
-            eyebrow="Anfrage-Formular"
-            title="Erstgespräch vereinbaren."
-            subtitle="In drei Schritten — wir melden uns innerhalb eines Werktages."
+            eyebrow="Termin online buchen"
+            title="Erstgespräch direkt im Kalender."
+            subtitle="15 Minuten Telefonat — wir prüfen, ob die Voraussetzungen passen, und besprechen den nächsten Schritt."
+          />
+          <div className="max-w-3xl mx-auto">
+            <CalendlyEmbed />
+          </div>
+        </div>
+      </section>
+
+      {/* MULTI-STEP FORM */}
+      <section id="anfrage-formular" className="section scroll-mt-24">
+        <div className="container-page">
+          <SectionHeader
+            eyebrow="Alternative: Anfrage-Formular"
+            title="Lieber schriftlich? Drei Schritte genügen."
+            subtitle="Wenn Sie keinen Termin direkt buchen wollen, schicken Sie uns Ihre Anfrage — wir melden uns innerhalb eines Werktages."
           />
           <MultiStepForm />
         </div>

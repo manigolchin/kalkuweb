@@ -30,7 +30,12 @@ const TEAMS = [
     desc: 'Durchsucht alle relevanten Plattformen nach passenden Ausschreibungen. Im Monatspaket ohne Zusatzkosten.',
     accent: 'border-t-sky-600',
   },
-];
+] as const;
+
+const ZUSATZ_LEISTUNG = {
+  title: 'Zusätzlich: Mengenermittlung & Aufmaß',
+  desc: 'Auf Wunsch übernehmen wir auch die digitale Mengenermittlung aus Plänen oder das Aufmaß vor Ort — direkt verzahnt mit der Kalkulation, ohne Übergabeverlust zwischen externen Dienstleistern.',
+};
 
 export default function VierTeams() {
   return (
@@ -58,6 +63,16 @@ export default function VierTeams() {
               </div>
             );
           })}
+        </div>
+
+        <div className="max-w-3xl mx-auto mt-8 bg-primary-50/50 border border-primary-100 rounded-lg p-5 sm:p-6 flex items-start gap-4">
+          <div className="w-9 h-9 rounded-md bg-primary-100 flex items-center justify-center flex-shrink-0">
+            <span className="text-primary-700 font-extrabold text-sm">+</span>
+          </div>
+          <div>
+            <h3 className="font-bold text-gray-900 mb-1">{ZUSATZ_LEISTUNG.title}</h3>
+            <p className="text-sm text-gray-700 leading-relaxed">{ZUSATZ_LEISTUNG.desc}</p>
+          </div>
         </div>
       </div>
     </section>

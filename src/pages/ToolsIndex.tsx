@@ -1,26 +1,38 @@
 import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
-import { ArrowRight, FileSpreadsheet, Calculator } from 'lucide-react';
+import { ArrowRight, FileSpreadsheet, Calculator, ExternalLink } from 'lucide-react';
 import { canonical } from '@/lib/seo';
+import { SERVICES } from '@/lib/constants';
 
 const TITLE = 'Kostenlose Tools für Bauunternehmer | KALKU';
 const DESC =
   'Zwei kostenlose Tools für Bauunternehmer und Kalkulatoren: GAEB-Konverter (X83/X84/D83 → Excel/PDF) und Position-Kalkulator (EP/GP berechnen).';
 
-const TOOLS = [
+type Tool = {
+  to: string;
+  external?: boolean;
+  icon: typeof FileSpreadsheet;
+  name: string;
+  desc: string;
+  badge: string;
+};
+
+const TOOLS: Tool[] = [
   {
-    to: '/tools/gaeb-konverter/',
+    to: SERVICES.gaebKonverterUrl,
+    external: true,
     icon: FileSpreadsheet,
     name: 'GAEB-Konverter',
-    desc: 'GAEB-Dateien (X83, X84, D83, D84) in Excel oder PDF umwandeln. Komplett im Browser, Datei verlässt Ihren Computer nie.',
-    badge: 'Kostenlos',
+    desc: 'GAEB-Dateien (X80–X89, D81–D84, P83/P84) zu Excel, PDF oder ÖNorm A2063. Volle Konvertierung mit Validierung.',
+    badge: 'Live-Tool',
   },
   {
-    to: '/tools/kalkulator/',
+    to: SERVICES.kalkulatorUrl,
+    external: true,
     icon: Calculator,
-    name: 'Position-Kalkulator',
-    desc: 'EP/GP berechnen aus Lohn, Zeit, Material und Zuschlag. Live-Summe, Export als PDF/Excel.',
-    badge: 'Kostenlos',
+    name: 'Online-Kalkulator',
+    desc: 'Komfortabler Online-Kalkulator mit Position-Liste, Zuschlagslogik, Variantenrechnung. Cloud-gespeichert.',
+    badge: 'Live-Tool',
   },
 ];
 
@@ -48,8 +60,8 @@ export default function ToolsIndex() {
           <div className="grid gap-6 md:grid-cols-2">
             {TOOLS.map((t) => {
               const Icon = t.icon;
-              return (
-                <Link key={t.to} to={t.to} className="card card-hover group">
+              const inner = (
+                <>
                   <div className="flex items-start justify-between mb-4">
                     <div className="w-12 h-12 rounded-xl bg-primary-100 flex items-center justify-center">
                       <Icon className="w-6 h-6 text-primary-600" />
@@ -61,12 +73,31 @@ export default function ToolsIndex() {
                   </h2>
                   <p className="text-sm text-gray-600 mb-5">{t.desc}</p>
                   <span className="inline-flex items-center gap-1 text-sm font-medium text-primary-600">
-                    Tool öffnen <ArrowRight className="w-4 h-4" />
+                    Tool öffnen{' '}
+                    {t.external ? <ExternalLink className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />}
                   </span>
+                </>
+              );
+              return t.external ? (
+                <a
+                  key={t.to}
+                  href={t.to}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="card card-hover group"
+                >
+                  {inner}
+                </a>
+              ) : (
+                <Link key={t.to} to={t.to} className="card card-hover group">
+                  {inner}
                 </Link>
               );
             })}
           </div>
+          <p className="text-xs text-gray-500 text-center mt-6">
+            Beide Tools laufen auf eigenen KALKU-Subdomains und werden separat gepflegt.
+          </p>
         </div>
       </section>
     </>

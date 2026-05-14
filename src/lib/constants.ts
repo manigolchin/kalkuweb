@@ -144,7 +144,12 @@ export function tradeClasses(color: Trade['color']) {
 
 // External services
 export const SERVICES = {
-  calBookingUrl: 'https://cal.com/kalku/erstgespraech', // self-hosted endpoint set in Phase 3.4
+  calendlyUrl: 'https://calendly.com/kalku/sm-ma',
+  // Live production tools (separate apps under kalku.de):
+  gaebKonverterUrl: 'https://gaeb.kalku.de',
+  kalkulatorUrl: 'https://kalkulat.kalku.de',
+  facebookUrl: 'https://www.facebook.com/kalku.de/?locale=de_DE',
+  instagramUrl: 'https://www.instagram.com/kalku_de/',
   plausibleDomain: 'kalku.de',
-  pipedriveWebhookPath: '/api/forms/submit', // backend endpoint, async push
+  pipedriveWebhookPath: '/api/forms/submit',
 } as const;
