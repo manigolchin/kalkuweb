@@ -20,7 +20,12 @@ services:
       - "traefik.docker.network=kalku_kalku-network"
       - "traefik.http.routers.kalku-website.entrypoints=websecure"
       - "traefik.http.routers.kalku-website.rule=Host(`kalku.kalkus.de`)"
-      - "traefik.http.routers.kalku-website.tls.certresolver=letsencrypt"
+      # Explicit high priority to win over the wp-sites HostRegexp catchall
+      # (wp-sites has rule length ~200+, sets explicit priority=1)
+      - "traefik.http.routers.kalku-website.priority=100"
+      # Use cloudflare resolver (wildcard *.kalkus.de cert already issued — avoids
+      # letsencrypt HTTP-01 challenge + the active rate-limit on kalku.de)
+      - "traefik.http.routers.kalku-website.tls.certresolver=cloudflare"
       - "traefik.http.services.kalku-website.loadbalancer.server.port=80"
 
 networks:
