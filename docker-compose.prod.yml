@@ -16,14 +16,13 @@ services:
     networks:
       - kalku_kalku-network
     labels:
-      # Mirror procurement-frontend label pattern exactly — known-working reference
+      # Minimal label set — proven working with smoke-test on traefik-test container.
+      # Traefik will use cloudflare's existing *.kalkus.de wildcard cert (issued for wp-sites).
       - "traefik.enable=true"
       - "traefik.http.routers.kalku-website.entrypoints=websecure"
       - "traefik.http.routers.kalku-website.rule=Host(`kalku.kalkus.de`)"
-      - "traefik.http.routers.kalku-website.priority=100"
+      - "traefik.http.routers.kalku-website.priority=200"
       - "traefik.http.routers.kalku-website.tls.certresolver=cloudflare"
-      - "traefik.http.routers.kalku-website.tls.domains[0].main=*.kalkus.de"
-      - "traefik.http.routers.kalku-website.tls.domains[0].sans=kalkus.de"
       - "traefik.http.services.kalku-website.loadbalancer.server.port=80"
 
 networks:
