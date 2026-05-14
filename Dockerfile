@@ -23,9 +23,10 @@ COPY nginx.conf /etc/nginx/conf.d/kalku-website.conf
 # Copy built assets
 COPY --from=build /app/dist /usr/share/nginx/html
 
-# Healthcheck
+# Healthcheck — use 127.0.0.1 explicitly because /etc/hosts inside the container
+# resolves "localhost" to IPv6 (::1) only, but nginx listens on 0.0.0.0 (IPv4).
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-  CMD wget -q -O- http://localhost/healthz || exit 1
+  CMD wget -q -O- http://127.0.0.1/healthz || exit 1
 
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
