@@ -5,6 +5,7 @@ import { canonical } from '@/lib/seo';
 import SectionHeader from '@/components/ui/SectionHeader';
 import FaqItem from '@/components/ui/FaqItem';
 import PricingTiles from '@/components/sections/PricingTiles';
+import SelfCheck from '@/components/SelfCheck';
 import { MINDESTVORAUSSETZUNGEN } from '@/lib/constants';
 
 const TITLE = 'Konditionen — Festpreis ab 200 € | KALKU';
@@ -125,6 +126,13 @@ export default function Konditionen() {
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* SELF-CHECK */}
+      <section className="section bg-gray-50">
+        <div className="container-page">
+          <SelfCheck />
         </div>
       </section>
 
