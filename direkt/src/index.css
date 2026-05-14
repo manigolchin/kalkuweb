@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-white text-gray-900 antialiased;
+    margin: 0;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-primary-500 ring-offset-2 rounded-sm;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-3 min-h-[48px] rounded-md font-semibold transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-cta {
+    @apply bg-kalku-green text-white hover:bg-emerald-700 active:bg-emerald-800;
+  }
+  .btn-ghost {
+    @apply text-primary-700 underline underline-offset-4 hover:text-primary-900;
+  }
+  .input {
+    @apply w-full px-4 py-3 min-h-[48px] border-2 border-gray-200 rounded-md bg-white text-gray-900 placeholder:text-gray-400 transition-colors focus:border-primary-500 focus:ring-0;
+  }
+  .label {
+    @apply block text-sm font-bold text-gray-900 mb-1.5;
+  }
+  /* Dense container — narrower than typical SaaS */
+  .container-tight {
+    @apply max-w-5xl mx-auto px-4 sm:px-6;
+  }
+  .container-form {
+    @apply max-w-xl mx-auto px-4 sm:px-6;
+  }
+}
+
+@layer utilities {
+  /* Numbered process step circle */
+  .num-circle {
+    @apply w-12 h-12 rounded-full bg-primary-500 text-white font-bold text-lg flex items-center justify-center shrink-0;
+  }
+}

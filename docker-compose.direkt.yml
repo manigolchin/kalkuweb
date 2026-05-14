@@ -1,0 +1,24 @@
+# Kalku-DIREKT (Ugur-Style) — parallel to kalku.kalkus.de
+# Subdomain: direkt.kalkus.de
+# Same network + cloudflare wildcard cert pattern as kalku-website
+
+services:
+  kalku-direkt:
+    container_name: kalku-direkt
+    build:
+      context: ./direkt
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    networks:
+      - kalku_kalku-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.kalku-direkt.entrypoints=websecure"
+      - "traefik.http.routers.kalku-direkt.rule=Host(`direkt.kalkus.de`)"
+      - "traefik.http.routers.kalku-direkt.priority=200"
+      - "traefik.http.routers.kalku-direkt.tls.certresolver=cloudflare"
+      - "traefik.http.services.kalku-direkt.loadbalancer.server.port=80"
+
+networks:
+  kalku_kalku-network:
+    external: true
