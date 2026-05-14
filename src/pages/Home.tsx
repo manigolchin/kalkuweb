@@ -1,21 +1,13 @@
 import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
-import { ArrowRight, CheckCircle2, Clock, Award } from 'lucide-react';
+import { ArrowRight, Phone, Clock, Layers3, Award } from 'lucide-react';
 import { canonical, organizationGraph, jsonLd } from '@/lib/seo';
-import { TRADES } from '@/lib/constants';
+import { TRADES, NAP } from '@/lib/constants';
+import { telHref, cn } from '@/lib/utils';
 import FadeIn from '@/components/ui/FadeIn';
-import { cn } from '@/lib/utils';
-
-const TRADE_TILE_CLASSES: Record<string, string> = {
-  emerald: 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 hover:border-emerald-200',
-  sky: 'bg-sky-50 hover:bg-sky-100 text-sky-700 hover:border-sky-200',
-  stone: 'bg-stone-50 hover:bg-stone-100 text-stone-700 hover:border-stone-200',
-  yellow: 'bg-yellow-50 hover:bg-yellow-100 text-yellow-700 hover:border-yellow-200',
-  orange: 'bg-orange-50 hover:bg-orange-100 text-orange-700 hover:border-orange-200',
-  blue: 'bg-blue-50 hover:bg-blue-100 text-blue-700 hover:border-blue-200',
-  red: 'bg-red-50 hover:bg-red-100 text-red-700 hover:border-red-200',
-};
 import {
+  StatsBand,
+  TrustBadges,
   VierTeams,
   StepsTimeline,
   PricingTiles,
@@ -25,6 +17,16 @@ import {
   UrgencyCta,
   HeroMockup,
 } from '@/components/sections';
+
+const TRADE_TILE_CLASSES: Record<string, string> = {
+  emerald: 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 hover:border-emerald-200',
+  sky: 'bg-sky-50 hover:bg-sky-100 text-sky-800 hover:border-sky-200',
+  stone: 'bg-stone-50 hover:bg-stone-100 text-stone-800 hover:border-stone-200',
+  yellow: 'bg-yellow-50 hover:bg-yellow-100 text-yellow-800 hover:border-yellow-200',
+  orange: 'bg-orange-50 hover:bg-orange-100 text-orange-800 hover:border-orange-200',
+  blue: 'bg-blue-50 hover:bg-blue-100 text-blue-800 hover:border-blue-200',
+  red: 'bg-red-50 hover:bg-red-100 text-red-800 hover:border-red-200',
+};
 
 const TITLE = 'KALKU Baukalkulationen — Wir kalkulieren Ihre Ausschreibung. Sie unterschreiben.';
 const DESCRIPTION =
@@ -45,42 +47,40 @@ export default function Home() {
       </Helmet>
 
       {/* HERO */}
-      <section className="section bg-gradient-to-br from-gray-50 to-white">
-        <div className="container-page">
+      <section className="bg-gradient-to-b from-gray-50 via-gray-50 to-white border-b border-gray-200">
+        <div className="container-page py-16 sm:py-20 lg:py-24">
           <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
             <div className="max-w-xl">
-              <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary-50 text-primary-700 text-xs font-semibold uppercase tracking-wider mb-6">
-                VOB/A · VgV · 7 Gewerke
-              </span>
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-gray-900 mb-6 leading-[1.05]">
+              <p className="text-xs uppercase tracking-[0.18em] text-primary-700 font-bold mb-5">
+                Kalkulationsbüro für öffentliche Vergabe
+              </p>
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-gray-900 mb-6 leading-[1.05]">
                 Wir kalkulieren Ihre Ausschreibung.{' '}
-                <span className="text-primary-500">Sie unterschreiben.</span>
+                <span className="text-primary-600">Sie unterschreiben.</span>
               </h1>
-              <p className="text-lg sm:text-xl text-gray-600 mb-8">
-                Outsourced Kalkulation für Bauunternehmen — von der LV-Bepreisung über die
-                Formblätter (221, 222, 223) bis zur fristgerechten Einreichung. Auch über Nacht.
+              <p className="text-lg text-gray-600 mb-9 leading-relaxed">
+                Outsourced Kalkulation für mittelständische Bauunternehmen — von der
+                LV-Bepreisung über die Formblätter (221, 222, 223) bis zur fristgerechten
+                Einreichung. Auch über Nacht.
               </p>
               <div className="flex flex-wrap items-center gap-3">
                 <Link to="/kontakt/" className="btn btn-success btn-lg">
                   Erstgespräch vereinbaren
                   <ArrowRight className="w-4 h-4" />
                 </Link>
-                <Link to="/konditionen/" className="btn btn-outline btn-lg">
-                  Konditionen ansehen
-                </Link>
+                <a href={telHref(NAP.phone)} className="btn btn-outline btn-lg">
+                  <Phone className="w-4 h-4" /> {NAP.phone}
+                </a>
               </div>
-              <div className="flex flex-wrap items-center gap-x-6 gap-y-3 mt-8 text-sm text-gray-600">
-                <span className="inline-flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-kalku-green" />
-                  LV in 48 h bepreist
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mt-9 text-sm text-gray-600">
+                <span className="inline-flex items-center gap-1.5">
+                  <Clock className="w-4 h-4 text-primary-600" /> LV in 48 h bepreist
                 </span>
-                <span className="inline-flex items-center gap-2">
-                  <Award className="w-4 h-4 text-kalku-green" />
-                  7 Gewerke
+                <span className="inline-flex items-center gap-1.5">
+                  <Layers3 className="w-4 h-4 text-primary-600" /> 7 Gewerke
                 </span>
-                <span className="inline-flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-kalku-green" />
-                  Festpreis ab 200 €
+                <span className="inline-flex items-center gap-1.5">
+                  <Award className="w-4 h-4 text-primary-600" /> Festpreis ab 200 €
                 </span>
               </div>
             </div>
@@ -89,34 +89,42 @@ export default function Home() {
         </div>
       </section>
 
+      {/* STATS BAND */}
+      <StatsBand />
+
       {/* TRADE TILE WALL */}
-      <section className="section-tight bg-white">
-        <div className="container-page">
-          <div className="text-center mb-10">
-            <p className="eyebrow mb-3">Gewerke</p>
-            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-gray-900">
-              Sieben Gewerke. Ein Kalkulationsteam.
-            </h2>
+      <FadeIn>
+        <section className="section-tight bg-white">
+          <div className="container-page">
+            <div className="text-center mb-10">
+              <p className="text-xs uppercase tracking-[0.18em] text-gray-500 font-bold mb-3">
+                Gewerke
+              </p>
+              <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-gray-900">
+                Sieben Gewerke. Ein Kalkulationsteam.
+              </h2>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
+              {TRADES.map((t) => (
+                <Link
+                  key={t.slug}
+                  to={`/leistungen/${t.slug}/`}
+                  className={cn(
+                    'rounded-lg border border-transparent text-center py-5 px-3 font-semibold text-sm transition-all duration-150 hover:shadow-sm',
+                    TRADE_TILE_CLASSES[t.color] ?? 'bg-gray-50 text-gray-700',
+                  )}
+                >
+                  {t.short}
+                </Link>
+              ))}
+            </div>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-            {TRADES.map((t) => (
-              <Link
-                key={t.slug}
-                to={`/leistungen/${t.slug}/`}
-                className={cn(
-                  'rounded-2xl border border-transparent text-center py-5 px-3 font-semibold text-sm transition-all duration-200 hover:shadow-sm hover:-translate-y-0.5',
-                  TRADE_TILE_CLASSES[t.color] ?? 'bg-gray-50 text-gray-700',
-                )}
-              >
-                {t.short}
-              </Link>
-            ))}
-          </div>
-        </div>
-      </section>
+        </section>
+      </FadeIn>
 
       <FadeIn><VierTeams /></FadeIn>
       <FadeIn><StepsTimeline /></FadeIn>
+      <FadeIn><TrustBadges /></FadeIn>
       <FadeIn><PricingTiles /></FadeIn>
       <FadeIn><CaseStudies /></FadeIn>
       <FadeIn><IrrtumFaq /></FadeIn>

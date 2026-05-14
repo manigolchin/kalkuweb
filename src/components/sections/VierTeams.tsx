@@ -4,36 +4,33 @@ import SectionHeader from '@/components/ui/SectionHeader';
 const TEAMS = [
   {
     icon: Calculator,
-    name: 'Kalkulationsteam',
-    desc: 'Handwerker und Bauingenieure mit über 20 Jahren Erfahrung. Jede Position einzeln auf Zeit, Geräte und Material kalkuliert — keine Pauschalen, keine Schätzungen.',
-    color: 'primary',
+    name: 'Kalkulation',
+    role: 'Handwerker & Bauingenieure',
+    desc: '20+ Jahre Erfahrung im Team. Jede Position einzeln auf Zeit, Geräte und Material kalkuliert — keine Pauschalen.',
+    accent: 'border-t-primary-500',
   },
   {
     icon: ShoppingCart,
-    name: 'Einkaufsteam',
-    desc: 'Ermittelt aktuelle Materialpreise und Entsorgungskosten. Stellt auf Wunsch Nachunternehmer-Anfragen im regionalen Umfeld. Keine Preislücken in der Kalkulation.',
-    color: 'emerald',
+    name: 'Einkauf',
+    role: 'Materialpreise & Nachunternehmer',
+    desc: 'Aktuelle Marktpreise und Entsorgungskosten. Auf Wunsch Nachunternehmer-Anfragen im regionalen Umfeld.',
+    accent: 'border-t-emerald-600',
   },
   {
     icon: FileSignature,
-    name: 'Vergabeteam',
-    desc: 'Spezialisiert auf Vergaberecht. Reicht im Namen Ihres Unternehmens ein — fristgerecht und fehlerfrei. Minimiert Ausschlussrisiken durch rechtssichere Betreuung.',
-    color: 'amber',
+    name: 'Vergabe',
+    role: 'Spezialisiert auf Vergaberecht',
+    desc: 'Reicht im Namen Ihres Unternehmens ein — fristgerecht und fehlerfrei. Minimiert Ausschlussrisiken.',
+    accent: 'border-t-amber-600',
   },
   {
     icon: Search,
-    name: 'Rechercheteam',
-    desc: 'Durchsucht wöchentlich alle relevanten Plattformen nach passenden Ausschreibungen. Im Rahmen der Monatspauschale ohne Zusatzkosten.',
-    color: 'sky',
+    name: 'Recherche',
+    role: 'Wöchentliche Ausschreibungssuche',
+    desc: 'Durchsucht alle relevanten Plattformen nach passenden Ausschreibungen. Im Monatspaket ohne Zusatzkosten.',
+    accent: 'border-t-sky-600',
   },
-] as const;
-
-const COLOR_CLASSES = {
-  primary: 'bg-primary-50 text-primary-600',
-  emerald: 'bg-emerald-50 text-emerald-600',
-  amber: 'bg-amber-50 text-amber-600',
-  sky: 'bg-sky-50 text-sky-600',
-} as const;
+];
 
 export default function VierTeams() {
   return (
@@ -41,20 +38,22 @@ export default function VierTeams() {
       <div className="container-page">
         <SectionHeader
           eyebrow="Vier Teams"
-          title="Eine Kalkulationsabteilung. Aus einer Hand."
-          subtitle="Vier Teams arbeiten parallel an Ihrer Ausschreibung — alle am finanziellen Erfolg beteiligt. Deshalb halten wir auch kurzfristige Abgaben über Nacht oder am Wochenende ein."
+          title="Eine Kalkulationsabteilung — aus einer Hand."
+          subtitle="Vier spezialisierte Teams arbeiten parallel an Ihrer Ausschreibung. Alle am finanziellen Erfolg beteiligt — deshalb halten wir auch Wochenend-Abgaben zuverlässig ein."
         />
         <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
           {TEAMS.map((t) => {
             const Icon = t.icon;
             return (
-              <div key={t.name} className="card card-hover h-full flex flex-col">
-                <div
-                  className={`w-12 h-12 rounded-xl flex items-center justify-center mb-5 ${COLOR_CLASSES[t.color]}`}
-                >
-                  <Icon className="w-6 h-6" />
-                </div>
-                <h3 className="text-lg font-bold text-gray-900 mb-2">{t.name}</h3>
+              <div
+                key={t.name}
+                className={`border-t-4 ${t.accent} bg-white border border-gray-200 rounded-lg p-6 hover:shadow-sm transition-shadow flex flex-col`}
+              >
+                <Icon className="w-6 h-6 text-gray-700 mb-4" strokeWidth={1.8} />
+                <h3 className="text-lg font-bold text-gray-900 mb-1">{t.name}</h3>
+                <p className="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-3">
+                  {t.role}
+                </p>
                 <p className="text-sm text-gray-600 leading-relaxed">{t.desc}</p>
               </div>
             );

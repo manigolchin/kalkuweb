@@ -10,7 +10,12 @@
   body {
     @apply bg-white text-gray-900 antialiased;
     margin: 0;
-    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11', 'ss01';
+  }
+  /* Headings get the slightly tighter Inter Display feature */
+  h1, h2, h3 {
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11', 'ss01', 'ss03';
+    text-wrap: balance;
   }
   :focus-visible {
     @apply outline-none ring-2 ring-primary-500 ring-offset-2 ring-offset-white rounded-sm;

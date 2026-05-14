@@ -6,3 +6,5 @@ export { default as IrrtumFaq } from './IrrtumFaq';
 export { default as FounderTrust } from './FounderTrust';
 export { default as UrgencyCta } from './UrgencyCta';
 export { default as HeroMockup } from './HeroMockup';
+export { default as StatsBand } from './StatsBand';
+export { default as TrustBadges } from './TrustBadges';

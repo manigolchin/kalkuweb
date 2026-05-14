@@ -1,8 +1,9 @@
+import { ArrowRight } from 'lucide-react';
 import SectionHeader from '@/components/ui/SectionHeader';
 
 type Case = {
   trade: string;
-  tradeColor: 'sky' | 'emerald' | 'yellow' | 'orange' | 'stone' | 'blue' | 'red';
+  tradeColor: 'sky' | 'emerald' | 'yellow';
   region: string;
   size: string;
   before: { metric: string; value: string };
@@ -10,7 +11,6 @@ type Case = {
   outcome: string;
 };
 
-// All cases anonymized. Numbers are illustrative until Boss approves real data.
 const CASES: Case[] = [
   {
     trade: 'Tiefbau',
@@ -35,20 +35,16 @@ const CASES: Case[] = [
     tradeColor: 'yellow',
     region: 'Hessen',
     size: '35 MA',
-    before: { metric: 'Stundenlohn-Reibungsverluste', value: '~ 110 k €/J' },
-    after: { metric: 'Stundenlohn-Reibungsverluste', value: '0 €' },
+    before: { metric: 'Reibungsverluste / Jahr', value: '~ 110 k €' },
+    after: { metric: 'Reibungsverluste / Jahr', value: '0 €' },
     outcome: 'Eigener Kalkulator entlastet · Komplexe BMA/EMA-LVs zuverlässig in 48 h bepreist',
   },
 ];
 
 const PILL_CLASSES: Record<Case['tradeColor'], string> = {
-  sky: 'bg-sky-50 text-sky-700',
-  emerald: 'bg-emerald-50 text-emerald-700',
-  yellow: 'bg-yellow-50 text-yellow-700',
-  orange: 'bg-orange-50 text-orange-700',
-  stone: 'bg-stone-50 text-stone-700',
-  blue: 'bg-blue-50 text-blue-700',
-  red: 'bg-red-50 text-red-700',
+  sky: 'bg-sky-100 text-sky-800',
+  emerald: 'bg-emerald-100 text-emerald-800',
+  yellow: 'bg-yellow-100 text-yellow-800',
 };
 
 export default function CaseStudies() {
@@ -58,41 +54,46 @@ export default function CaseStudies() {
         <SectionHeader
           eyebrow="Anonymisierte Cases"
           title="Echte Fälle. Harte Zahlen."
-          subtitle="Wir nennen keine Kundennamen — wir nennen die Zahlen, die zählen. Vorher / Nachher pro Bauunternehmen."
+          subtitle="Wir nennen keine Kundennamen — Vertraulichkeit ist nicht verhandelbar. Wir nennen die Zahlen, die zählen."
         />
-        <div className="grid gap-6 md:grid-cols-3">
+        <div className="grid gap-6 md:grid-cols-3 max-w-6xl mx-auto">
           {CASES.map((c, i) => (
-            <div key={i} className="card card-hover h-full flex flex-col">
-              <div className="flex items-center gap-2 mb-5 text-xs">
-                <span className={`px-2.5 py-0.5 rounded-full font-semibold uppercase tracking-wider ${PILL_CLASSES[c.tradeColor]}`}>
+            <article
+              key={i}
+              className="bg-white border border-gray-200 rounded-lg p-6 sm:p-7 flex flex-col"
+            >
+              <div className="flex items-center justify-between mb-6">
+                <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider ${PILL_CLASSES[c.tradeColor]}`}>
                   {c.trade}
                 </span>
-                <span className="text-gray-500">
+                <span className="text-xs text-gray-500 font-medium">
                   {c.region} · {c.size}
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 mb-5">
-                <div className="bg-gray-50 rounded-xl p-3">
-                  <p className="text-xs text-gray-500 mb-1">Vorher</p>
-                  <p className="font-bold text-gray-900">{c.before.value}</p>
-                  <p className="text-xs text-gray-500 mt-1 leading-tight">{c.before.metric}</p>
+              <div className="space-y-4 mb-6">
+                <div>
+                  <p className="text-[11px] uppercase tracking-wider text-gray-500 font-bold mb-1">Vorher</p>
+                  <p className="text-2xl font-extrabold text-gray-900 tabular-nums tracking-tight">{c.before.value}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{c.before.metric}</p>
                 </div>
-                <div className="bg-emerald-50 rounded-xl p-3">
-                  <p className="text-xs text-emerald-700 mb-1">Nachher</p>
-                  <p className="font-bold text-emerald-700">{c.after.value}</p>
-                  <p className="text-xs text-emerald-600 mt-1 leading-tight">{c.after.metric}</p>
+                <div className="h-px bg-gray-200" aria-hidden />
+                <div>
+                  <p className="text-[11px] uppercase tracking-wider text-emerald-700 font-bold mb-1">Nachher mit KALKU</p>
+                  <p className="text-3xl font-extrabold text-emerald-700 tabular-nums tracking-tight">{c.after.value}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{c.after.metric}</p>
                 </div>
               </div>
 
-              <p className="text-sm text-gray-600 leading-relaxed mt-auto pt-2 border-t border-gray-100">
-                {c.outcome}
-              </p>
-            </div>
+              <div className="mt-auto pt-5 border-t border-gray-200">
+                <p className="text-sm text-gray-700 leading-relaxed">{c.outcome}</p>
+              </div>
+            </article>
           ))}
         </div>
-        <p className="text-xs text-gray-400 text-center mt-6">
-          Daten anonymisiert. Echte Referenzen auf Anfrage.
+        <p className="text-center text-xs text-gray-500 mt-8 inline-flex items-center justify-center w-full gap-1.5">
+          Daten anonymisiert · echte Referenzen auf Anfrage
+          <ArrowRight className="w-3 h-3" />
         </p>
       </div>
     </section>

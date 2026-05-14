@@ -1,16 +1,20 @@
 import { Link } from 'react-router-dom';
-import { CheckCircle2, ArrowRight } from 'lucide-react';
+import { Check, ArrowRight, Star } from 'lucide-react';
 import { PRICING } from '@/lib/constants';
 import SectionHeader from '@/components/ui/SectionHeader';
 import { cn } from '@/lib/utils';
 
 type Props = {
-  /** When true, omits the section wrapper (use inside Konditionen page that already has its own intro). */
   bare?: boolean;
 };
 
 export default function PricingTiles({ bare = false }: Props) {
-  const tiers = [PRICING.einzel, PRICING.paketM, PRICING.paketL];
+  const tiers = [
+    { ...PRICING.einzel, featured: false },
+    { ...PRICING.paketM, featured: true },
+    { ...PRICING.paketL, featured: false },
+  ];
+
   const Wrapper = bare
     ? ({ children }: { children: React.ReactNode }) => <>{children}</>
     : ({ children }: { children: React.ReactNode }) => (
@@ -24,53 +28,58 @@ export default function PricingTiles({ bare = false }: Props) {
       {!bare && (
         <SectionHeader
           eyebrow="Konditionen"
-          title="Faire Konditionen. Sie zahlen, wenn wir liefern."
-          subtitle="Zwei Modelle — passend zu Ihrem Bedarf. Kein Setup, keine Mindestlaufzeit, monatlich kündbar."
+          title="Transparente Festpreise. Keine Mindestlaufzeit."
+          subtitle="Zwei Modelle, klare Preise — und eine Erfolgsprovision, die erst nach erteiltem Zuschlag fällig wird."
         />
       )}
-      <div className="grid gap-6 lg:grid-cols-3">
-        {tiers.map((tier, i) => {
-          const featured = i === 1;
-          return (
-            <div
-              key={tier.name}
+      <div className="grid gap-0 lg:grid-cols-3 max-w-6xl mx-auto rounded-2xl overflow-hidden border border-gray-200 divide-y lg:divide-y-0 lg:divide-x divide-gray-200">
+        {tiers.map((tier) => (
+          <div
+            key={tier.name}
+            className={cn(
+              'relative flex flex-col bg-white p-7 sm:p-8',
+              tier.featured && 'bg-primary-50/50',
+            )}
+          >
+            {tier.featured && (
+              <span className="absolute top-4 right-4 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary-700 text-white text-[11px] font-bold uppercase tracking-wider">
+                <Star className="w-3 h-3 fill-current" />
+                Beliebt
+              </span>
+            )}
+            <p className="text-xs uppercase tracking-wider font-bold text-gray-500 mb-2">
+              {tier.name}
+            </p>
+            <p className="text-3xl sm:text-4xl font-extrabold text-primary-700 tracking-tight mb-1 tabular-nums">
+              {tier.price}
+            </p>
+            <p className="text-sm text-gray-600 mb-6 pb-6 border-b border-gray-200">
+              + {tier.successFee} Erfolgsprovision bei Zuschlag
+            </p>
+            <ul className="space-y-3 mb-7 flex-1">
+              {tier.bullets.map((b) => (
+                <li key={b} className="flex items-start gap-2.5 text-sm text-gray-700">
+                  <Check className="w-4 h-4 text-primary-600 flex-shrink-0 mt-0.5" strokeWidth={3} />
+                  <span>{b}</span>
+                </li>
+              ))}
+            </ul>
+            <Link
+              to="/kontakt/"
               className={cn(
-                'card relative flex flex-col',
-                featured && 'border-2 border-primary-500 shadow-lg lg:scale-[1.02]',
+                'btn w-full justify-center',
+                tier.featured ? 'btn-primary' : 'btn-outline',
               )}
             >
-              {featured && (
-                <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary-500 text-white text-xs font-semibold px-3 py-1 rounded-full">
-                  Beliebt
-                </span>
-              )}
-              <h3 className="text-xl font-bold text-gray-900 mb-2">{tier.name}</h3>
-              <div className="mb-1">
-                <span className="text-3xl font-bold text-primary-600">{tier.price}</span>
-              </div>
-              <p className="text-sm text-gray-500 mb-6">+ {tier.successFee} Erfolgsprovision bei Zuschlag</p>
-              <ul className="space-y-2.5 mb-7 flex-1">
-                {tier.bullets.map((b) => (
-                  <li key={b} className="flex items-start gap-2 text-sm text-gray-700">
-                    <CheckCircle2 className="w-4 h-4 text-kalku-green flex-shrink-0 mt-0.5" />
-                    <span>{b}</span>
-                  </li>
-                ))}
-              </ul>
-              <Link
-                to="/kontakt/"
-                className={cn(
-                  'btn w-full justify-center',
-                  featured ? 'btn-primary' : 'btn-outline',
-                )}
-              >
-                Erstgespräch vereinbaren
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-            </div>
-          );
-        })}
+              Erstgespräch vereinbaren
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+        ))}
       </div>
+      <p className="text-center text-xs text-gray-500 mt-5">
+        Alle Preise netto, zzgl. USt. Monatliche Pakete monatlich kündbar — keine Mindestlaufzeit.
+      </p>
     </Wrapper>
   );
 }
