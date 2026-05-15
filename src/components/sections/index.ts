@@ -1,3 +1,16 @@
+// V2 — sections built for the Inhaber-Konvertierung
+export { default as HeroV2 } from './HeroV2';
+export { default as HeroLvCard } from './HeroLvCard';
+export { default as SubmissionTriage } from './SubmissionTriage';
+export { default as Manifesto } from './Manifesto';
+export { default as Deliverables } from './Deliverables';
+export { default as RoiBlock } from './RoiBlock';
+export { default as RiskReversal } from './RiskReversal';
+export { default as NamedReference } from './NamedReference';
+export { default as PricingTeaser } from './PricingTeaser';
+export { default as CalSlotPreview } from './CalSlotPreview';
+
+// Polished originals
 export { default as VierTeams } from './VierTeams';
 export { default as StepsTimeline } from './StepsTimeline';
 export { default as PricingTiles } from './PricingTiles';

@@ -88,7 +88,10 @@ export default function Gewerk() {
             </h1>
             <p className="text-lg text-gray-600 mb-8">{trade.tagline}</p>
             <div className="flex flex-wrap gap-3">
-              <Link to="/kontakt/" className="btn btn-success btn-lg">
+              <Link
+                to={`/kontakt/?gewerk=${encodeURIComponent(trade.name)}`}
+                className="btn btn-success btn-lg cta-magnetic"
+              >
                 {trade.name}-Submission anfragen
                 <ArrowRight className="w-4 h-4" />
               </Link>

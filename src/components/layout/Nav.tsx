@@ -37,7 +37,10 @@ export default function Nav() {
               <Send className="w-5 h-5 text-white" />
             </div>
             <div className="flex flex-col leading-none">
-              <span className="font-bold text-gray-900">KALKU</span>
+              <span className="font-bold text-gray-900 inline-flex items-center gap-1.5">
+                KALKU
+                <span className="status-dot" aria-hidden title="Wir sind erreichbar" />
+              </span>
               <span className="text-xs text-gray-500">Baukalkulationen</span>
             </div>
           </Link>

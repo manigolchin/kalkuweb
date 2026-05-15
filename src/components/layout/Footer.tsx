@@ -69,6 +69,17 @@ export default function Footer() {
                 </a>
               </li>
               <li className="flex items-center gap-2">
+                <MessageCircle className="w-4 h-4 flex-shrink-0 text-gray-400" />
+                <a
+                  href={whatsappHref(NAP.whatsapp, 'Hallo KALKU, ich habe eine Frage.')}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-emerald-300"
+                >
+                  WhatsApp · {NAP.whatsapp}
+                </a>
+              </li>
+              <li className="flex items-center gap-2">
                 <Mail className="w-4 h-4 flex-shrink-0 text-gray-400" />
                 <a href={`mailto:${NAP.email}`} className="hover:text-white">
                   {NAP.email}

@@ -1,46 +1,62 @@
 import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Phone, Clock, Layers3, Award } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { canonical, organizationGraph, jsonLd } from '@/lib/seo';
-import { TRADES, NAP } from '@/lib/constants';
-import { telHref, cn } from '@/lib/utils';
+import { TRADES } from '@/lib/constants';
+import { cn } from '@/lib/utils';
 import FadeIn from '@/components/ui/FadeIn';
 import {
+  HeroV2,
   StatsBand,
-  TrustBadges,
+  SubmissionTriage,
+  Manifesto,
+  Deliverables,
   VierTeams,
   StepsTimeline,
-  PricingTiles,
-  CaseStudies,
-  IrrtumFaq,
-  FounderTrust,
-  UrgencyCta,
-  HeroMockup,
+  NamedReference,
   PullQuote,
-  Eligibility,
-  ServiceArea,
-  ResourceHub,
-  LeadMagnet,
-  Differentiator,
-  CareerBanner,
+  RoiBlock,
+  RiskReversal,
+  PricingTeaser,
   OperationalFaq,
-  Testimonials,
+  FounderTrust,
+  CalSlotPreview,
 } from '@/components/sections';
 
 const TRADE_TILE_CLASSES: Record<string, string> = {
-  emerald: 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 hover:border-emerald-200',
-  sky: 'bg-sky-50 hover:bg-sky-100 text-sky-800 hover:border-sky-200',
-  stone: 'bg-stone-50 hover:bg-stone-100 text-stone-800 hover:border-stone-200',
-  yellow: 'bg-yellow-50 hover:bg-yellow-100 text-yellow-800 hover:border-yellow-200',
-  orange: 'bg-orange-50 hover:bg-orange-100 text-orange-800 hover:border-orange-200',
-  blue: 'bg-blue-50 hover:bg-blue-100 text-blue-800 hover:border-blue-200',
-  red: 'bg-red-50 hover:bg-red-100 text-red-800 hover:border-red-200',
+  emerald: 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 ring-emerald-100 hover:ring-emerald-200',
+  sky:     'bg-sky-50 hover:bg-sky-100 text-sky-800 ring-sky-100 hover:ring-sky-200',
+  stone:   'bg-stone-50 hover:bg-stone-100 text-stone-800 ring-stone-200 hover:ring-stone-300',
+  yellow:  'bg-yellow-50 hover:bg-yellow-100 text-yellow-900 ring-yellow-100 hover:ring-yellow-200',
+  orange:  'bg-orange-50 hover:bg-orange-100 text-orange-800 ring-orange-100 hover:ring-orange-200',
+  blue:    'bg-blue-50 hover:bg-blue-100 text-blue-800 ring-blue-100 hover:ring-blue-200',
+  red:     'bg-red-50 hover:bg-red-100 text-red-800 ring-red-100 hover:ring-red-200',
 };
 
 const TITLE = 'KALKU Baukalkulationen — Wir kalkulieren Ihre Ausschreibung. Sie unterschreiben.';
 const DESCRIPTION =
-  'Outsourced Baukalkulation für GU und Bauunternehmen. Spezialisiert auf öffentliche Ausschreibungen (VOB/A, VgV) in 7 Gewerken. LV in 48 h bepreist. Festpreis ab 200 €. Saarbrücken.';
+  'Outsourced Baukalkulation für mittelständische Bauunternehmen. Spezialisiert auf öffentliche Ausschreibungen (VOB/A, VgV) in 7 Gewerken. LV in 48 h bepreist. Festpreis ab 200 €. Saarbrücken.';
 
+/**
+ * The Home page is a single argument:
+ *
+ *   1. HERO        — pattern-3 anti-marketing headline + availability bar + product mockup
+ *   2. STATS       — 4 hard numbers
+ *   3. TRADES      — 7 colored tiles, signals scope in 1 second
+ *   4. TRIAGE      — interactive submission-date checker (the radical move)
+ *   5. MANIFESTO   — founder letter (named voice, signed)
+ *   6. DELIVERABLES — what you actually get (3 deliverables)
+ *   7. VIER TEAMS  — how we deliver
+ *   8. PROCESS     — 5-step timeline
+ *   9. NAMED REF   — one detailed customer story with hard numbers
+ *  10. PULL QUOTE  — editorial break
+ *  11. ROI BLOCK   — Inhaus vs KALKU CFO math
+ *  12. RISK REV    — 6 contractual guarantees (dark section)
+ *  13. PRICING     — transparent teaser linking to /konditionen/
+ *  14. FAQ         — operational questions
+ *  15. FOUNDER     — direct contact, monogram portrait
+ *  16. CAL SLOTS   — concrete next-slot preview + 3-channel CTA
+ */
 export default function Home() {
   return (
     <>
@@ -55,103 +71,59 @@ export default function Home() {
         <script type="application/ld+json">{jsonLd(organizationGraph())}</script>
       </Helmet>
 
-      {/* HERO */}
-      <section className="bg-gradient-to-b from-gray-50 via-gray-50 to-white border-b border-gray-200">
-        <div className="container-page py-16 sm:py-20 lg:py-24">
-          <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
-            <div className="max-w-xl">
-              <p className="text-xs uppercase tracking-[0.18em] text-primary-700 font-bold mb-5">
-                Kalkulationsbüro für öffentliche Vergabe
-              </p>
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-gray-900 mb-6 leading-[1.05]">
-                Wir kalkulieren Ihre Ausschreibung.{' '}
-                <span className="text-primary-600">Sie unterschreiben.</span>
-              </h1>
-              <p className="text-lg text-gray-600 mb-9 leading-relaxed">
-                Outsourced Kalkulation für mittelständische Bauunternehmen — von der
-                LV-Bepreisung über die Formblätter (221, 222, 223) bis zur fristgerechten
-                Einreichung. Auch über Nacht.
-              </p>
-              <div className="flex flex-wrap items-center gap-3">
-                <Link to="/kontakt/" className="btn btn-success btn-lg">
-                  Erstgespräch vereinbaren
-                  <ArrowRight className="w-4 h-4" />
-                </Link>
-                <a href={telHref(NAP.phone)} className="btn btn-outline btn-lg">
-                  <Phone className="w-4 h-4" /> {NAP.phone}
-                </a>
-              </div>
-              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mt-9 text-sm text-gray-600">
-                <span className="inline-flex items-center gap-1.5">
-                  <Clock className="w-4 h-4 text-primary-600" /> LV in 48 h bepreist
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <Layers3 className="w-4 h-4 text-primary-600" /> 7 Gewerke
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <Award className="w-4 h-4 text-primary-600" /> Festpreis ab 200 €
-                </span>
-              </div>
-              <p className="mt-4 text-xs text-gray-500 inline-flex items-center gap-1.5">
-                <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Antwort werktags binnen 4 Stunden — schriftlich garantiert.
-              </p>
-            </div>
-            <HeroMockup />
-          </div>
-        </div>
-      </section>
+      <HeroV2 />
 
-      {/* STATS BAND */}
       <StatsBand />
 
-      {/* TRADE TILE WALL */}
+      {/* TRADE TILE WALL — colored quintet */}
       <FadeIn>
         <section className="section-tight bg-white">
           <div className="container-page">
             <div className="text-center mb-10">
-              <p className="text-xs uppercase tracking-[0.18em] text-gray-500 font-bold mb-3">
-                Gewerke
-              </p>
-              <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-gray-900">
+              <p className="eyebrow mb-3">Gewerke</p>
+              <h2 className="display-h2">
                 Sieben Gewerke. Ein Kalkulationsteam.
               </h2>
+              <p className="prose-body mx-auto mt-4 text-base">
+                Anders als reine Hochbau-Outsourcer decken wir das volle Spektrum mittelständischer Bauunternehmen ab —
+                von GaLaBau bis Schadstoffsanierung.
+              </p>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 max-w-6xl mx-auto">
               {TRADES.map((t) => (
                 <Link
                   key={t.slug}
                   to={`/leistungen/${t.slug}/`}
                   className={cn(
-                    'rounded-lg border border-transparent text-center py-5 px-3 font-semibold text-sm transition-all duration-150 hover:shadow-sm',
-                    TRADE_TILE_CLASSES[t.color] ?? 'bg-gray-50 text-gray-700',
+                    'rounded-lg ring-1 text-center py-5 px-3 font-semibold text-sm transition-all duration-150 hover:shadow-sm',
+                    TRADE_TILE_CLASSES[t.color] ?? 'bg-gray-50 text-gray-700 ring-gray-100',
                   )}
                 >
                   {t.short}
                 </Link>
               ))}
             </div>
+            <p className="text-center text-xs text-gray-500 mt-6 inline-flex items-center justify-center w-full gap-1.5">
+              Klicken Sie ein Gewerk an — wir zeigen Ihnen Praxisbeispiele und Pricing.
+              <ArrowRight className="w-3 h-3" />
+            </p>
           </div>
         </section>
       </FadeIn>
 
+      <FadeIn><SubmissionTriage /></FadeIn>
+      <FadeIn><Manifesto /></FadeIn>
+      <FadeIn><Deliverables /></FadeIn>
       <FadeIn><VierTeams /></FadeIn>
-      <FadeIn><PullQuote /></FadeIn>
       <FadeIn><StepsTimeline /></FadeIn>
-      <FadeIn><Differentiator /></FadeIn>
-      <FadeIn><Eligibility /></FadeIn>
-      <FadeIn><TrustBadges /></FadeIn>
-      <FadeIn><PricingTiles /></FadeIn>
-      <FadeIn><CaseStudies /></FadeIn>
-      <FadeIn><Testimonials /></FadeIn>
-      <FadeIn><IrrtumFaq /></FadeIn>
+      <FadeIn><NamedReference /></FadeIn>
+      <FadeIn><PullQuote /></FadeIn>
+      <FadeIn><RoiBlock /></FadeIn>
+      <FadeIn><RiskReversal /></FadeIn>
+      <FadeIn><PricingTeaser /></FadeIn>
       <FadeIn><OperationalFaq /></FadeIn>
-      <FadeIn><LeadMagnet /></FadeIn>
-      <FadeIn><ServiceArea /></FadeIn>
       <FadeIn><FounderTrust /></FadeIn>
-      <FadeIn><CareerBanner /></FadeIn>
-      <FadeIn><ResourceHub /></FadeIn>
-      <FadeIn><UrgencyCta /></FadeIn>
+      <FadeIn><CalSlotPreview /></FadeIn>
     </>
   );
 }
