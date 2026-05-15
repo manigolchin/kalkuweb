@@ -6,6 +6,7 @@ import { NAP } from '@/lib/constants';
 import { telHref } from '@/lib/utils';
 import SectionHeader from '@/components/ui/SectionHeader';
 import VierTeams from '@/components/sections/VierTeams';
+import TechStack from '@/components/sections/TechStack';
 
 const TITLE = 'Über uns — KALKU Baukalkulationen Saarbrücken';
 const DESC =
@@ -119,6 +120,9 @@ export default function UeberUns() {
           </div>
         </div>
       </section>
+
+      {/* TECH STACK */}
+      <TechStack />
 
       {/* STANDORT */}
       <section className="section">
