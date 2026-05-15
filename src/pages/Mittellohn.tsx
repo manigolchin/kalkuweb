@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import { canonical } from '@/lib/seo';
 import { cn } from '@/lib/utils';
+import { softwareApplicationSchema } from '@/lib/toolSchema';
+import AndereTools from '@/components/sections/AndereTools';
 
 type Person = {
   id: string;
@@ -74,6 +76,15 @@ export default function Mittellohn() {
   const [zulagen, setZulagen] = useState(0); // EUR/h zusätzlich
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [exportingExcel, setExportingExcel] = useState(false);
+  const [breakdownOpen, setBreakdownOpen] = useState(false);
+  const [tarifgebiet, setTarifgebiet] = useState<'west' | 'ost'>('west');
+
+  // Lohnnebenkosten-Komponenten — Default Branche Bauhauptgewerbe 2026
+  const [bnkSv, setBnkSv] = useState(20.85); // Sozialversicherung AG-Anteil (KV+PV+RV+AV)
+  const [bnkSoka, setBnkSoka] = useState(18.5); // SOKA-BAU West Default
+  const [bnkBg, setBnkBg] = useState(5); // Berufsgenossenschaft Bau (Risikoklasse)
+  const [bnkMonats13, setBnkMonats13] = useState(11); // 13.ME, Urlaubsgeld
+  const [bnkSonst, setBnkSonst] = useState(8); // Lohnfortzahlung Krank/Feiertag, Sonstiges
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -88,13 +99,22 @@ export default function Mittellohn() {
     return () => clearTimeout(t);
   }, [team]);
 
+  const breakdownTotal = bnkSv + bnkSoka + bnkBg + bnkMonats13 + bnkSonst;
+  const effectiveLnk = breakdownOpen ? breakdownTotal : lohnnebenkosten;
+
   const totals = useMemo(() => {
     const totalAnzahl = team.reduce((s, p) => s + p.anzahl, 0) || 1;
     const lohnSumme = team.reduce((s, p) => s + p.stundensatz * p.anzahl, 0);
     const mittellohnAS = lohnSumme / totalAnzahl;
-    const mittellohnASL = mittellohnAS * (1 + lohnnebenkosten / 100) + zulagen;
+    const mittellohnASL = mittellohnAS * (1 + effectiveLnk / 100) + zulagen;
     return { totalAnzahl, lohnSumme, mittellohnAS, mittellohnASL };
-  }, [team, lohnnebenkosten, zulagen]);
+  }, [team, effectiveLnk, zulagen]);
+
+  function applyTarifgebiet(g: 'west' | 'ost') {
+    setTarifgebiet(g);
+    // SOKA-BAU 2026: West ~18.5 %, Ost ~16.5 %
+    setBnkSoka(g === 'west' ? 18.5 : 16.5);
+  }
 
   function update(id: string, patch: Partial<Person>) {
     setTeam((rs) => rs.map((p) => (p.id === id ? { ...p, ...patch } : p)));
@@ -166,6 +186,14 @@ export default function Mittellohn() {
         <title>{TITLE}</title>
         <meta name="description" content={DESC} />
         <link rel="canonical" href={canonical('/tools/mittellohn/')} />
+        <script type="application/ld+json">
+          {JSON.stringify(softwareApplicationSchema({
+            name: 'Mittellohn-Rechner',
+            description: DESC,
+            path: '/tools/mittellohn/',
+            featureList: ['Mittellohn AS + ASL', 'Lohnnebenkosten-Breakdown (SOKA/RV/KV/BG)', 'Bundesgebiet West/Ost', 'Auto-Save', 'Excel-Export'],
+          }))}
+        </script>
       </Helmet>
 
       <section className="section-tight bg-gradient-to-br from-amber-50/40 to-white">
@@ -300,23 +328,70 @@ export default function Mittellohn() {
               </div>
 
               <div className="card-flat">
-                <label className="label flex items-center gap-1.5">
-                  Lohnnebenkosten
-                  <span className="text-xs font-normal text-gray-400">(KSK, Urlaubskasse, Sozialvers.)</span>
-                </label>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="range"
-                    value={lohnnebenkosten}
-                    onChange={(e) => setLohnnebenkosten(parseFloat(e.target.value))}
-                    min={0}
-                    max={120}
-                    step={1}
-                    className="flex-1 accent-amber-600"
-                  />
-                  <span className="font-bold text-amber-700 tabular-nums w-14 text-right">{lohnnebenkosten} %</span>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="label flex items-center gap-1.5 mb-0">
+                    Lohnnebenkosten
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setBreakdownOpen((o) => !o)}
+                    className="text-xs font-semibold text-amber-700 hover:text-amber-900"
+                  >
+                    {breakdownOpen ? 'Einfach' : 'Detailansicht'}
+                  </button>
                 </div>
-                <p className="text-xs text-gray-500 mt-2">Branchenüblich Bau: 70–90 % (SOKA-BAU + Sozialvers.)</p>
+
+                {!breakdownOpen ? (
+                  <>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="range"
+                        value={lohnnebenkosten}
+                        onChange={(e) => setLohnnebenkosten(parseFloat(e.target.value))}
+                        min={0}
+                        max={120}
+                        step={1}
+                        className="flex-1 accent-amber-600"
+                      />
+                      <span className="font-bold text-amber-700 tabular-nums w-14 text-right">{lohnnebenkosten} %</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">Branchenüblich Bau: 70–90 % (SOKA-BAU + Sozialvers.)</p>
+                  </>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex gap-2 mb-2">
+                      <button
+                        type="button"
+                        onClick={() => applyTarifgebiet('west')}
+                        className={cn(
+                          'btn btn-sm flex-1 justify-center',
+                          tarifgebiet === 'west' ? 'bg-amber-600 text-white hover:bg-amber-700' : 'btn-outline',
+                        )}
+                      >
+                        Tarifgebiet West
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => applyTarifgebiet('ost')}
+                        className={cn(
+                          'btn btn-sm flex-1 justify-center',
+                          tarifgebiet === 'ost' ? 'bg-amber-600 text-white hover:bg-amber-700' : 'btn-outline',
+                        )}
+                      >
+                        Tarifgebiet Ost
+                      </button>
+                    </div>
+                    <BreakdownRow label="Sozialvers. AG" value={bnkSv} onChange={setBnkSv} hint="KV+PV+RV+AV (~21 %)" />
+                    <BreakdownRow label="SOKA-BAU" value={bnkSoka} onChange={setBnkSoka} hint={`Tarif ${tarifgebiet === 'west' ? 'West 18,5 %' : 'Ost 16,5 %'}`} />
+                    <BreakdownRow label="Berufsgen. Bau" value={bnkBg} onChange={setBnkBg} hint="je Risikoklasse 3–7 %" />
+                    <BreakdownRow label="13. ME / Urlaub" value={bnkMonats13} onChange={setBnkMonats13} hint="13. Monat + Urlaubsgeld anteilig" />
+                    <BreakdownRow label="Sonstiges" value={bnkSonst} onChange={setBnkSonst} hint="Lohnfortz., Feiertage, Verm.bild." />
+                    <div className="flex justify-between pt-3 mt-3 border-t border-gray-200 text-sm">
+                      <span className="font-bold text-amber-900">Σ Lohnnebenkosten</span>
+                      <span className="font-extrabold text-amber-700 tabular-nums">{fmt(breakdownTotal, 1)} %</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="card-flat">
@@ -359,8 +434,42 @@ export default function Mittellohn() {
         </div>
       </section>
 
+      <AndereTools exclude="/tools/mittellohn/" />
       <CrossCta />
     </>
+  );
+}
+
+function BreakdownRow({
+  label,
+  value,
+  onChange,
+  hint,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  hint?: string;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between text-xs">
+        <span className="font-semibold text-gray-700">{label}</span>
+        <div className="inline-flex items-center gap-1">
+          <input
+            type="number"
+            value={value}
+            onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+            min={0}
+            max={50}
+            step={0.1}
+            className="w-16 px-2 py-1 text-right text-xs tabular-nums border border-gray-200 rounded focus:border-amber-500 focus:ring-0"
+          />
+          <span className="text-gray-400 w-3">%</span>
+        </div>
+      </div>
+      {hint && <p className="text-[11px] text-gray-400 mt-0.5">{hint}</p>}
+    </div>
   );
 }
 

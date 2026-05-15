@@ -1,8 +1,46 @@
 import { useState, useMemo } from 'react';
 import { Helmet } from 'react-helmet-async';
-import { ShieldCheck, Info, FileText, Shield, Banknote } from 'lucide-react';
+import { ShieldCheck, Info, FileText, Shield, Banknote, BarChart3 } from 'lucide-react';
 import { canonical } from '@/lib/seo';
+import { softwareApplicationSchema } from '@/lib/toolSchema';
+import AndereTools from '@/components/sections/AndereTools';
 import { CrossCta } from './Mittellohn';
+
+const SCENARIOS = [
+  {
+    key: 'konservativ' as const,
+    label: 'Konservativ',
+    desc: 'Worst-case-Annahmen für Risiko-averse Kalkulation.',
+    erfProz: 6,
+    gewProz: 6,
+    avalProz: 2.0,
+    erfMon: 24,
+    gewJahre: 5,
+    accent: 'gray',
+  },
+  {
+    key: 'marktueblich' as const,
+    label: 'Marktüblich',
+    desc: 'Branchen-Median für mittelständische GU/Bauunternehmen.',
+    erfProz: 5,
+    gewProz: 5,
+    avalProz: 1.5,
+    erfMon: 18,
+    gewJahre: 5,
+    accent: 'indigo',
+  },
+  {
+    key: 'optimal' as const,
+    label: 'Optimal',
+    desc: 'Best-Case bei sehr guter Bonität und niedrigen Sicherheits-Anforderungen.',
+    erfProz: 3,
+    gewProz: 3,
+    avalProz: 0.8,
+    erfMon: 12,
+    gewJahre: 3,
+    accent: 'emerald',
+  },
+];
 
 const TITLE = 'Bürgschafts-Rechner (VOB) | KALKU';
 const DESC =
@@ -45,6 +83,14 @@ export default function Buergschaft() {
         <title>{TITLE}</title>
         <meta name="description" content={DESC} />
         <link rel="canonical" href={canonical('/tools/buergschaft/')} />
+        <script type="application/ld+json">
+          {JSON.stringify(softwareApplicationSchema({
+            name: 'Bürgschafts-Rechner (VOB)',
+            description: DESC,
+            path: '/tools/buergschaft/',
+            featureList: ['VOB/B § 17', 'Vertragserfüllungs-Bürgschaft', 'Gewährleistungs-Bürgschaft', 'Avalprovision über Laufzeit', 'Szenario-Vergleich Konservativ/Marktüblich/Optimal'],
+          }))}
+        </script>
       </Helmet>
 
       <section className="section-tight bg-gradient-to-br from-indigo-50/40 to-white">
@@ -220,6 +266,51 @@ export default function Buergschaft() {
             </div>
           </div>
 
+          {/* SCENARIO COMPARISON */}
+          <div className="max-w-5xl mx-auto mt-10">
+            <div className="text-center mb-7">
+              <p className="text-xs uppercase tracking-[0.18em] font-bold text-gray-500 mb-2 inline-flex items-center gap-1.5">
+                <BarChart3 className="w-3.5 h-3.5" /> Szenario-Vergleich
+              </p>
+              <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">
+                Drei Szenarien für die gleiche Vertragssumme.
+              </h2>
+              <p className="text-sm text-gray-600 mt-2">
+                Was kosten Bürgschaften je nach Bonität, Marktlage und vereinbarten Sätzen?
+                Vertragssumme: <span className="font-semibold text-gray-900">{eur(vertragssumme, 0)}</span>
+              </p>
+            </div>
+            <div className="grid md:grid-cols-3 gap-4">
+              {SCENARIOS.map((s) => {
+                const erfBetrag = vertragssumme * (s.erfProz / 100);
+                const gewBetrag = vertragssumme * (s.gewProz / 100);
+                const erfAval = (erfBetrag * (s.avalProz / 100) * s.erfMon) / 12;
+                const gewAval = gewBetrag * (s.avalProz / 100) * s.gewJahre;
+                const total = erfAval + gewAval;
+                const accentClass = s.accent === 'emerald' ? 'border-emerald-300' : s.accent === 'indigo' ? 'border-indigo-300 ring-2 ring-indigo-100' : 'border-gray-200';
+                const totalClass = s.accent === 'emerald' ? 'text-emerald-700' : s.accent === 'indigo' ? 'text-indigo-700' : 'text-gray-700';
+                return (
+                  <div key={s.key} className={`bg-white border-2 rounded-lg p-5 ${accentClass}`}>
+                    <p className={`text-xs uppercase tracking-wider font-bold mb-1 ${totalClass}`}>
+                      {s.label}
+                    </p>
+                    <p className="text-xs text-gray-500 mb-4 leading-relaxed">{s.desc}</p>
+                    <ul className="space-y-1 text-xs text-gray-600 mb-4">
+                      <li>Erfüllung: <span className="font-semibold tabular-nums">{s.erfProz}%</span> · {s.erfMon} Mon</li>
+                      <li>Gewährleistung: <span className="font-semibold tabular-nums">{s.gewProz}%</span> · {s.gewJahre} Jahre</li>
+                      <li>Avalprovision: <span className="font-semibold tabular-nums">{s.avalProz}% p.a.</span></li>
+                    </ul>
+                    <div className="pt-4 border-t border-gray-100">
+                      <p className="text-[11px] uppercase tracking-wider font-bold text-gray-500 mb-1">Σ Aval-Kosten</p>
+                      <p className={`text-2xl font-extrabold tabular-nums ${totalClass}`}>{eur(total, 0)}</p>
+                      <p className="text-[11px] text-gray-400 mt-0.5">{fmt((total / vertragssumme) * 100)} % der Vertragssumme</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="max-w-3xl mx-auto mt-10 bg-indigo-50 border border-indigo-200 rounded-lg p-5">
             <p className="text-xs uppercase tracking-wider font-bold text-indigo-800 mb-2 inline-flex items-center gap-1.5">
               <Info className="w-3.5 h-3.5" /> Hinweis
@@ -235,6 +326,7 @@ export default function Buergschaft() {
         </div>
       </section>
 
+      <AndereTools exclude="/tools/buergschaft/" />
       <CrossCta />
     </>
   );

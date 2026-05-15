@@ -13,9 +13,12 @@ import {
   FileSpreadsheet,
   Sparkles,
   Shield,
+  Clipboard,
 } from 'lucide-react';
 import { canonical } from '@/lib/seo';
 import { cn } from '@/lib/utils';
+import { softwareApplicationSchema } from '@/lib/toolSchema';
+import AndereTools from '@/components/sections/AndereTools';
 
 type Row = {
   id: string;
@@ -207,6 +210,47 @@ export default function Kalkulator() {
     setRows([newRow()]);
   }
 
+  async function pasteFromClipboard() {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text.trim()) {
+        alert('Zwischenablage ist leer.');
+        return;
+      }
+      // Parse tab-separated (Excel) or semicolon-separated (CSV) rows
+      const sep = text.includes('\t') ? '\t' : ';';
+      const lines = text.split(/\r?\n/).filter((l) => l.trim());
+      const parsed: Row[] = lines.map((line, i) => {
+        const cells = line.split(sep).map((c) => c.trim().replace(/^"|"$/g, ''));
+        // Auto-detect: if first cell is a header, skip
+        return newRow({
+          pos: cells[0] || `${i + 1}`,
+          text: cells[1] || '',
+          einheit: cells[2] || 'St',
+          lohn: parseGermanNumber(cells[3]) || rows[0]?.lohn || 48,
+          zeit: parseGermanNumber(cells[4]) || 1,
+          material: parseGermanNumber(cells[5]) || 0,
+          zuschlag: parseGermanNumber(cells[6]) || rows[0]?.zuschlag || 14,
+          menge: parseGermanNumber(cells[7]) || 1,
+        });
+      });
+      // Drop the first row if it looks like a header (text in lohn column)
+      const firstLohn = parsed[0]?.lohn;
+      const headerLikely = firstLohn === 48 && (parsed[0]?.text.toLowerCase().includes('beschr') || parsed[0]?.text.toLowerCase().includes('lohn'));
+      const finalRows = headerLikely ? parsed.slice(1) : parsed;
+      if (finalRows.length === 0) {
+        alert('Keine Zeilen erkannt. Erwartet Tab- oder Semikolon-getrennte Daten.');
+        return;
+      }
+      const ok = window.confirm(
+        `${finalRows.length} Zeile(n) erkannt. Aktuelle Eingaben ersetzen?\n(Tipp: kopiere die Daten direkt aus Excel oder LibreOffice Calc.)`,
+      );
+      if (ok) setRows(finalRows);
+    } catch (err) {
+      alert('Zwischenablage nicht zugänglich. Erlaube Clipboard-Zugriff in deinem Browser, oder importiere via CSV.');
+    }
+  }
+
   function exportCsv() {
     const header = ['Pos.', 'Beschreibung', 'Einheit', 'Lohn EUR/h', 'Zeit h', 'Material EUR', 'Zuschlag %', 'Menge', 'EP EUR', 'GP EUR'];
     const lines = [header.join(';')];
@@ -289,6 +333,14 @@ export default function Kalkulator() {
         <title>{TITLE}</title>
         <meta name="description" content={DESC} />
         <link rel="canonical" href={canonical('/tools/kalkulator/')} />
+        <script type="application/ld+json">
+          {JSON.stringify(softwareApplicationSchema({
+            name: 'Position-Kalkulator',
+            description: DESC,
+            path: '/tools/kalkulator/',
+            featureList: ['EP/GP-Berechnung', 'Trade-Vorlagen GaLaBau/Tiefbau/Elektro/Hochbau', 'Excel + CSV Export', 'Auto-Save in Browser', 'Excel-Paste aus Zwischenablage'],
+          }))}
+        </script>
       </Helmet>
 
       {/* HERO */}
@@ -449,6 +501,9 @@ export default function Kalkulator() {
               <button type="button" onClick={addRow} className="btn btn-outline btn-sm">
                 <Plus className="w-4 h-4" /> Position
               </button>
+              <button type="button" onClick={pasteFromClipboard} className="btn btn-outline btn-sm" title="Strg+V aus Excel/Calc">
+                <Clipboard className="w-4 h-4" /> Aus Excel einfügen
+              </button>
               <button type="button" onClick={exportExcel} disabled={exportingExcel} className="btn btn-success btn-sm">
                 <FileSpreadsheet className="w-4 h-4" />
                 {exportingExcel ? 'Excel-Datei wird erstellt …' : 'Excel exportieren (.xlsx)'}
@@ -525,6 +580,8 @@ export default function Kalkulator() {
         </div>
       </section>
 
+      <AndereTools exclude="/tools/kalkulator/" />
+
       {/* CROSS-CTA */}
       <section className="section print:hidden">
         <div className="container-page">
@@ -546,6 +603,14 @@ export default function Kalkulator() {
       </section>
     </>
   );
+}
+
+/** Parse "12,50" or "12.50" or "1.234,56" -> 12.50 / 1234.56. */
+function parseGermanNumber(s: string | undefined): number {
+  if (!s) return NaN;
+  const cleaned = s.replace(/\s/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.');
+  const n = parseFloat(cleaned);
+  return isNaN(n) ? NaN : n;
 }
 
 function Th({ className, children }: { className?: string; children?: React.ReactNode }) {

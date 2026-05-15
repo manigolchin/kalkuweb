@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';
 import {
   Calendar,
@@ -8,9 +8,34 @@ import {
   Shield,
   Info,
   XCircle,
+  MapPin,
 } from 'lucide-react';
 import { canonical } from '@/lib/seo';
+import { softwareApplicationSchema } from '@/lib/toolSchema';
+import AndereTools from '@/components/sections/AndereTools';
 import { CrossCta } from './Mittellohn';
+
+const BUNDESLAENDER = [
+  { code: 'DE', name: 'Bundesweit (nur fed. Feiertage)' },
+  { code: 'BW', name: 'Baden-Württemberg' },
+  { code: 'BY', name: 'Bayern' },
+  { code: 'BE', name: 'Berlin' },
+  { code: 'BB', name: 'Brandenburg' },
+  { code: 'HB', name: 'Bremen' },
+  { code: 'HH', name: 'Hamburg' },
+  { code: 'HE', name: 'Hessen' },
+  { code: 'MV', name: 'Mecklenburg-Vorpommern' },
+  { code: 'NI', name: 'Niedersachsen' },
+  { code: 'NW', name: 'Nordrhein-Westfalen' },
+  { code: 'RP', name: 'Rheinland-Pfalz' },
+  { code: 'SL', name: 'Saarland' },
+  { code: 'SN', name: 'Sachsen' },
+  { code: 'ST', name: 'Sachsen-Anhalt' },
+  { code: 'SH', name: 'Schleswig-Holstein' },
+  { code: 'TH', name: 'Thüringen' },
+] as const;
+
+type LandCode = (typeof BUNDESLAENDER)[number]['code'];
 
 const TITLE = 'Submissions-Frist-Rechner | KALKU';
 const DESC =
@@ -42,7 +67,7 @@ function addDays(d: Date, days: number): Date {
   return r;
 }
 
-function getGermanHolidays(year: number): Set<string> {
+function getGermanHolidays(year: number, land: LandCode = 'DE'): Set<string> {
   const e = easterSunday(year);
   const list: Date[] = [
     new Date(year, 0, 1), // Neujahr
@@ -55,6 +80,22 @@ function getGermanHolidays(year: number): Set<string> {
     addDays(e, 39), // Christi Himmelfahrt
     addDays(e, 50), // Pfingstmontag
   ];
+
+  // Land-spezifische Feiertage
+  if (['BW', 'BY', 'ST'].includes(land)) list.push(new Date(year, 0, 6)); // Heilige Drei Könige
+  if (land === 'BE') list.push(new Date(year, 2, 8)); // Internat. Frauentag
+  if (land === 'MV' && year >= 2023) list.push(new Date(year, 2, 8));
+  if (['BW', 'BY', 'HE', 'NW', 'RP', 'SL'].includes(land)) list.push(addDays(e, 60)); // Fronleichnam
+  if (['BY', 'SL'].includes(land)) list.push(new Date(year, 7, 15)); // Mariä Himmelfahrt
+  if (['BB', 'MV', 'SN', 'ST', 'TH', 'HB', 'HH', 'NI', 'SH'].includes(land)) list.push(new Date(year, 9, 31)); // Reformationstag
+  if (['BW', 'BY', 'NW', 'RP', 'SL'].includes(land)) list.push(new Date(year, 10, 1)); // Allerheiligen
+  if (land === 'SN') {
+    // Buß- und Bettag — Mittwoch vor 23.11.
+    const ref = new Date(year, 10, 23);
+    const offset = (ref.getDay() + 4) % 7 || 7;
+    list.push(addDays(ref, -offset));
+  }
+
   return new Set(list.map((d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`));
 }
 
@@ -128,12 +169,20 @@ function downloadIcs(events: { title: string; date: Date; description: string }[
 }
 
 export default function FristRechner() {
-  const today = new Date();
-  const tomorrow = addDays(today, 14);
+  const initialToday = useMemo(() => new Date(), []);
+  const tomorrow = addDays(initialToday, 14);
   tomorrow.setHours(11, 0, 0, 0);
   const [date, setDate] = useState(tomorrow.toISOString().slice(0, 10));
   const [time, setTime] = useState('11:00');
   const [versandTage, setVersandTage] = useState(2);
+  const [land, setLand] = useState<LandCode>('SL');
+
+  // Live ticker — re-render every second so countdown stays accurate
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   const submissionsTermin = useMemo(() => {
     const [h, m] = time.split(':').map(Number);
@@ -144,18 +193,22 @@ export default function FristRechner() {
 
   const result = useMemo(() => {
     const holidays = new Set<string>();
-    const minYear = Math.min(today.getFullYear(), submissionsTermin.getFullYear());
-    const maxYear = Math.max(today.getFullYear(), submissionsTermin.getFullYear());
+    const minYear = Math.min(now.getFullYear(), submissionsTermin.getFullYear());
+    const maxYear = Math.max(now.getFullYear(), submissionsTermin.getFullYear());
     for (let y = minYear; y <= maxYear; y++) {
-      getGermanHolidays(y).forEach((h) => holidays.add(h));
+      getGermanHolidays(y, land).forEach((h) => holidays.add(h));
     }
-    const isPast = submissionsTermin <= today;
-    const workdaysLeft = isPast ? 0 : workdaysBetween(today, submissionsTermin, holidays);
-    const calendarDaysLeft = isPast ? 0 : Math.ceil((submissionsTermin.getTime() - today.getTime()) / 86400000);
+    const isPast = submissionsTermin <= now;
+    const workdaysLeft = isPast ? 0 : workdaysBetween(now, submissionsTermin, holidays);
+    const calendarDaysLeft = isPast ? 0 : Math.ceil((submissionsTermin.getTime() - now.getTime()) / 86400000);
     const versandLatest = previousWorkdays(submissionsTermin, versandTage, holidays);
     const bieterfragenLatest = previousWorkdays(submissionsTermin, 6, holidays);
-    return { isPast, workdaysLeft, calendarDaysLeft, versandLatest, bieterfragenLatest };
-  }, [submissionsTermin, today, versandTage]);
+    const msLeft = Math.max(0, submissionsTermin.getTime() - now.getTime());
+    const hoursLeft = Math.floor(msLeft / 3600000);
+    const minutesLeft = Math.floor((msLeft % 3600000) / 60000);
+    const secondsLeft = Math.floor((msLeft % 60000) / 1000);
+    return { isPast, workdaysLeft, calendarDaysLeft, versandLatest, bieterfragenLatest, hoursLeft, minutesLeft, secondsLeft };
+  }, [submissionsTermin, now, versandTage, land]);
 
   function exportCalendar() {
     downloadIcs([
@@ -198,6 +251,14 @@ export default function FristRechner() {
         <title>{TITLE}</title>
         <meta name="description" content={DESC} />
         <link rel="canonical" href={canonical('/tools/frist-rechner/')} />
+        <script type="application/ld+json">
+          {JSON.stringify(softwareApplicationSchema({
+            name: 'Submissions-Frist-Rechner',
+            description: DESC,
+            path: '/tools/frist-rechner/',
+            featureList: ['Werktage-Zähler', 'Bundesland-spezifische Feiertage', 'Bieterfragen-Frist VOB', 'ICS-Kalender-Export', 'Live-Countdown'],
+          }))}
+        </script>
       </Helmet>
 
       <section className="section-tight bg-gradient-to-br from-rose-50/40 to-white">
@@ -246,6 +307,25 @@ export default function FristRechner() {
                 </div>
               </div>
 
+              <div className="mt-4">
+                <label className="label inline-flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5" /> Bundesland (für korrekte Feiertage)
+                </label>
+                <select
+                  value={land}
+                  onChange={(e) => setLand(e.target.value as LandCode)}
+                  className="input"
+                >
+                  {BUNDESLAENDER.map((b) => (
+                    <option key={b.code} value={b.code}>{b.name}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1.5">
+                  Allerheiligen (1.11.) ist nur in BW/BY/NW/RP/SL ein Werktag-frei,
+                  Reformationstag (31.10.) in BB/MV/SN/ST/TH + (seit 2018) HB/HH/NI/SH.
+                </p>
+              </div>
+
               <div className="mt-6 pt-6 border-t border-gray-100">
                 <label className="label">Versand-Vorlauf in Werktagen</label>
                 <div className="flex items-center gap-3">
@@ -287,6 +367,11 @@ export default function FristRechner() {
                     <p className="text-sm opacity-90 mt-1">
                       Werktage bis Submission ({result.calendarDaysLeft} Kalendertage)
                     </p>
+                    {result.calendarDaysLeft <= 1 && (
+                      <p className="text-xs opacity-95 mt-3 tabular-nums font-mono bg-black/20 inline-block px-2 py-1 rounded">
+                        Live: {String(result.hoursLeft).padStart(2, '0')}:{String(result.minutesLeft).padStart(2, '0')}:{String(result.secondsLeft).padStart(2, '0')}
+                      </p>
+                    )}
                   </>
                 )}
               </div>
@@ -343,6 +428,7 @@ export default function FristRechner() {
         </div>
       </section>
 
+      <AndereTools exclude="/tools/frist-rechner/" />
       <CrossCta />
     </>
   );

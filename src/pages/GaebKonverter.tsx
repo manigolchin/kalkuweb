@@ -13,8 +13,11 @@ import {
   FileSpreadsheet,
   FileCheck2,
   Trash2,
+  Search,
 } from 'lucide-react';
 import { canonical } from '@/lib/seo';
+import { softwareApplicationSchema } from '@/lib/toolSchema';
+import AndereTools from '@/components/sections/AndereTools';
 import SectionHeader from '@/components/ui/SectionHeader';
 import FaqItem from '@/components/ui/FaqItem';
 
@@ -161,6 +164,7 @@ export default function GaebKonverter() {
   const [email, setEmail] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
   function reset() {
@@ -283,6 +287,14 @@ export default function GaebKonverter() {
         <title>{TITLE}</title>
         <meta name="description" content={DESC} />
         <link rel="canonical" href={canonical('/tools/gaeb-konverter/')} />
+        <script type="application/ld+json">
+          {JSON.stringify(softwareApplicationSchema({
+            name: 'GAEB-Konverter',
+            description: DESC,
+            path: '/tools/gaeb-konverter/',
+            featureList: ['GAEB DA XML 3.x (X81-X89)', 'GAEB ASCII (D81-D84)', 'Excel + CSV Export', 'Position-Suche', 'Format-Auto-Erkennung'],
+          }))}
+        </script>
       </Helmet>
 
       {/* HERO */}
@@ -424,43 +436,71 @@ export default function GaebKonverter() {
                 </div>
               </div>
 
-              {/* Position table */}
-              {parsed.positions.length > 0 ? (
-                <div className="card overflow-x-auto">
-                  <p className="text-xs uppercase tracking-wider font-bold text-gray-500 mb-3">
-                    Positionen-Vorschau · {parsed.positions.length} Einträge
-                  </p>
-                  <table className="min-w-full text-xs">
-                    <thead>
-                      <tr className="border-b-2 border-gray-200">
-                        <th className="text-left px-2 py-2 font-bold text-gray-500 uppercase tracking-wider w-24">Pos.</th>
-                        <th className="text-left px-2 py-2 font-bold text-gray-500 uppercase tracking-wider min-w-[280px]">Beschreibung</th>
-                        <th className="text-center px-2 py-2 font-bold text-gray-500 uppercase tracking-wider w-12">Einh.</th>
-                        <th className="text-right px-2 py-2 font-bold text-gray-500 uppercase tracking-wider w-20">Menge</th>
-                        <th className="text-right px-2 py-2 font-bold text-gray-500 uppercase tracking-wider w-20">EP €</th>
-                        <th className="text-right px-2 py-2 font-bold text-gray-500 uppercase tracking-wider w-24">GP €</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {parsed.positions.slice(0, 200).map((p, i) => (
-                        <tr key={i} className="border-b border-gray-100 hover:bg-gray-50/50 transition-colors">
-                          <td className="px-2 py-2 font-mono text-gray-500">{p.pos}</td>
-                          <td className="px-2 py-2 text-gray-700">{p.text}</td>
-                          <td className="px-2 py-2 text-center text-gray-500">{p.einheit}</td>
-                          <td className="px-2 py-2 text-right tabular-nums">{p.menge != null ? fmt(p.menge) : '—'}</td>
-                          <td className="px-2 py-2 text-right tabular-nums text-gray-700">{p.ep != null ? fmt(p.ep) : '—'}</td>
-                          <td className="px-2 py-2 text-right tabular-nums font-semibold text-primary-700">{p.gp != null ? fmt(p.gp) : '—'}</td>
+              {/* Position table with search */}
+              {parsed.positions.length > 0 ? (() => {
+                const q = searchQuery.trim().toLowerCase();
+                const filtered = q
+                  ? parsed.positions.filter((p) =>
+                      p.pos.toLowerCase().includes(q) || p.text.toLowerCase().includes(q),
+                    )
+                  : parsed.positions;
+                const visible = filtered.slice(0, 200);
+                return (
+                  <div className="card overflow-x-auto">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                      <p className="text-xs uppercase tracking-wider font-bold text-gray-500">
+                        Positionen-Vorschau · {q ? `${filtered.length} von ${parsed.positions.length}` : `${parsed.positions.length}`} Einträge
+                      </p>
+                      <div className="relative w-full sm:w-72">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <input
+                          type="search"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          placeholder="Pos. oder Text suchen…"
+                          className="input pl-9 text-sm"
+                        />
+                      </div>
+                    </div>
+                    <table className="min-w-full text-xs">
+                      <thead>
+                        <tr className="border-b-2 border-gray-200">
+                          <th className="text-left px-2 py-2 font-bold text-gray-500 uppercase tracking-wider w-24">Pos.</th>
+                          <th className="text-left px-2 py-2 font-bold text-gray-500 uppercase tracking-wider min-w-[280px]">Beschreibung</th>
+                          <th className="text-center px-2 py-2 font-bold text-gray-500 uppercase tracking-wider w-12">Einh.</th>
+                          <th className="text-right px-2 py-2 font-bold text-gray-500 uppercase tracking-wider w-20">Menge</th>
+                          <th className="text-right px-2 py-2 font-bold text-gray-500 uppercase tracking-wider w-20">EP €</th>
+                          <th className="text-right px-2 py-2 font-bold text-gray-500 uppercase tracking-wider w-24">GP €</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {parsed.positions.length > 200 && (
-                    <p className="text-xs text-gray-400 text-center mt-4">
-                      Vorschau zeigt erste 200 von {parsed.positions.length} Positionen — Excel-Export enthält alle.
-                    </p>
-                  )}
-                </div>
-              ) : (
+                      </thead>
+                      <tbody>
+                        {visible.map((p, i) => (
+                          <tr key={i} className="border-b border-gray-100 hover:bg-gray-50/50 transition-colors">
+                            <td className="px-2 py-2 font-mono text-gray-500">{p.pos}</td>
+                            <td className="px-2 py-2 text-gray-700">{p.text}</td>
+                            <td className="px-2 py-2 text-center text-gray-500">{p.einheit}</td>
+                            <td className="px-2 py-2 text-right tabular-nums">{p.menge != null ? fmt(p.menge) : '—'}</td>
+                            <td className="px-2 py-2 text-right tabular-nums text-gray-700">{p.ep != null ? fmt(p.ep) : '—'}</td>
+                            <td className="px-2 py-2 text-right tabular-nums font-semibold text-primary-700">{p.gp != null ? fmt(p.gp) : '—'}</td>
+                          </tr>
+                        ))}
+                        {filtered.length === 0 && (
+                          <tr>
+                            <td colSpan={6} className="px-2 py-6 text-center text-sm text-gray-500">
+                              Keine Positionen mit „{searchQuery}" gefunden.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                    {filtered.length > 200 && (
+                      <p className="text-xs text-gray-400 text-center mt-4">
+                        Vorschau zeigt erste 200 von {filtered.length} gefilterten Positionen — Excel-Export enthält alle.
+                      </p>
+                    )}
+                  </div>
+                );
+              })() : (
                 <div className="card text-center text-sm text-gray-500">
                   Keine Positionen erkannt. Möglich bei verschlüsselten oder beschädigten Dateien — bei
                   Bedarf nutzen Sie unten die Premium-Auswertung.
@@ -524,6 +564,8 @@ export default function GaebKonverter() {
           </div>
         </div>
       </section>
+
+      <AndereTools exclude="/tools/gaeb-konverter/" />
 
       {/* CROSS-CTA */}
       <section className="section">
