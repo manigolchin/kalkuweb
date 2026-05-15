@@ -12,6 +12,9 @@ import {
   ToolsIndex,
   GaebKonverter,
   Kalkulator,
+  Mittellohn,
+  FristRechner,
+  Buergschaft,
   BlogIndex,
   BlogPost,
   Kontakt,
@@ -45,6 +48,9 @@ export default function App() {
           <Route index element={<ToolsIndex />} />
           <Route path="gaeb-konverter" element={<GaebKonverter />} />
           <Route path="kalkulator" element={<Kalkulator />} />
+          <Route path="mittellohn" element={<Mittellohn />} />
+          <Route path="frist-rechner" element={<FristRechner />} />
+          <Route path="buergschaft" element={<Buergschaft />} />
         </Route>
 
         <Route path="blog">
