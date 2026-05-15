@@ -1,38 +1,37 @@
 import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
-import { ArrowRight, FileSpreadsheet, Calculator, ExternalLink } from 'lucide-react';
+import { ArrowRight, FileSpreadsheet, Calculator } from 'lucide-react';
 import { canonical } from '@/lib/seo';
-import { SERVICES } from '@/lib/constants';
 
 const TITLE = 'Kostenlose Tools für Bauunternehmer | KALKU';
 const DESC =
-  'Zwei kostenlose Tools für Bauunternehmer und Kalkulatoren: GAEB-Konverter (X83/X84/D83 → Excel/PDF) und Position-Kalkulator (EP/GP berechnen).';
+  'Zwei kostenlose Tools für Bauunternehmer und Kalkulatoren: GAEB-Konverter (X83/X84/D83 → Excel/CSV) und Position-Kalkulator (EP/GP berechnen, Excel-Export, Trade-Templates).';
 
 type Tool = {
   to: string;
-  external?: boolean;
   icon: typeof FileSpreadsheet;
   name: string;
   desc: string;
   badge: string;
+  features: string[];
 };
 
 const TOOLS: Tool[] = [
   {
-    to: SERVICES.gaebKonverterUrl,
-    external: true,
+    to: '/tools/gaeb-konverter/',
     icon: FileSpreadsheet,
     name: 'GAEB-Konverter',
-    desc: 'GAEB-Dateien (X80–X89, D81–D84, P83/P84) zu Excel, PDF oder ÖNorm A2063. Volle Konvertierung mit Validierung.',
-    badge: 'Live-Tool',
+    desc: 'GAEB-Dateien (X81–X89, D81–D84, P83/P84) im Browser öffnen, Positionen anzeigen, als Excel oder CSV exportieren.',
+    badge: 'Im Browser',
+    features: ['Datei verlässt nie Ihren PC', 'Excel + CSV Export', 'Format-Auto-Erkennung'],
   },
   {
-    to: SERVICES.kalkulatorUrl,
-    external: true,
+    to: '/tools/kalkulator/',
     icon: Calculator,
-    name: 'Online-Kalkulator',
-    desc: 'Komfortabler Online-Kalkulator mit Position-Liste, Zuschlagslogik, Variantenrechnung. Cloud-gespeichert.',
-    badge: 'Live-Tool',
+    name: 'Position-Kalkulator',
+    desc: 'EP/GP berechnen aus Lohn × Zeit + Material + Zuschlag. Mit Trade-Vorlagen (GaLaBau, Tiefbau, Elektro), Auto-Save und Excel-Export.',
+    badge: 'Im Browser',
+    features: ['Trade-Presets', 'Auto-Save', 'Excel + CSV Export'],
   },
 ];
 
@@ -57,14 +56,14 @@ export default function ToolsIndex() {
             </p>
           </div>
 
-          <div className="grid gap-6 md:grid-cols-2">
+          <div className="grid gap-6 md:grid-cols-2 max-w-5xl mx-auto">
             {TOOLS.map((t) => {
               const Icon = t.icon;
-              const inner = (
-                <>
-                  <div className="flex items-start justify-between mb-4">
+              return (
+                <Link key={t.to} to={t.to} className="card card-hover group flex flex-col">
+                  <div className="flex items-start justify-between mb-5">
                     <div className="w-12 h-12 rounded-xl bg-primary-100 flex items-center justify-center">
-                      <Icon className="w-6 h-6 text-primary-600" />
+                      <Icon className="w-6 h-6 text-primary-600" strokeWidth={2} />
                     </div>
                     <span className="badge badge-success">{t.badge}</span>
                   </div>
@@ -72,31 +71,25 @@ export default function ToolsIndex() {
                     {t.name}
                   </h2>
                   <p className="text-sm text-gray-600 mb-5">{t.desc}</p>
-                  <span className="inline-flex items-center gap-1 text-sm font-medium text-primary-600">
-                    Tool öffnen{' '}
-                    {t.external ? <ExternalLink className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />}
+                  <ul className="space-y-1.5 mb-6 flex-1">
+                    {t.features.map((f) => (
+                      <li key={f} className="text-xs text-gray-600 flex items-center gap-2">
+                        <span className="w-1 h-1 rounded-full bg-primary-500" aria-hidden />
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+                  <span className="inline-flex items-center gap-1 text-sm font-semibold text-primary-700 group-hover:text-primary-800">
+                    Tool öffnen
+                    <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
                   </span>
-                </>
-              );
-              return t.external ? (
-                <a
-                  key={t.to}
-                  href={t.to}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="card card-hover group"
-                >
-                  {inner}
-                </a>
-              ) : (
-                <Link key={t.to} to={t.to} className="card card-hover group">
-                  {inner}
                 </Link>
               );
             })}
           </div>
           <p className="text-xs text-gray-500 text-center mt-6">
-            Beide Tools laufen auf eigenen KALKU-Subdomains und werden separat gepflegt.
+            Beide Tools laufen vollständig in Ihrem Browser. Keine Anmeldung, keine Datenübertragung an
+            unsere Server (außer bei optionaler Premium-Auswertung per E-Mail).
           </p>
         </div>
       </section>
