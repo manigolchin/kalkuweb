@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Send, Mail, Phone, MapPin, Facebook, Instagram, MessageCircle } from 'lucide-react';
+import { Send, Mail, Phone, MapPin, Facebook, Instagram, MessageCircle, Linkedin, Music2 } from 'lucide-react';
 import { NAP, SERVICES } from '@/lib/constants';
 import { telHref, whatsappHref } from '@/lib/utils';
 
@@ -89,34 +89,26 @@ export default function Footer() {
           <p className="text-xs text-gray-500">
             © {year} {NAP.legalName}. USt-ID {NAP.vatId}.
           </p>
-          <div className="flex items-center gap-3">
-            <a
-              href={SERVICES.facebookUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="KALKU auf Facebook"
-              className="w-9 h-9 rounded-lg border border-gray-700 hover:border-white hover:bg-gray-800 flex items-center justify-center text-gray-400 hover:text-white transition-colors"
-            >
-              <Facebook className="w-4 h-4" />
-            </a>
-            <a
-              href={SERVICES.instagramUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="KALKU auf Instagram"
-              className="w-9 h-9 rounded-lg border border-gray-700 hover:border-white hover:bg-gray-800 flex items-center justify-center text-gray-400 hover:text-white transition-colors"
-            >
+          <div className="flex items-center gap-2">
+            <SocialIcon href={SERVICES.linkedinCompanyUrl} label="KALKU auf LinkedIn">
+              <Linkedin className="w-4 h-4" />
+            </SocialIcon>
+            <SocialIcon href={SERVICES.instagramUrl} label="KALKU auf Instagram (1.461 Follower)">
               <Instagram className="w-4 h-4" />
-            </a>
-            <a
+            </SocialIcon>
+            <SocialIcon href={SERVICES.facebookUrl} label="KALKU auf Facebook">
+              <Facebook className="w-4 h-4" />
+            </SocialIcon>
+            <SocialIcon href={SERVICES.tiktokUrl} label="KALKU auf TikTok">
+              <Music2 className="w-4 h-4" />
+            </SocialIcon>
+            <SocialIcon
               href={whatsappHref(NAP.whatsapp)}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="KALKU auf WhatsApp kontaktieren"
-              className="w-9 h-9 rounded-lg border border-gray-700 hover:border-emerald-500 hover:bg-emerald-900/20 flex items-center justify-center text-gray-400 hover:text-emerald-400 transition-colors"
+              label="KALKU auf WhatsApp kontaktieren"
+              accent="emerald"
             >
               <MessageCircle className="w-4 h-4" />
-            </a>
+            </SocialIcon>
           </div>
         </div>
       </div>
@@ -138,5 +130,34 @@ function FooterCol({ title, items }: { title: string; items: { to: string; label
         ))}
       </ul>
     </div>
+  );
+}
+
+function SocialIcon({
+  href,
+  label,
+  children,
+  accent = 'default',
+}: {
+  href: string;
+  label: string;
+  children: React.ReactNode;
+  accent?: 'default' | 'emerald';
+}) {
+  const cls =
+    accent === 'emerald'
+      ? 'border-gray-700 hover:border-emerald-500 hover:bg-emerald-900/20 text-gray-400 hover:text-emerald-400'
+      : 'border-gray-700 hover:border-white hover:bg-gray-800 text-gray-400 hover:text-white';
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={label}
+      title={label}
+      className={`w-9 h-9 rounded-lg border flex items-center justify-center transition-colors ${cls}`}
+    >
+      {children}
+    </a>
   );
 }
