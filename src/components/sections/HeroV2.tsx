@@ -24,13 +24,25 @@ import HeroLvCard from './HeroLvCard';
  */
 export default function HeroV2() {
   return (
-    <section className="relative bg-paper border-b border-gray-200 overflow-hidden">
-      {/* Subtle dot-grid background for editorial paper feel */}
-      <div className="absolute inset-0 bg-dot-grid opacity-60" aria-hidden />
+    <section className="relative bg-paper-editorial border-b border-gray-200 overflow-hidden">
+      {/* Layer 1 — dot-grid base for editorial paper feel */}
+      <div className="absolute inset-0 bg-dot-grid opacity-50" aria-hidden />
+
+      {/* Layer 2 — soft petrol halo top-right for depth */}
+      <span
+        aria-hidden
+        className="aurora-orb aurora-petrol w-[44rem] h-[44rem] -top-72 -right-32 opacity-25"
+      />
+      {/* Layer 3 — soft emerald halo bottom-left to anchor CTA */}
+      <span
+        aria-hidden
+        className="aurora-orb aurora-emerald w-[36rem] h-[36rem] -bottom-64 -left-32 opacity-20"
+      />
 
       {/* Top availability bar — pulses, signals "we are awake right now" */}
-      <div className="relative bg-gray-900 text-gray-100">
-        <div className="container-page py-2 sm:py-2.5 text-[12px] sm:text-[13px] flex flex-wrap items-center justify-between gap-x-6 gap-y-1">
+      <div className="relative bg-editorial-dark text-gray-100 isolate overflow-hidden">
+        <span aria-hidden className="absolute inset-x-0 bottom-0 edge-glow-top" />
+        <div className="relative container-page py-2 sm:py-2.5 text-[12px] sm:text-[13px] flex flex-wrap items-center justify-between gap-x-6 gap-y-1">
           <p className="inline-flex items-center gap-2">
             <span className="status-dot" aria-hidden />
             <span className="font-semibold">Antwort heute bis 18 Uhr — verbindlich zugesagt in 4 Stunden.</span>

@@ -41,14 +41,20 @@ const GUARANTEES = [
 
 export default function RiskReversal() {
   return (
-    <section className="section bg-gray-900 text-white">
-      <div className="container-page">
+    <section className="section relative isolate overflow-hidden bg-editorial-dark text-white">
+      {/* Atmospheric layers */}
+      <span aria-hidden className="aurora-orb aurora-emerald w-[44rem] h-[44rem] -top-72 -left-40 opacity-40" />
+      <span aria-hidden className="aurora-orb aurora-petrol w-[40rem] h-[40rem] -bottom-72 -right-40 opacity-40" />
+      <div aria-hidden className="absolute inset-0 bg-grid-fade" />
+      <div aria-hidden className="absolute inset-0 bg-noise" />
+
+      <div className="relative container-page">
         <div className="text-center mb-14 max-w-2xl mx-auto">
-          <p className="eyebrow-pill-dark mb-5">
-            <ShieldCheck className="w-3 h-3" /> Was wir Ihnen schriftlich geben
+          <p className="eyebrow-pill-dark mb-5 backdrop-blur-sm">
+            <ShieldCheck className="w-3 h-3 text-emerald-400" /> Was wir Ihnen schriftlich geben
           </p>
           <h2 className="display-h2 text-white mb-5">
-            Sechs Versprechen — schriftlich im Vertrag.
+            Sechs Versprechen — <span className="bg-gradient-to-r from-white to-primary-200 bg-clip-text text-transparent">schriftlich im Vertrag.</span>
           </h2>
           <p className="text-lg text-gray-300 leading-relaxed">
             Was uns von Software, KI-Plattformen und beratenden Stundenverkäufern unterscheidet — und warum
@@ -56,13 +62,16 @@ export default function RiskReversal() {
           </p>
         </div>
 
-        <div className="grid gap-px bg-gray-800 rounded-2xl overflow-hidden ring-1 ring-gray-800 max-w-6xl mx-auto md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-px bg-white/10 rounded-2xl overflow-hidden ring-1 ring-white/10 max-w-6xl mx-auto md:grid-cols-2 lg:grid-cols-3 shadow-2xl shadow-primary-900/40 backdrop-blur-sm">
           {GUARANTEES.map((g, i) => {
             const Icon = g.icon;
             return (
-              <div key={g.title} className="bg-gray-900 p-7 sm:p-8 flex flex-col">
+              <div
+                key={g.title}
+                className="relative bg-[#0a1828]/85 backdrop-blur-sm p-7 sm:p-8 flex flex-col group transition-colors hover:bg-[#0d2138]/85"
+              >
                 <div className="flex items-center gap-4 mb-5">
-                  <span className="inline-flex w-11 h-11 items-center justify-center rounded-xl bg-white/5 ring-1 ring-white/10">
+                  <span className="inline-flex w-11 h-11 items-center justify-center rounded-xl bg-emerald-500/10 ring-1 ring-emerald-400/20 group-hover:bg-emerald-500/15 transition-colors">
                     <Icon className="w-5 h-5 text-emerald-400" strokeWidth={2} />
                   </span>
                   <span className="text-[11px] uppercase tracking-[0.18em] text-gray-500 font-bold tabular-nums">

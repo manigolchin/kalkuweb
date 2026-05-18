@@ -222,6 +222,82 @@
   pointer-events: none;
 }
 
+/* === Editorial dark backgrounds (Stripe Press / Linear feel) ===
+ * Composed as layered absolute children inside a `relative overflow-hidden` parent.
+ * Use together: .bg-editorial-dark on parent, then aurora orbs + grid + noise inside.
+ */
+
+/* Deep navy/petrol base — not flat black, has petrol undertone */
+.bg-editorial-dark {
+  background-color: #0a1828;
+  background-image:
+    radial-gradient(ellipse 80% 60% at 50% 0%, rgba(26, 82, 118, 0.35), transparent 70%),
+    linear-gradient(180deg, #0a1828 0%, #061320 100%);
+}
+
+/* Grid that fades from center to edges via radial mask — feels architectural, not gridded */
+.bg-grid-fade {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 56px 56px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 85%);
+          mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 85%);
+}
+
+.bg-grid-fade-light {
+  background-image:
+    linear-gradient(rgba(15, 23, 42, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.07) 1px, transparent 1px);
+  background-size: 56px 56px;
+  -webkit-mask-image: radial-gradient(ellipse 75% 65% at 50% 50%, #000 25%, transparent 80%);
+          mask-image: radial-gradient(ellipse 75% 65% at 50% 50%, #000 25%, transparent 80%);
+}
+
+/* Aurora orbs — soft, blurred color clouds for depth */
+.aurora-orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(80px);
+  pointer-events: none;
+  opacity: 0.55;
+}
+.aurora-emerald {
+  background: radial-gradient(closest-side, rgba(39, 174, 96, 0.55), rgba(39, 174, 96, 0));
+}
+.aurora-petrol {
+  background: radial-gradient(closest-side, rgba(51, 133, 175, 0.5), rgba(51, 133, 175, 0));
+}
+.aurora-sky {
+  background: radial-gradient(closest-side, rgba(56, 189, 248, 0.4), rgba(56, 189, 248, 0));
+}
+
+/* Subtle SVG noise texture — gives a tactile, printed-paper grain */
+.bg-noise {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.5 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.35'/></svg>");
+  opacity: 0.06;
+  mix-blend-mode: overlay;
+}
+
+/* Soft spotlight — focuses content with vignette around it */
+.bg-spotlight {
+  background: radial-gradient(ellipse 60% 50% at 50% 50%, rgba(255, 255, 255, 0.04), transparent 70%);
+}
+
+/* Hairline glow border — top edge accent, like a horizon line */
+.edge-glow-top {
+  background: linear-gradient(90deg, transparent, rgba(39, 174, 96, 0.35) 30%, rgba(51, 133, 175, 0.35) 70%, transparent);
+  height: 1px;
+}
+
+/* Editorial paper background — warmer, with subtle vertical gradient + noise hint */
+.bg-paper-editorial {
+  background-color: #fbfaf7;
+  background-image:
+    radial-gradient(ellipse 90% 60% at 50% 0%, rgba(26, 82, 118, 0.05), transparent 60%),
+    linear-gradient(180deg, #fbfaf7 0%, #f5f3ed 100%);
+}
+
 .lv-grid {
   display: grid;
   grid-template-columns: 4.5rem minmax(0, 1fr) 4.5rem 5rem;
