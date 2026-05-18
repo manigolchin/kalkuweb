@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
-import { Menu, X, Send } from 'lucide-react';
+import { Menu, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const NAV_ITEMS = [
@@ -64,10 +64,21 @@ export default function Nav() {
     >
       <div className="container-page">
         <div className="flex items-center justify-between h-16">
-          <Link to="/" className="flex items-center gap-2.5" onClick={() => setOpen(false)}>
-            <div className="w-9 h-9 rounded-lg bg-primary-500 flex items-center justify-center">
-              <Send className="w-5 h-5 text-white" />
-            </div>
+          <Link
+            to="/"
+            className="flex items-center gap-2.5"
+            onClick={() => setOpen(false)}
+            aria-label="KALKU — zur Startseite"
+          >
+            <img
+              src="/logo.png"
+              alt=""
+              width="36"
+              height="36"
+              className="w-9 h-9 rounded-lg"
+              loading="eager"
+              fetchPriority="high"
+            />
             <div className="flex flex-col leading-none">
               <span className="font-bold text-gray-900">KALKU</span>
               <span className="text-xs text-gray-500">Baukalkulationen</span>

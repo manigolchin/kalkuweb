@@ -25,7 +25,7 @@ export function organizationGraph() {
         '@id': `${url}/#organization`,
         name: NAP.legalName,
         url,
-        logo: `${url}/favicon.svg`,
+        logo: `${url}/logo.png`,
         sameAs,
         contactPoint: [
           {
