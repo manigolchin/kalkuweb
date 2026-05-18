@@ -83,7 +83,7 @@ function getGermanHolidays(year: number, land: LandCode = 'DE'): Set<string> {
 
   // Land-spezifische Feiertage
   if (['BW', 'BY', 'ST'].includes(land)) list.push(new Date(year, 0, 6)); // Heilige Drei Könige
-  if (land === 'BE') list.push(new Date(year, 2, 8)); // Internat. Frauentag
+  if (land === 'BE' && year >= 2019) list.push(new Date(year, 2, 8)); // Internat. Frauentag (BE seit 2019)
   if (land === 'MV' && year >= 2023) list.push(new Date(year, 2, 8));
   if (['BW', 'BY', 'HE', 'NW', 'RP', 'SL'].includes(land)) list.push(addDays(e, 60)); // Fronleichnam
   if (['BY', 'SL'].includes(land)) list.push(new Date(year, 7, 15)); // Mariä Himmelfahrt
@@ -141,7 +141,7 @@ function fmtTime(d: Date): string {
   return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 }
 
-function downloadIcs(events: { title: string; date: Date; description: string }[]) {
+function downloadIcs(events: { title: string; date: Date; description: string; type: string }[]) {
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
@@ -150,8 +150,9 @@ function downloadIcs(events: { title: string; date: Date; description: string }[
   ];
   events.forEach((ev) => {
     const dt = ev.date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+    const dateISO = ev.date.toISOString().slice(0, 10);
     lines.push('BEGIN:VEVENT');
-    lines.push(`UID:${Math.random().toString(36).slice(2)}@kalku.de`);
+    lines.push(`UID:${dateISO}-${ev.type}@kalku.de`);
     lines.push(`DTSTAMP:${dt}`);
     lines.push(`DTSTART:${dt}`);
     lines.push(`SUMMARY:${ev.title}`);
@@ -187,9 +188,11 @@ export default function FristRechner() {
   const submissionsTermin = useMemo(() => {
     const [h, m] = time.split(':').map(Number);
     const d = new Date(date);
-    d.setHours(h, m, 0, 0);
+    d.setHours(h || 0, m || 0, 0, 0);
     return d;
   }, [date, time]);
+
+  const dateValid = !isNaN(submissionsTermin.getTime());
 
   const result = useMemo(() => {
     const holidays = new Set<string>();
@@ -215,16 +218,19 @@ export default function FristRechner() {
       {
         title: 'Submissionstermin',
         date: submissionsTermin,
+        type: 'submission',
         description: `Submissions-Termin der Vergabestelle. Spätestens jetzt müssen alle Unterlagen vorliegen.`,
       },
       {
         title: 'Spätester Versand-Termin',
         date: result.versandLatest,
+        type: 'versand',
         description: `Letzter empfohlener Versandtag (${versandTage} Werktage Vorlauf), damit Postweg sicher reicht.`,
       },
       {
         title: 'Bieterfragen-Frist (VOB)',
         date: result.bieterfragenLatest,
+        type: 'bieterfragen',
         description: `Spätestens jetzt sollten Bieterfragen an die Vergabestelle gestellt sein (mindestens 6 Werktage vor Submission gem. VOB-Praxis).`,
       },
     ]);
@@ -352,6 +358,16 @@ export default function FristRechner() {
 
             {/* Result */}
             <div className="space-y-4">
+              {!dateValid && (
+                <div className="rounded-lg border-2 border-rose-300 bg-rose-50 p-5 text-rose-900">
+                  <p className="font-bold mb-1 inline-flex items-center gap-1.5">
+                    <AlertCircle className="w-4 h-4" /> Ungültiges Datum
+                  </p>
+                  <p className="text-sm">Bitte geben Sie ein gültiges Datum und eine Uhrzeit für den Submissionstermin ein.</p>
+                </div>
+              )}
+              {dateValid && (
+              <>
               <div className={`rounded-lg p-6 border-2 ${u.border} ${u.bg} ${u.text}`}>
                 <div className="flex items-center gap-2 mb-3">
                   {result.isPast ? <XCircle className="w-5 h-5" /> : <Clock className="w-5 h-5" />}
@@ -392,6 +408,9 @@ export default function FristRechner() {
                 <p className="text-xs text-gray-500 mt-1">
                   6 Werktage vor Submission — danach typischerweise keine bindenden Antworten mehr
                 </p>
+                <div className="mt-4 rounded-md bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900">
+                  <strong>Hinweis:</strong> Diese 6-Werktage-Empfehlung folgt der gängigen Praxis nach VOB/A §12a (i.V.m. EU-RL 2014/24). Bei besonderer Dringlichkeit oder im Verhandlungsverfahren können kürzere Fristen gelten. Maßgeblich ist die Frist in der konkreten Vergabeunterlage.
+                </div>
               </div>
 
               <div className="card-flat">
@@ -400,6 +419,8 @@ export default function FristRechner() {
                 </p>
                 <p className="font-bold text-gray-900">{fmtDate(submissionsTermin)} um {fmtTime(submissionsTermin)} Uhr</p>
               </div>
+              </>
+              )}
             </div>
           </div>
 

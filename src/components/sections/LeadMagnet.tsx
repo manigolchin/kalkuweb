@@ -1,16 +1,26 @@
 import { useState, useId } from 'react';
 import { Download, Mail, CheckCircle2, FileText } from 'lucide-react';
 
+const LEAD_KEY = 'kalku.leadMagnetChecklist';
+
 export default function LeadMagnet() {
   const [email, setEmail] = useState('');
+  const [consent, setConsent] = useState(false);
   const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
   const formId = useId();
+  const consentId = useId();
 
-  function submit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!email.includes('@')) return;
-    // TODO Phase 5 backend: POST /api/forms/submit type=lead-magnet-checklist
+    if (!email.includes('@') || !consent) return;
+    setSending(true);
+    localStorage.setItem(LEAD_KEY, JSON.stringify({ email, ts: Date.now() }));
+    const subject = encodeURIComponent('Checkliste-Anfrage über kalku.de');
+    const body = encodeURIComponent(`Checkliste-Anfrage\n\nEmail: ${email}\n`);
+    window.location.href = `mailto:it@kalku.de?subject=${subject}&body=${body}`;
     setSent(true);
+    setSending(false);
   }
 
   return (
@@ -73,25 +83,51 @@ export default function LeadMagnet() {
                 </p>
               </div>
             ) : (
-              <form onSubmit={submit} className="flex flex-col sm:flex-row gap-3 max-w-md mb-4">
-                <label htmlFor={formId} className="sr-only">
-                  E-Mail-Adresse
-                </label>
-                <div className="relative flex-1">
-                  <Mail className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    id={formId}
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="ihre@firma.de"
-                    className="input pl-10"
-                  />
+              <form onSubmit={handleSubmit} className="max-w-md mb-4">
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <label htmlFor={formId} className="sr-only">
+                    E-Mail-Adresse
+                  </label>
+                  <div className="relative flex-1">
+                    <Mail className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      id={formId}
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="ihre@firma.de"
+                      className="input pl-10"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={sending || !consent}
+                    className="btn btn-success disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    <Download className="w-4 h-4" /> Anfordern
+                  </button>
                 </div>
-                <button type="submit" className="btn btn-success">
-                  <Download className="w-4 h-4" /> Anfordern
-                </button>
+                <label
+                  htmlFor={consentId}
+                  className="flex items-start gap-2 text-sm text-gray-700 mt-3"
+                >
+                  <input
+                    id={consentId}
+                    type="checkbox"
+                    checked={consent}
+                    onChange={(e) => setConsent(e.target.checked)}
+                    required
+                    className="mt-1"
+                  />
+                  <span>
+                    Ich habe die{' '}
+                    <a href="/datenschutz/" className="underline">
+                      Datenschutzerklärung
+                    </a>{' '}
+                    zur Kenntnis genommen.
+                  </span>
+                </label>
               </form>
             )}
 

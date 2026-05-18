@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { Menu, X, Send } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -15,6 +15,9 @@ const NAV_ITEMS = [
 export default function Nav() {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const firstLinkRef = useRef<HTMLAnchorElement>(null);
+  const panelId = useId();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 4);
@@ -22,6 +25,35 @@ export default function Nav() {
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
+
+  // Mobile menu: body-scroll lock, Escape to close, focus restore on close
+  useEffect(() => {
+    if (!open) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  // When the drawer opens, move focus to the first link inside it.
+  // When it closes, restore focus to the trigger button.
+  useEffect(() => {
+    if (open) {
+      // Defer one tick so the link is in the DOM
+      const t = window.setTimeout(() => {
+        firstLinkRef.current?.focus();
+      }, 0);
+      return () => window.clearTimeout(t);
+    } else {
+      triggerRef.current?.focus();
+    }
+  }, [open]);
 
   return (
     <nav
@@ -63,41 +95,58 @@ export default function Nav() {
           </div>
 
           <button
+            ref={triggerRef}
             type="button"
             className="md:hidden p-3 -mr-3 text-gray-700 min-w-[44px] min-h-[44px] flex items-center justify-center"
             onClick={() => setOpen((o) => !o)}
             aria-label={open ? 'Menü schließen' : 'Menü öffnen'}
             aria-expanded={open}
+            aria-controls={panelId}
           >
             {open ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
           </button>
         </div>
 
         {open && (
-          <div className="md:hidden border-t border-gray-100 py-3">
-            {NAV_ITEMS.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                onClick={() => setOpen(false)}
-                className={({ isActive }) =>
-                  cn(
-                    'block px-3 py-2.5 rounded-lg text-base font-medium',
-                    isActive ? 'text-primary-600 bg-primary-50' : 'text-gray-700 hover:bg-gray-50',
-                  )
-                }
-              >
-                {item.label}
-              </NavLink>
-            ))}
-            <Link
-              to="/kontakt/"
+          <>
+            {/* Backdrop — click to close */}
+            <div
+              className="md:hidden fixed inset-0 top-16 z-40 bg-black/30"
               onClick={() => setOpen(false)}
-              className="btn btn-success w-full justify-center mt-3"
+              aria-hidden="true"
+            />
+            <div
+              id={panelId}
+              className="md:hidden relative z-50 border-t border-gray-100 py-3 bg-white"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Hauptnavigation"
             >
-              Erstgespräch vereinbaren
-            </Link>
-          </div>
+              {NAV_ITEMS.map((item, idx) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  ref={idx === 0 ? firstLinkRef : undefined}
+                  onClick={() => setOpen(false)}
+                  className={({ isActive }) =>
+                    cn(
+                      'block px-3 py-2.5 rounded-lg text-base font-medium',
+                      isActive ? 'text-primary-600 bg-primary-50' : 'text-gray-700 hover:bg-gray-50',
+                    )
+                  }
+                >
+                  {item.label}
+                </NavLink>
+              ))}
+              <Link
+                to="/kontakt/"
+                onClick={() => setOpen(false)}
+                className="btn btn-success w-full justify-center mt-3"
+              >
+                Erstgespräch vereinbaren
+              </Link>
+            </div>
+          </>
         )}
       </div>
     </nav>

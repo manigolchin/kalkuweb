@@ -1,7 +1,7 @@
 import { useParams, Navigate, Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { ArrowRight, CheckCircle2 } from 'lucide-react';
-import { canonical } from '@/lib/seo';
+import { canonical, faqPageSchema, breadcrumbSchema } from '@/lib/seo';
 import { TRADES } from '@/lib/constants';
 import SectionHeader from '@/components/ui/SectionHeader';
 import FaqItem from '@/components/ui/FaqItem';
@@ -78,6 +78,16 @@ export default function Gewerk() {
         <title>{title}</title>
         <meta name="description" content={description} />
         <link rel="canonical" href={canonical(`/leistungen/${trade.slug}/`)} />
+        <script type="application/ld+json">{JSON.stringify(faqPageSchema(FAQ_GENERIC))}</script>
+        <script type="application/ld+json">
+          {JSON.stringify(
+            breadcrumbSchema([
+              { name: 'Start', path: '/' },
+              { name: 'Leistungen', path: '/leistungen/' },
+              { name: trade.name, path: `/leistungen/${trade.slug}/` },
+            ])
+          )}
+        </script>
       </Helmet>
 
       {/* HERO */}

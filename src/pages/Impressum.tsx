@@ -1,3 +1,8 @@
+// HINWEIS (intern): Dieses Impressum ist eine Vorlage. Vor dem Produktiv-Cutover
+// (kalku.de) bitte von einem Anwalt prüfen lassen — insbesondere §18 MStV-Pflicht
+// (sobald journalistisch-redaktionelle Inhalte unter /blog/ veröffentlicht werden),
+// Handelsregister-/Berufshaftpflicht-Angaben (sofern zutreffend) und
+// Streitschlichtungs-Klausel.
 import { Helmet } from 'react-helmet-async';
 import { canonical } from '@/lib/seo';
 import { NAP } from '@/lib/constants';
@@ -43,18 +48,30 @@ export default function Impressum() {
             <h2>Umsatzsteuer-ID</h2>
             <p>USt-ID nach §27a UStG: {NAP.vatId}</p>
 
+            <h2>Verantwortlich für den Inhalt nach §18 Abs. 2 MStV</h2>
+            <p>
+              Alaatdin Coksari
+              <br />
+              {NAP.street}
+              <br />
+              {NAP.postalCode} {NAP.city}
+            </p>
+
             <h2>EU-Streitschlichtung</h2>
             <p>
               Die Europäische Kommission stellt eine Plattform zur Online-Streitbeilegung (OS) bereit:{' '}
               <a href="https://ec.europa.eu/consumers/odr" target="_blank" rel="noopener noreferrer">
                 https://ec.europa.eu/consumers/odr
               </a>
-              . Wir sind nicht bereit oder verpflichtet, an Streitbeilegungsverfahren vor einer
-              Verbraucherschlichtungsstelle teilzunehmen.
+              .
             </p>
 
-            <p className="text-sm text-gray-500 mt-12">
-              Vollständig juristisch geprüfte Fassung folgt in Phase 5 (Pre-Launch-QA).
+            <h2>Verbraucherstreitbeilegung / Universalschlichtungsstelle</h2>
+            <p>
+              Hinweis nach §36 VSBG: Wir sind zur Teilnahme an einem Streitbeilegungsverfahren
+              vor einer Verbraucherschlichtungsstelle weder bereit noch verpflichtet. KALKU
+              richtet sich ausschließlich an Unternehmer im Sinne des §14 BGB; ein
+              Verbrauchergeschäft kommt nicht zustande.
             </p>
           </div>
         </div>

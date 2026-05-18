@@ -24,14 +24,15 @@ export default function Kontakt() {
         id="anfrage-formular"
         className="relative scroll-mt-24 py-16 sm:py-24 bg-gradient-to-br from-primary-50 via-white to-gray-50"
       >
+        <div id="termin" className="scroll-mt-24" />
         <div className="container-page">
           <div className="text-center max-w-2xl mx-auto mb-10">
             <p className="eyebrow mb-3">jetzt starten</p>
             <h1 className="text-4xl sm:text-5xl font-bold tracking-tight text-gray-900 mb-4 leading-tight">
-              Du kalkulierst noch alles selbst?
+              Sie kalkulieren noch alles selbst?
             </h1>
             <p className="text-lg text-gray-600">
-              Lass uns in 5 Minuten besprechen, wie wir deine Kalkulationsabteilung entlasten können.
+              Lassen Sie uns in 5 Minuten besprechen, wie wir Ihre Kalkulationsabteilung entlasten können.
             </p>
           </div>
           <MultiStepForm />
@@ -44,7 +45,7 @@ export default function Kontakt() {
           <SectionHeader
             eyebrow="Oder direkt"
             title="Lieber persönlich? Geht auch."
-            subtitle="Telefon, WhatsApp oder E-Mail — wähle den Weg, der dir am liebsten ist."
+            subtitle="Telefon, WhatsApp oder E-Mail — wählen Sie den Weg, der Ihnen am liebsten ist."
           />
           <div className="grid gap-5 sm:grid-cols-3 max-w-4xl mx-auto">
             <a href={telHref(NAP.phone)} className="card card-hover text-center">

@@ -97,7 +97,7 @@ export default function Home() {
               </div>
               <p className="mt-4 text-xs text-gray-500 inline-flex items-center gap-1.5">
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Antwort werktags binnen 4 Stunden — schriftlich garantiert.
+                Antwort werktags binnen 4 Stunden — verbindlich zugesagt.
               </p>
             </div>
             <HeroMockup />

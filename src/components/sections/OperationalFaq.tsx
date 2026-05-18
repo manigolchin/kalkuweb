@@ -1,5 +1,7 @@
+import { Helmet } from 'react-helmet-async';
 import SectionHeader from '@/components/ui/SectionHeader';
 import FaqItem from '@/components/ui/FaqItem';
+import { faqPageSchema } from '@/lib/seo';
 
 const FAQ = [
   {
@@ -31,6 +33,9 @@ const FAQ = [
 export default function OperationalFaq() {
   return (
     <section className="section">
+      <Helmet>
+        <script type="application/ld+json">{JSON.stringify(faqPageSchema(FAQ))}</script>
+      </Helmet>
       <div className="container-page">
         <SectionHeader
           eyebrow="Häufige Fragen"

@@ -294,3 +294,28 @@
     transform: rotate(360deg);
   }
 }
+
+/* === Global a11y / typography hardening === */
+
+/* Honor OS-level reduced-motion preference for every animation & transition */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Long German compounds — allow hyphenation in headings */
+h1, h2, h3, h4 {
+  hyphens: auto;
+  -webkit-hyphens: auto;
+}
+
+/* Prevent horizontal overflow from long URLs / unbroken strings in copy */
+p, li {
+  overflow-wrap: anywhere;
+}

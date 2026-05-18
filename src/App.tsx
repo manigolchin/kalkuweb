@@ -1,72 +1,73 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { Layout } from '@/components/layout';
-import {
-  Home,
-  NeuLanding,
-  LeistungenIndex,
-  Gewerk,
-  Ablauf,
-  Konditionen,
-  UeberUns,
-  ReferenzenIndex,
-  Referenz,
-  ToolsIndex,
-  GaebKonverter,
-  Kalkulator,
-  Mittellohn,
-  FristRechner,
-  Buergschaft,
-  BlogIndex,
-  BlogPost,
-  Kontakt,
-  Impressum,
-  Datenschutz,
-  AGB,
-  NotFound,
-} from '@/pages';
+import { Home, NotFound } from '@/pages';
+
+// Lazy: alle Detail- und Tool-Pages (Initial-JS reduzieren)
+const NeuLanding = lazy(() => import('@/pages/NeuLanding'));
+const LeistungenIndex = lazy(() => import('@/pages/LeistungenIndex'));
+const Gewerk = lazy(() => import('@/pages/Gewerk'));
+const Ablauf = lazy(() => import('@/pages/Ablauf'));
+const Konditionen = lazy(() => import('@/pages/Konditionen'));
+const UeberUns = lazy(() => import('@/pages/UeberUns'));
+const ReferenzenIndex = lazy(() => import('@/pages/ReferenzenIndex'));
+const ToolsIndex = lazy(() => import('@/pages/ToolsIndex'));
+const GaebKonverter = lazy(() => import('@/pages/GaebKonverter'));
+const Kalkulator = lazy(() => import('@/pages/Kalkulator'));
+const Mittellohn = lazy(() => import('@/pages/Mittellohn'));
+const FristRechner = lazy(() => import('@/pages/FristRechner'));
+const Buergschaft = lazy(() => import('@/pages/Buergschaft'));
+const BlogIndex = lazy(() => import('@/pages/BlogIndex'));
+const BlogPost = lazy(() => import('@/pages/BlogPost'));
+const Kontakt = lazy(() => import('@/pages/Kontakt'));
+const Impressum = lazy(() => import('@/pages/Impressum'));
+const Datenschutz = lazy(() => import('@/pages/Datenschutz'));
+const AGB = lazy(() => import('@/pages/AGB'));
 
 export default function App() {
   return (
-    <Routes>
-      <Route element={<Layout />}>
-        <Route index element={<Home />} />
-        <Route path="neu" element={<NeuLanding />} />
+    <Suspense fallback={null}>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route index element={<Home />} />
+          <Route path="neu" element={<NeuLanding />} />
 
-        <Route path="leistungen">
-          <Route index element={<LeistungenIndex />} />
-          <Route path=":slug" element={<Gewerk />} />
+          <Route path="leistungen">
+            <Route index element={<LeistungenIndex />} />
+            <Route path=":slug" element={<Gewerk />} />
+          </Route>
+
+          <Route path="ablauf" element={<Ablauf />} />
+          <Route path="konditionen" element={<Konditionen />} />
+          <Route path="ueber-uns" element={<UeberUns />} />
+
+          <Route path="referenzen">
+            <Route index element={<ReferenzenIndex />} />
+            {/* /referenzen/:slug entfernt (Placeholder-Stub) – faellt auf NotFound */}
+          </Route>
+
+          <Route path="tools">
+            <Route index element={<ToolsIndex />} />
+            <Route path="gaeb-konverter" element={<GaebKonverter />} />
+            <Route path="kalkulator" element={<Kalkulator />} />
+            <Route path="mittellohn" element={<Mittellohn />} />
+            <Route path="frist-rechner" element={<FristRechner />} />
+            <Route path="buergschaft" element={<Buergschaft />} />
+          </Route>
+
+          <Route path="blog">
+            <Route index element={<BlogIndex />} />
+            <Route path=":slug" element={<BlogPost />} />
+          </Route>
+
+          <Route path="kontakt" element={<Kontakt />} />
+          <Route path="impressum" element={<Impressum />} />
+          <Route path="datenschutz" element={<Datenschutz />} />
+          <Route path="agb" element={<AGB />} />
+
+          <Route path="*" element={<NotFound />} />
         </Route>
-
-        <Route path="ablauf" element={<Ablauf />} />
-        <Route path="konditionen" element={<Konditionen />} />
-        <Route path="ueber-uns" element={<UeberUns />} />
-
-        <Route path="referenzen">
-          <Route index element={<ReferenzenIndex />} />
-          <Route path=":slug" element={<Referenz />} />
-        </Route>
-
-        <Route path="tools">
-          <Route index element={<ToolsIndex />} />
-          <Route path="gaeb-konverter" element={<GaebKonverter />} />
-          <Route path="kalkulator" element={<Kalkulator />} />
-          <Route path="mittellohn" element={<Mittellohn />} />
-          <Route path="frist-rechner" element={<FristRechner />} />
-          <Route path="buergschaft" element={<Buergschaft />} />
-        </Route>
-
-        <Route path="blog">
-          <Route index element={<BlogIndex />} />
-          <Route path=":slug" element={<BlogPost />} />
-        </Route>
-
-        <Route path="kontakt" element={<Kontakt />} />
-        <Route path="impressum" element={<Impressum />} />
-        <Route path="datenschutz" element={<Datenschutz />} />
-        <Route path="agb" element={<AGB />} />
-
-        <Route path="*" element={<NotFound />} />
-      </Route>
-    </Routes>
+      </Routes>
+    </Suspense>
   );
 }

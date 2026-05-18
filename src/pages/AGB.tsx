@@ -1,3 +1,8 @@
+// HINWEIS (intern): Diese AGB sind eine Vorlage und MUSS vor dem Produktiv-Cutover
+// (kalku.de) von einem Anwalt (Fachgebiet Bau-/Vergaberecht) final geprüft werden.
+// Insbesondere: §14-BGB-Eingrenzung B2B-only, Haftungsklauseln nach §307 BGB
+// (AGB-Inhaltskontrolle), Erfolgsprovisionsregelung, Loyalitätsversprechen und
+// Vollmacht-Klausel.
 import { Helmet } from 'react-helmet-async';
 import { canonical } from '@/lib/seo';
 import { NAP } from '@/lib/constants';
@@ -18,10 +23,7 @@ export default function AGB() {
       <section className="section">
         <div className="container-prose">
           <h1 className="text-4xl font-bold text-gray-900 mb-2">Allgemeine Geschäftsbedingungen</h1>
-          <p className="text-sm text-gray-500 mb-10">
-            Stand: Mai 2026. Vor Vertragsunterzeichnung wird die jeweils aktuelle Fassung
-            individuell zugesandt und ist Bestandteil des Auftrags.
-          </p>
+          <p className="text-sm text-gray-500 mb-10">Stand: Mai 2026.</p>
 
           <div className="prose prose-gray max-w-none">
             <h2>§1 Geltungsbereich</h2>
@@ -32,6 +34,13 @@ export default function AGB() {
               von Baukalkulationsdienstleistungen, einschließlich Mengenermittlung,
               EFB-Formblatt-Erstellung, Materialpreisrecherche und fristgerechter Einreichung von
               Angeboten im Vergabeverfahren.
+            </p>
+            <p>
+              <strong>Unternehmer i.S.d. §14 BGB</strong>: Der Auftraggeber handelt
+              ausschließlich als Unternehmer im Sinne des §14 BGB. Ein Verbrauchergeschäft
+              kommt nicht zustande. Ein Widerrufsrecht gemäß §§312g, 355 BGB besteht nicht.
+              Abweichende Geschäftsbedingungen des Auftraggebers werden nicht Vertragsbestandteil,
+              es sei denn, KALKU stimmt ihrer Geltung ausdrücklich in Textform zu.
             </p>
 
             <h2>§2 Vertragsgegenstand</h2>
@@ -55,6 +64,13 @@ export default function AGB() {
               Auftragssumme (netto) fällig. Die Erfolgsprovision wird mit Bestandskraft des
               Zuschlags fällig.
             </p>
+            <p>
+              Rechnungen sind innerhalb von <strong>14 Tagen ab Rechnungsdatum</strong> ohne
+              Abzug zur Zahlung fällig. Bei Zahlungsverzug gelten die gesetzlichen
+              Verzugszinsen gemäß §288 Abs. 2 BGB (Basiszinssatz zzgl. 9 Prozentpunkte) sowie
+              die Pauschale gemäß §288 Abs. 5 BGB in Höhe von 40 €. Sämtliche genannten Preise
+              verstehen sich netto zuzüglich der jeweils gesetzlichen Umsatzsteuer.
+            </p>
 
             <h2>§4 Vergütung — Monatspauschale (PAKET M / PAKET L)</h2>
             <p>
@@ -67,6 +83,13 @@ export default function AGB() {
             <p>
               Bei erteiltem Zuschlag wird eine reduzierte Erfolgsprovision fällig: 3,9 % bei
               PAKET M, 2,9 % bei PAKET L (jeweils netto vom Auftragsvolumen).
+            </p>
+            <p>
+              Rechnungen sind innerhalb von <strong>14 Tagen ab Rechnungsdatum</strong> ohne
+              Abzug zur Zahlung fällig. Bei Zahlungsverzug gelten die gesetzlichen
+              Verzugszinsen gemäß §288 Abs. 2 BGB (Basiszinssatz zzgl. 9 Prozentpunkte) sowie
+              die Pauschale gemäß §288 Abs. 5 BGB in Höhe von 40 €. Sämtliche genannten Preise
+              verstehen sich netto zuzüglich der jeweils gesetzlichen Umsatzsteuer.
             </p>
 
             <h2>§5 Laufzeit und Kündigung</h2>
@@ -145,11 +168,12 @@ export default function AGB() {
               UN-Kaufrechts.
             </p>
 
-            <hr />
-            <p className="text-sm text-gray-500">
-              Diese AGB-Fassung ist eine Standard-Vorlage. Vor Vertragsunterzeichnung wird der
-              individuelle, ggf. abweichende Vertragstext gesondert ausgefertigt und mit dem
-              Auftraggeber abgestimmt.
+            <h2>§14 Datenschutz</h2>
+            <p>
+              Die Verarbeitung personenbezogener Daten im Rahmen der Geschäftsanbahnung und
+              Vertragsdurchführung erfolgt ausschließlich auf Grundlage der DSGVO und des
+              BDSG. Es gilt unsere Datenschutzerklärung unter{' '}
+              <a href="/datenschutz/">/datenschutz/</a>.
             </p>
           </div>
         </div>

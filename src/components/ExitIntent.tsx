@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { X, Download, CheckCircle2 } from 'lucide-react';
 
 const STORAGE_KEY = 'kalku.exitIntentDismissed';
+const LEAD_KEY = 'kalku.exitIntentLead';
 const COOLDOWN_DAYS = 30;
 
 function shouldShow(): boolean {
@@ -20,7 +21,13 @@ function dismiss() {
 export default function ExitIntent() {
   const [show, setShow] = useState(false);
   const [email, setEmail] = useState('');
+  const [consent, setConsent] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [sending, setSending] = useState(false);
+
+  const firstInputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previouslyFocused = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (!shouldShow()) return;
@@ -63,17 +70,63 @@ export default function ExitIntent() {
     };
   }, []);
 
+  // Body-scroll-lock + focus management on open/close
+  useEffect(() => {
+    if (!show) return;
+    previouslyFocused.current = document.activeElement as HTMLElement | null;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    // Defer focus to allow render
+    const id = window.setTimeout(() => {
+      firstInputRef.current?.focus();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(id);
+      document.body.style.overflow = prevOverflow;
+      previouslyFocused.current?.focus?.();
+    };
+  }, [show]);
+
+  // Escape-Handler
+  useEffect(() => {
+    if (!show) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [show]);
+
   function close() {
     dismiss();
     setShow(false);
   }
 
-  function submit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!email.includes('@')) return;
-    // TODO Phase 5 backend: POST /api/forms/submit type=whitepaper
+    if (!email.includes('@') || !consent) return;
+    setSending(true);
+    localStorage.setItem(LEAD_KEY, JSON.stringify({ email, ts: Date.now() }));
+    const subject = encodeURIComponent('Whitepaper-Anfrage über kalku.de');
+    const body = encodeURIComponent(`Whitepaper-Anfrage\n\nEmail: ${email}\n`);
+    window.location.href = `mailto:it@kalku.de?subject=${subject}&body=${body}`;
     setSubmitted(true);
+    setSending(false);
     dismiss();
+  }
+
+  // Simple focus-trap fallback: on Tab inside dialog, ensure focus stays in dialog
+  function onDialogKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key !== 'Tab') return;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (!dialog.contains(document.activeElement)) {
+      e.preventDefault();
+      firstInputRef.current?.focus();
+    }
   }
 
   if (!show) return null;
@@ -85,8 +138,10 @@ export default function ExitIntent() {
       aria-modal="true"
       className="fixed inset-0 z-[60] flex items-center justify-center px-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200"
       onClick={close}
+      onKeyDown={onDialogKeyDown}
     >
       <div
+        ref={dialogRef}
         className="relative max-w-lg w-full bg-white rounded-3xl shadow-2xl p-8 sm:p-10"
         onClick={(e) => e.stopPropagation()}
       >
@@ -121,17 +176,37 @@ export default function ExitIntent() {
               Kostenloses Whitepaper. Die häufigsten Stolpersteine bei der Kalkulation
               öffentlicher Ausschreibungen — und wie Sie sie vermeiden.
             </p>
-            <form onSubmit={submit} className="space-y-3">
+            <form onSubmit={handleSubmit} className="space-y-3">
               <input
+                ref={firstInputRef}
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="ihre@firma.de"
                 className="input"
-                autoFocus
               />
-              <button type="submit" className="btn btn-success w-full justify-center">
+              <label className="flex items-start gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={consent}
+                  onChange={(e) => setConsent(e.target.checked)}
+                  required
+                  className="mt-1"
+                />
+                <span>
+                  Ich habe die{' '}
+                  <a href="/datenschutz/" className="underline">
+                    Datenschutzerklärung
+                  </a>{' '}
+                  zur Kenntnis genommen.
+                </span>
+              </label>
+              <button
+                type="submit"
+                disabled={sending || !consent}
+                className="btn btn-success w-full justify-center disabled:opacity-60 disabled:cursor-not-allowed"
+              >
                 <Download className="w-4 h-4" /> Whitepaper anfordern
               </button>
             </form>

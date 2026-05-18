@@ -52,7 +52,8 @@ const TESTIMONIALS: Testimonial[] = [
 ];
 
 export default function Testimonials() {
-  const hasReal = TESTIMONIALS.some((t) => !t.placeholder);
+  const realTestimonials = TESTIMONIALS.filter((t) => !t.placeholder);
+  const hasReal = realTestimonials.length > 0;
 
   return (
     <section className="section bg-gray-50">
@@ -63,38 +64,47 @@ export default function Testimonials() {
           subtitle={
             hasReal
               ? 'Bauunternehmer aus Saarland, RLP und Hessen — kurz erzählt, was sich für sie verändert hat.'
-              : 'Kundenstimmen werden derzeit eingeholt. Diese Beispiele zeigen das Format — die Inhalte sind illustrativ, bis echte Stimmen mit Freigabe vorliegen.'
+              : 'Vertraulichkeit hat bei uns Vorrang vor Marketing.'
           }
         />
 
-        <div className="grid gap-5 md:grid-cols-3 max-w-6xl mx-auto">
-          {TESTIMONIALS.map((t, i) => (
-            <article
-              key={i}
-              className="bg-white border border-gray-200 rounded-lg p-6 sm:p-7 flex flex-col h-full"
-            >
-              <Quote className="w-7 h-7 text-primary-200 mb-4" strokeWidth={1.5} />
-              <blockquote className="text-sm text-gray-700 leading-relaxed mb-6 flex-1">
-                „{t.text}"
-              </blockquote>
+        {hasReal ? (
+          <div className="grid gap-5 md:grid-cols-3 max-w-6xl mx-auto">
+            {realTestimonials.map((t, i) => (
+              <article
+                key={i}
+                className="bg-white border border-gray-200 rounded-lg p-6 sm:p-7 flex flex-col h-full"
+              >
+                <Quote className="w-7 h-7 text-primary-200 mb-4" strokeWidth={1.5} />
+                <blockquote className="text-sm text-gray-700 leading-relaxed mb-6 flex-1">
+                  „{t.text}"
+                </blockquote>
 
-              <div className="pt-5 border-t border-gray-100">
-                <p className="font-bold text-gray-900 text-sm">{t.name}</p>
-                <p className="text-xs text-gray-500 mb-3">
-                  {t.role} · {t.trade} · {t.region}
-                </p>
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-800 text-xs font-semibold">
-                  {t.metric}
+                <div className="pt-5 border-t border-gray-100">
+                  <p className="font-bold text-gray-900 text-sm">{t.name}</p>
+                  <p className="text-xs text-gray-500 mb-3">
+                    {t.role} · {t.trade} · {t.region}
+                  </p>
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-800 text-xs font-semibold">
+                    {t.metric}
+                  </div>
                 </div>
-              </div>
-            </article>
-          ))}
-        </div>
-
-        {!hasReal && (
-          <p className="text-center text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md py-2 px-4 max-w-2xl mx-auto mt-8">
-            Stimmen werden derzeit eingeholt — Format und Struktur stehen, echte Inhalte folgen.
-          </p>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="max-w-2xl mx-auto">
+            <div className="bg-white border border-gray-200 rounded-lg p-7 sm:p-9 text-center">
+              <Quote className="w-8 h-8 text-primary-200 mx-auto mb-5" strokeWidth={1.5} />
+              <p className="text-base sm:text-lg text-gray-700 leading-relaxed">
+                Referenzen werden derzeit auf Wunsch unserer Bauunternehmer-Kunden anonym geführt
+                — gerne nennen wir Ihnen passende Referenzkunden im Erstgespräch.
+              </p>
+              <p className="mt-5 text-xs uppercase tracking-wider font-bold text-gray-500">
+                Saarland · Rheinland-Pfalz · Hessen
+              </p>
+            </div>
+          </div>
         )}
 
         <div className="text-center mt-10">

@@ -1,4 +1,6 @@
+import { Helmet } from 'react-helmet-async';
 import FaqItem from '@/components/ui/FaqItem';
+import { faqPageSchema } from '@/lib/seo';
 
 const IRRTUEMER = [
   {
@@ -24,8 +26,12 @@ const IRRTUEMER = [
 ];
 
 export default function IrrtumFaq() {
+  const faqs = IRRTUEMER.map((i) => ({ q: i.question, a: i.answer }));
   return (
     <section className="section bg-gray-50">
+      <Helmet>
+        <script type="application/ld+json">{JSON.stringify(faqPageSchema(faqs))}</script>
+      </Helmet>
       <div className="container-page">
         <div className="grid lg:grid-cols-2 gap-10 items-start">
           <div>

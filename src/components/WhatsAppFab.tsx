@@ -56,10 +56,10 @@ export default function WhatsAppFab() {
         <button
           type="button"
           onClick={dismiss}
-          className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-500 hover:text-gray-700"
+          className="absolute -top-2 -right-2 w-11 h-11 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-500 hover:text-gray-700"
           aria-label="Schließen"
         >
-          <X className="w-3.5 h-3.5" />
+          <X className="w-4 h-4" />
         </button>
         <div className="flex items-start gap-3 mb-4">
           <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">

@@ -33,7 +33,7 @@ export default function HeroV2() {
         <div className="container-page py-2 sm:py-2.5 text-[12px] sm:text-[13px] flex flex-wrap items-center justify-between gap-x-6 gap-y-1">
           <p className="inline-flex items-center gap-2">
             <span className="status-dot" aria-hidden />
-            <span className="font-semibold">Antwort heute bis 18 Uhr — schriftlich garantiert in 4 Stunden.</span>
+            <span className="font-semibold">Antwort heute bis 18 Uhr — verbindlich zugesagt in 4 Stunden.</span>
           </p>
           <p className="text-gray-400 hidden sm:inline-flex items-center gap-3">
             <span>Aktuell <span className="text-white font-semibold">3 Slots</span> diese Woche frei</span>
@@ -51,7 +51,7 @@ export default function HeroV2() {
           <div className="lg:col-span-7 max-w-2xl">
             <p className="eyebrow-pill mb-7">
               <span className="w-1.5 h-1.5 rounded-full bg-primary-500" aria-hidden />
-              Kalkulationsbüro Saarbrücken · seit 2012
+              Kalkulationsbüro Saarbrücken · seit 2019
             </p>
 
             <h1 className="display-h1 mb-6">

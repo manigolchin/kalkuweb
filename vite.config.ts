@@ -19,12 +19,27 @@ export default defineConfig({
   },
   build: {
     target: 'es2022',
-    sourcemap: true,
+    // 'hidden' = Sourcemaps werden gebaut, aber NICHT via Comment im JS referenziert
+    // -> nicht oeffentlich auslieferbar (kein //# sourceMappingURL), intern fuer Sentry/Debug nutzbar
+    sourcemap: 'hidden',
+    chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
-        manualChunks: {
-          react: ['react', 'react-dom', 'react-router-dom'],
-          icons: ['lucide-react'],
+        manualChunks: (id) => {
+          if (id.includes('node_modules/xlsx')) return 'xlsx';
+          if (
+            id.includes('node_modules/jspdf') ||
+            id.includes('html2canvas') ||
+            id.includes('dompurify')
+          )
+            return 'pdf';
+          if (
+            id.includes('node_modules/react-router') ||
+            id.includes('node_modules/react-dom') ||
+            id.includes('node_modules/react/')
+          )
+            return 'react';
+          if (id.includes('node_modules/lucide-react')) return 'icons';
         },
       },
     },

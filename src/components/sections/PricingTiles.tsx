@@ -15,16 +15,8 @@ export default function PricingTiles({ bare = false }: Props) {
     { ...PRICING.paketL, featured: false },
   ];
 
-  const Wrapper = bare
-    ? ({ children }: { children: React.ReactNode }) => <>{children}</>
-    : ({ children }: { children: React.ReactNode }) => (
-        <section className="section">
-          <div className="container-page">{children}</div>
-        </section>
-      );
-
-  return (
-    <Wrapper>
+  const inner = (
+    <>
       {!bare && (
         <SectionHeader
           eyebrow="Konditionen"
@@ -80,6 +72,13 @@ export default function PricingTiles({ bare = false }: Props) {
       <p className="text-center text-xs text-gray-500 mt-5">
         Alle Preise netto, zzgl. USt. Monatliche Pakete monatlich kündbar — keine Mindestlaufzeit.
       </p>
-    </Wrapper>
+    </>
+  );
+
+  if (bare) return inner;
+  return (
+    <section className="section">
+      <div className="container-page">{inner}</div>
+    </section>
   );
 }

@@ -27,7 +27,7 @@ type Person = {
   anzahl: number;
 };
 
-const STORAGE_KEY = 'kalku.mittellohn.team';
+const STORAGE_KEY = 'kalku.mittellohn.state';
 
 const DEFAULT_TEAM: Omit<Person, 'id'>[] = [
   { rolle: 'Polier', stundensatz: 32.5, anzahl: 1 },
@@ -59,19 +59,7 @@ function eur(n: number): string {
 }
 
 export default function Mittellohn() {
-  const [team, setTeam] = useState<Person[]>(() => {
-    if (typeof window === 'undefined') return DEFAULT_TEAM.map((p) => newRow(p));
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {
-      /* ignore */
-    }
-    return DEFAULT_TEAM.map((p) => newRow(p));
-  });
+  const [team, setTeam] = useState<Person[]>(() => DEFAULT_TEAM.map((p) => newRow(p)));
   const [lohnnebenkosten, setLohnnebenkosten] = useState(78); // % typisch im Baugewerbe
   const [zulagen, setZulagen] = useState(0); // EUR/h zusätzlich
   const [savedAt, setSavedAt] = useState<Date | null>(null);
@@ -86,18 +74,52 @@ export default function Mittellohn() {
   const [bnkMonats13, setBnkMonats13] = useState(11); // 13.ME, Urlaubsgeld
   const [bnkSonst, setBnkSonst] = useState(8); // Lohnfortzahlung Krank/Feiertag, Sonstiges
 
+  // Hydrate full state from localStorage on mount (only client side)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed?.team) && parsed.team.length > 0) setTeam(parsed.team);
+      if (typeof parsed?.lohnnebenkosten === 'number') setLohnnebenkosten(parsed.lohnnebenkosten);
+      if (typeof parsed?.zulagen === 'number') setZulagen(parsed.zulagen);
+      if (parsed?.tarifgebiet === 'west' || parsed?.tarifgebiet === 'ost') setTarifgebiet(parsed.tarifgebiet);
+      if (typeof parsed?.bnkSoka === 'number') setBnkSoka(parsed.bnkSoka);
+      if (typeof parsed?.bnkBg === 'number') setBnkBg(parsed.bnkBg);
+      if (typeof parsed?.bnkSonst === 'number') setBnkSonst(parsed.bnkSonst);
+      if (typeof parsed?.bnkSv === 'number') setBnkSv(parsed.bnkSv);
+      if (typeof parsed?.bnkMonats13 === 'number') setBnkMonats13(parsed.bnkMonats13);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const t = setTimeout(() => {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(team));
+        localStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify({
+            team,
+            lohnnebenkosten,
+            zulagen,
+            tarifgebiet,
+            bnkSv,
+            bnkSoka,
+            bnkBg,
+            bnkMonats13,
+            bnkSonst,
+          }),
+        );
         setSavedAt(new Date());
       } catch {
         /* ignore */
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [team]);
+  }, [team, lohnnebenkosten, zulagen, tarifgebiet, bnkSv, bnkSoka, bnkBg, bnkMonats13, bnkSonst]);
 
   const breakdownTotal = bnkSv + bnkSoka + bnkBg + bnkMonats13 + bnkSonst;
   const effectiveLnk = breakdownOpen ? breakdownTotal : lohnnebenkosten;
@@ -133,6 +155,12 @@ export default function Mittellohn() {
     setTeam(DEFAULT_TEAM.map((p) => newRow(p)));
     setLohnnebenkosten(78);
     setZulagen(0);
+    setTarifgebiet('west');
+    setBnkSv(20.85);
+    setBnkSoka(18.5);
+    setBnkBg(5);
+    setBnkMonats13(11);
+    setBnkSonst(8);
   }
 
   function exportCsv() {
@@ -328,7 +356,7 @@ export default function Mittellohn() {
               </div>
 
               <div className="card-flat">
-                <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center justify-between mb-3">
                   <label className="label flex items-center gap-1.5 mb-0">
                     Lohnnebenkosten
                   </label>
@@ -338,6 +366,30 @@ export default function Mittellohn() {
                     className="text-xs font-semibold text-amber-700 hover:text-amber-900"
                   >
                     {breakdownOpen ? 'Einfach' : 'Detailansicht'}
+                  </button>
+                </div>
+
+                {/* Tarifgebiet — IMMER sichtbar, weil es auch im Einfach-Modus den SOKA-Default beeinflusst */}
+                <div className="flex gap-2 mb-3">
+                  <button
+                    type="button"
+                    onClick={() => applyTarifgebiet('west')}
+                    className={cn(
+                      'btn btn-sm flex-1 justify-center',
+                      tarifgebiet === 'west' ? 'bg-amber-600 text-white hover:bg-amber-700' : 'btn-outline',
+                    )}
+                  >
+                    Tarifgebiet West
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyTarifgebiet('ost')}
+                    className={cn(
+                      'btn btn-sm flex-1 justify-center',
+                      tarifgebiet === 'ost' ? 'bg-amber-600 text-white hover:bg-amber-700' : 'btn-outline',
+                    )}
+                  >
+                    Tarifgebiet Ost
                   </button>
                 </div>
 
@@ -359,28 +411,6 @@ export default function Mittellohn() {
                   </>
                 ) : (
                   <div className="space-y-3">
-                    <div className="flex gap-2 mb-2">
-                      <button
-                        type="button"
-                        onClick={() => applyTarifgebiet('west')}
-                        className={cn(
-                          'btn btn-sm flex-1 justify-center',
-                          tarifgebiet === 'west' ? 'bg-amber-600 text-white hover:bg-amber-700' : 'btn-outline',
-                        )}
-                      >
-                        Tarifgebiet West
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => applyTarifgebiet('ost')}
-                        className={cn(
-                          'btn btn-sm flex-1 justify-center',
-                          tarifgebiet === 'ost' ? 'bg-amber-600 text-white hover:bg-amber-700' : 'btn-outline',
-                        )}
-                      >
-                        Tarifgebiet Ost
-                      </button>
-                    </div>
                     <BreakdownRow label="Sozialvers. AG" value={bnkSv} onChange={setBnkSv} hint="KV+PV+RV+AV (~21 %)" />
                     <BreakdownRow label="SOKA-BAU" value={bnkSoka} onChange={setBnkSoka} hint={`Tarif ${tarifgebiet === 'west' ? 'West 18,5 %' : 'Ost 16,5 %'}`} />
                     <BreakdownRow label="Berufsgen. Bau" value={bnkBg} onChange={setBnkBg} hint="je Risikoklasse 3–7 %" />

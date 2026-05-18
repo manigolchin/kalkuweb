@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://kalku.de/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
+  <url><loc>https://kalku.de/leistungen/</loc><priority>0.9</priority></url>
+  <url><loc>https://kalku.de/leistungen/hochbau/</loc><priority>0.8</priority></url>
+  <url><loc>https://kalku.de/leistungen/tiefbau/</loc><priority>0.8</priority></url>
+  <url><loc>https://kalku.de/leistungen/strassenbau/</loc><priority>0.8</priority></url>
+  <url><loc>https://kalku.de/leistungen/galabau/</loc><priority>0.8</priority></url>
+  <url><loc>https://kalku.de/leistungen/haustechnik/</loc><priority>0.8</priority></url>
+  <url><loc>https://kalku.de/leistungen/innenausbau/</loc><priority>0.8</priority></url>
+  <url><loc>https://kalku.de/leistungen/erdbau-abbruch/</loc><priority>0.8</priority></url>
+  <url><loc>https://kalku.de/leistungen/elektro/</loc><priority>0.8</priority></url>
+  <url><loc>https://kalku.de/leistungen/fenster/</loc><priority>0.8</priority></url>
+  <url><loc>https://kalku.de/leistungen/schadstoff/</loc><priority>0.8</priority></url>
+  <url><loc>https://kalku.de/ablauf/</loc><priority>0.7</priority></url>
+  <url><loc>https://kalku.de/konditionen/</loc><priority>0.7</priority></url>
+  <url><loc>https://kalku.de/ueber-uns/</loc><priority>0.6</priority></url>
+  <url><loc>https://kalku.de/referenzen/</loc><priority>0.6</priority></url>
+  <url><loc>https://kalku.de/kontakt/</loc><priority>0.9</priority></url>
+  <url><loc>https://kalku.de/tools/</loc><priority>0.7</priority></url>
+  <url><loc>https://kalku.de/tools/gaeb-konverter/</loc><priority>0.7</priority></url>
+  <url><loc>https://kalku.de/tools/kalkulator/</loc><priority>0.7</priority></url>
+  <url><loc>https://kalku.de/tools/mittellohn/</loc><priority>0.7</priority></url>
+  <url><loc>https://kalku.de/tools/frist-rechner/</loc><priority>0.7</priority></url>
+  <url><loc>https://kalku.de/tools/buergschaft/</loc><priority>0.7</priority></url>
+  <url><loc>https://kalku.de/blog/</loc><priority>0.6</priority></url>
+  <url><loc>https://kalku.de/impressum/</loc><priority>0.3</priority></url>
+  <url><loc>https://kalku.de/datenschutz/</loc><priority>0.3</priority></url>
+  <url><loc>https://kalku.de/agb/</loc><priority>0.3</priority></url>
+</urlset>

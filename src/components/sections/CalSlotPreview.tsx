@@ -1,6 +1,5 @@
-import { Link } from 'react-router-dom';
 import { Calendar, Clock3, Phone, ArrowRight, MessageCircle } from 'lucide-react';
-import { NAP } from '@/lib/constants';
+import { NAP, SERVICES } from '@/lib/constants';
 import { telHref, whatsappHref } from '@/lib/utils';
 
 /**
@@ -54,9 +53,14 @@ export default function CalSlotPreview() {
             </ul>
 
             <div className="flex flex-wrap items-center gap-3">
-              <Link to="/kontakt/#termin" className="btn btn-success btn-lg cta-magnetic">
+              <a
+                href={SERVICES.calendlyUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-success btn-lg cta-magnetic"
+              >
                 Slot wählen <ArrowRight className="w-4 h-4" />
-              </Link>
+              </a>
               <a
                 href={whatsappHref(NAP.whatsapp, 'Hallo KALKU, ich hätte gerne ein Erstgespräch.')}
                 target="_blank"
@@ -83,9 +87,11 @@ export default function CalSlotPreview() {
 
             <div className="grid grid-cols-2 gap-2.5">
               {SLOTS.map((s, i) => (
-                <Link
+                <a
                   key={i}
-                  to="/kontakt/#termin"
+                  href={s.available ? SERVICES.calendlyUrl : undefined}
+                  target={s.available ? '_blank' : undefined}
+                  rel={s.available ? 'noopener noreferrer' : undefined}
                   aria-disabled={!s.available}
                   className={`relative rounded-lg ring-1 px-3.5 py-3 text-left transition-colors ${
                     s.available
@@ -97,15 +103,20 @@ export default function CalSlotPreview() {
                     {s.day}
                   </p>
                   <p className="text-base font-bold text-gray-900 tabular-nums">{s.time}</p>
-                </Link>
+                </a>
               ))}
             </div>
 
             <p className="text-[11px] text-gray-500 mt-5 leading-relaxed text-center">
-              Vorschau · finale Bestätigung im Kalender auf{' '}
-              <Link to="/kontakt/#termin" className="text-primary-700 font-medium hover:underline">
-                /kontakt/
-              </Link>
+              Vorschau · finale Bestätigung im{' '}
+              <a
+                href={SERVICES.calendlyUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary-700 font-medium hover:underline"
+              >
+                Kalender
+              </a>
               . Lieber sofort sprechen?{' '}
               <a href={telHref(NAP.phone)} className="text-primary-700 font-medium hover:underline inline-flex items-center gap-1">
                 <Phone className="w-3 h-3" /> {NAP.phone}
