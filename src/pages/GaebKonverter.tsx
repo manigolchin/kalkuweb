@@ -1,6 +1,6 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Upload,
   FileText,
@@ -18,6 +18,7 @@ import {
   Settings2,
   ChevronDown,
   ChevronRight,
+  Calculator,
 } from 'lucide-react';
 import { canonical } from '@/lib/seo';
 import { softwareApplicationSchema } from '@/lib/toolSchema';
@@ -42,6 +43,7 @@ import type {
   Columns,
   PdfOptions,
 } from '@/lib/gaeb';
+import { writeKalkulatorHandoff } from '@/lib/toolHandoff';
 
 const TITLE = 'GAEB-Konverter (kostenlos, im Browser) | KALKU';
 const DESC =
@@ -130,8 +132,15 @@ export default function GaebKonverter() {
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const [lastExport, setLastExport] = useState<TargetFormat | null>(null);
-  const [fileSizeWarning, setFileSizeWarning] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
+
+  // When parsed file changes, auto-set the source-format display
+  useEffect(() => {
+    if (parsed && sourceHint === 'auto') {
+      // No-op; we keep "auto" so user can still override
+    }
+  }, [parsed, sourceHint]);
 
   function reset() {
     setParsed(null);
@@ -140,7 +149,6 @@ export default function GaebKonverter() {
     setSubmitted(false);
     setSearchQuery('');
     setLastExport(null);
-    setFileSizeWarning(null);
     if (fileRef.current) fileRef.current.value = '';
   }
 
@@ -148,7 +156,6 @@ export default function GaebKonverter() {
     setError(null);
     setSubmitted(false);
     setLastExport(null);
-    setFileSizeWarning(null);
     setParsing(true);
 
     const ext = '.' + (file.name.split('.').pop() ?? '').toLowerCase();
@@ -156,10 +163,6 @@ export default function GaebKonverter() {
       setError(`Format ${ext} wird nicht direkt unterstützt. Akzeptiert: ${ACCEPTED_EXTENSIONS.join(', ')}. Tipp: Wenn Ihre Datei ein GAEB-Format ist, benennen Sie sie z. B. auf .x83 um.`);
       setParsing(false);
       return;
-    }
-
-    if (file.size > 10 * 1024 * 1024) {
-      setFileSizeWarning(`Große Datei (${(file.size / 1024 / 1024).toFixed(1)} MB) — die Verarbeitung kann ein paar Sekunden dauern.`);
     }
 
     try {
@@ -248,12 +251,27 @@ export default function GaebKonverter() {
   function submitEmail(e: React.FormEvent) {
     e.preventDefault();
     if (!email.includes('@') || !parsed) return;
-    const subject = encodeURIComponent('GAEB-Konverter Premium-Anfrage');
-    const body = encodeURIComponent(
-      `Premium-Anfrage über kalku.de\n\nEmail: ${email}\nFormat: ${targetFormat || 'unspecified'}\nDatei: ${parsed.filename}\nPositionen: ${parsed.positionCount}\n`,
-    );
-    window.location.href = `mailto:it@kalku.de?subject=${subject}&body=${body}`;
     setSubmitted(true);
+  }
+
+  function handoffToKalkulator() {
+    if (!parsed) return;
+    const items = parsed.positions.filter((p) => p.type === 'item');
+    if (items.length === 0) return;
+    writeKalkulatorHandoff({
+      source: 'gaeb-konverter',
+      filename: parsed.filename,
+      projectName: parsed.projectName,
+      positionCount: items.length,
+      rows: items.map((p) => ({
+        pos: p.oz,
+        text: p.kurztext || p.langtext.slice(0, 120),
+        einheit: p.einheit || 'St',
+        menge: p.menge ?? 1,
+        material: p.ep,
+      })),
+    });
+    navigate('/tools/kalkulator/?from=gaeb');
   }
 
   // Filtered preview
@@ -290,6 +308,7 @@ export default function GaebKonverter() {
               'Spaltenwahl beim Excel-Export',
               'PDF mit Deckblatt + Unterschriftenfeld',
               'Volltext-Suche in Positionen',
+              'Direkt-Übergabe an Position-Kalkulator zum Bepreisen',
               '100 % Browser-Verarbeitung, kein Datei-Upload',
             ],
           }))}
@@ -372,8 +391,7 @@ export default function GaebKonverter() {
                     {parsing ? 'Datei wird gelesen…' : 'Datei hier ablegen oder klicken zum Auswählen'}
                   </p>
                   <p className="text-sm text-gray-500">
-                    Akzeptiert: {ACCEPTED_EXTENSIONS.slice(0, 10).join(', ')}
-                    {ACCEPTED_EXTENSIONS.length > 10 ? ` … +${ACCEPTED_EXTENSIONS.length - 10} weitere` : ''}
+                    Akzeptiert: {ACCEPTED_EXTENSIONS.slice(0, 10).join(', ')} … +{ACCEPTED_EXTENSIONS.length - 10} weitere
                   </p>
                   <p className="inline-flex items-center gap-1.5 text-xs text-gray-400 mt-5">
                     <Shield className="w-3.5 h-3.5" /> 100 % lokale Verarbeitung — Datei verlässt Ihren Browser nicht
@@ -406,12 +424,6 @@ export default function GaebKonverter() {
                   Neu
                 </button>
               </div>
-            </div>
-          )}
-
-          {fileSizeWarning && !error && (
-            <div className="card max-w-3xl mx-auto mt-6 border-amber-200 bg-amber-50">
-              <p className="text-sm text-amber-900">{fileSizeWarning}</p>
             </div>
           )}
 
@@ -620,17 +632,25 @@ export default function GaebKonverter() {
                       </>
                     )}
                   </button>
+                  <button
+                    type="button"
+                    onClick={handoffToKalkulator}
+                    disabled={parsed.positions.filter((p) => p.type === 'item').length === 0}
+                    className="btn btn-outline"
+                    title="Positionen ins KALKU-Kalkulator-Tool übernehmen und EP/GP-Preise eintragen"
+                  >
+                    <Calculator className="w-4 h-4" />
+                    Im Kalkulator bepreisen
+                  </button>
                   {lastExport && !converting && (
                     <span className="inline-flex items-center gap-2 text-sm text-emerald-700">
                       <CheckCircle2 className="w-4 h-4" />
                       Konvertierung erfolgreich! Datei wurde heruntergeladen.
                     </span>
                   )}
-                  {(targetFormat === 'xlsx' || targetFormat === 'csv') && (
-                    <span className="text-xs text-gray-400 ml-auto">
-                      Tipp: Spalten-Auswahl oben für individuellen Excel-Export
-                    </span>
-                  )}
+                  <span className="text-xs text-gray-400 ml-auto">
+                    Tipp: Spalten-Auswahl oben für individuellen Excel-Export
+                  </span>
                 </div>
               </div>
 
