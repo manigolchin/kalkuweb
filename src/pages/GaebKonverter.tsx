@@ -53,8 +53,7 @@ type TargetFormat =
   | 'json'
   | 'pdf'
   | 'gaeb-xml-3.2'
-  | 'gaeb-90'
-  | 'onorm-a2063';
+  | 'gaeb-90';
 
 const SOURCE_OPTIONS: { value: SourceFormatHint; label: string }[] = [
   { value: 'auto', label: 'Automatisch erkennen' },
@@ -562,16 +561,20 @@ export default function GaebKonverter() {
                       Spalten-Auswahl
                     </button>
                     {showAdvanced && (
-                      <div className="mt-3 grid sm:grid-cols-3 gap-2 gap-y-2">
-                        {(Object.keys(DEFAULT_COLUMNS) as (keyof Columns)[]).map((key) => (
+                      <>
+                        <p className="text-xs text-gray-500 mt-2 mb-3">
+                          Kurztext/Langtext werden über die LV-Art oben gesteuert.
+                        </p>
+                      <div className="grid sm:grid-cols-3 gap-2 gap-y-2">
+                        {(Object.keys(DEFAULT_COLUMNS) as (keyof Columns)[])
+                          .filter((k) => k !== 'kurztext' && k !== 'langtext')
+                          .map((key) => (
                           <CheckboxRow
                             key={key}
                             checked={columns[key]}
                             onChange={(v) => setColumns((c) => ({ ...c, [key]: v }))}
                             label={
                               key === 'oz' ? 'OZ (Ordnungszahl)'
-                              : key === 'kurztext' ? 'Kurztext'
-                              : key === 'langtext' ? 'Langtext'
                               : key === 'einheit' ? 'Einheit (ME)'
                               : key === 'menge' ? 'Menge'
                               : key === 'ep' ? 'EP (Einheitspreis)'
@@ -580,6 +583,7 @@ export default function GaebKonverter() {
                           />
                         ))}
                       </div>
+                      </>
                     )}
                   </div>
                 )}
