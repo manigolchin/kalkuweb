@@ -70,3 +70,30 @@ export function organizationGraph() {
 export function jsonLd(obj: unknown): string {
   return JSON.stringify(obj, null, 0);
 }
+
+/** FAQPage schema for a list of question/answer pairs. */
+export function faqPageSchema(items: { q: string; a: string }[]) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: items.map(({ q, a }) => ({
+      '@type': 'Question',
+      name: q,
+      acceptedAnswer: { '@type': 'Answer', text: a },
+    })),
+  };
+}
+
+/** BreadcrumbList schema for a list of crumbs (name + path). */
+export function breadcrumbSchema(crumbs: { name: string; path: string }[]) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: crumbs.map((c, i) => ({
+      '@type': 'ListItem',
+      position: i + 1,
+      name: c.name,
+      item: canonical(c.path),
+    })),
+  };
+}
