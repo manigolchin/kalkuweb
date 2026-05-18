@@ -15,6 +15,9 @@ import {
   Shield,
   Clipboard,
   Percent,
+  X,
+  AlertCircle,
+  Info as InfoIcon,
 } from 'lucide-react';
 import { canonical } from '@/lib/seo';
 import { cn } from '@/lib/utils';
@@ -151,6 +154,11 @@ export default function Kalkulator() {
   const [emailSent, setEmailSent] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const [banner, setBanner] = useState<{ text: string; kind: 'info' | 'warn' | 'error' } | null>(null);
+  const [pendingPasteRows, setPendingPasteRows] = useState<Row[] | null>(null);
+  const [pendingPresetLabel, setPendingPresetLabel] = useState<string | null>(null);
+  const [pendingPresetRows, setPendingPresetRows] = useState<Row[] | null>(null);
+  const [showConfirmReset, setShowConfirmReset] = useState(false);
   const formId = useId();
   const [searchParams, setSearchParams] = useSearchParams();
   const [handoffSource, setHandoffSource] = useState<{ filename?: string; projectName?: string; count: number } | null>(null);
@@ -297,24 +305,33 @@ export default function Kalkulator() {
 
   function loadPreset(p: Preset) {
     if (rows.length > 0 && rows.some((r) => r.text || r.material > 0)) {
-      const ok = window.confirm(
-        `Aktuelle Eingaben gehen verloren — Vorlage „${p.label}" laden?`,
-      );
-      if (!ok) return;
+      setPendingPresetLabel(p.label);
+      setPendingPresetRows(p.rows.map((r) => newRow(r)));
+      return;
     }
     setRows(p.rows.map((r) => newRow(r)));
   }
 
+  function confirmPreset() {
+    if (pendingPresetRows) setRows(pendingPresetRows);
+    setPendingPresetRows(null);
+    setPendingPresetLabel(null);
+  }
+
   function reset() {
-    if (!window.confirm('Alle Positionen löschen — sicher?')) return;
+    setShowConfirmReset(true);
+  }
+
+  function confirmReset() {
     setRows([newRow()]);
+    setShowConfirmReset(false);
   }
 
   async function pasteFromClipboard() {
     try {
       const text = await navigator.clipboard.readText();
       if (!text.trim()) {
-        alert('Zwischenablage ist leer.');
+        setBanner({ text: 'Zwischenablage ist leer.', kind: 'info' });
         return;
       }
       // Parse tab-separated (Excel) or semicolon-separated (CSV) rows
@@ -322,7 +339,6 @@ export default function Kalkulator() {
       const lines = text.split(/\r?\n/).filter((l) => l.trim());
       const parsed: Row[] = lines.map((line, i) => {
         const cells = line.split(sep).map((c) => c.trim().replace(/^"|"$/g, ''));
-        // Auto-detect: if first cell is a header, skip
         return newRow({
           pos: cells[0] || `${i + 1}`,
           text: cells[1] || '',
@@ -334,21 +350,30 @@ export default function Kalkulator() {
           menge: parseGermanNumber(cells[7]) || 1,
         });
       });
-      // Drop the first row if it looks like a header (text in lohn column)
-      const firstLohn = parsed[0]?.lohn;
-      const headerLikely = firstLohn === 48 && (parsed[0]?.text.toLowerCase().includes('beschr') || parsed[0]?.text.toLowerCase().includes('lohn'));
+      // Drop the first row if it looks like a header — detect via non-numeric cells in the numeric columns
+      const first = lines[0]?.split(sep).map((c) => c.trim().replace(/^"|"$/g, '')) ?? [];
+      const numericCols = [3, 4, 5, 6, 7];
+      const headerLikely = numericCols.some((idx) => {
+        const cell = first[idx];
+        return !!cell && isNaN(parseGermanNumber(cell));
+      });
       const finalRows = headerLikely ? parsed.slice(1) : parsed;
       if (finalRows.length === 0) {
-        alert('Keine Zeilen erkannt. Erwartet Tab- oder Semikolon-getrennte Daten.');
+        setBanner({ text: 'Keine Zeilen erkannt. Erwartet Tab- oder Semikolon-getrennte Daten.', kind: 'warn' });
         return;
       }
-      const ok = window.confirm(
-        `${finalRows.length} Zeile(n) erkannt. Aktuelle Eingaben ersetzen?\n(Tipp: kopiere die Daten direkt aus Excel oder LibreOffice Calc.)`,
-      );
-      if (ok) setRows(finalRows);
-    } catch (err) {
-      alert('Zwischenablage nicht zugänglich. Erlaube Clipboard-Zugriff in deinem Browser, oder importiere via CSV.');
+      setPendingPasteRows(finalRows);
+    } catch {
+      setBanner({
+        text: 'Zwischenablage nicht zugänglich. Erlauben Sie den Clipboard-Zugriff in Ihrem Browser, oder importieren Sie via CSV.',
+        kind: 'error',
+      });
     }
+  }
+
+  function confirmPaste() {
+    if (pendingPasteRows) setRows(pendingPasteRows);
+    setPendingPasteRows(null);
   }
 
   function exportCsv() {
@@ -559,6 +584,34 @@ export default function Kalkulator() {
       {/* CALCULATOR TABLE */}
       <section className="section-tight">
         <div className="container-page">
+          {banner && (
+            <div
+              className={cn(
+                'max-w-5xl mx-auto mb-4 flex items-start gap-3 rounded-md border p-3 text-sm print:hidden',
+                banner.kind === 'error'
+                  ? 'border-rose-200 bg-rose-50 text-rose-900'
+                  : banner.kind === 'warn'
+                    ? 'border-amber-200 bg-amber-50 text-amber-900'
+                    : 'border-sky-200 bg-sky-50 text-sky-900',
+              )}
+              role="status"
+            >
+              {banner.kind === 'error' ? (
+                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              ) : (
+                <InfoIcon className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              )}
+              <p className="flex-1">{banner.text}</p>
+              <button
+                type="button"
+                onClick={() => setBanner(null)}
+                className="text-current opacity-70 hover:opacity-100"
+                aria-label="Hinweis schließen"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
           <div className="card overflow-x-auto print:shadow-none print:border-0 print:p-0">
             <table className="min-w-full text-sm">
               <thead className="sticky top-0 bg-white z-10">
@@ -832,6 +885,81 @@ export default function Kalkulator() {
 
       <AndereTools exclude="/tools/kalkulator/" />
 
+      {/* Modal: Reset confirm */}
+      {showConfirmReset && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 print:hidden"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-6">
+            <h3 className="font-bold text-gray-900 mb-2">Alle Positionen löschen?</h3>
+            <p className="text-sm text-gray-600 mb-5">Die aktuelle Kalkulation wird durch eine leere Zeile ersetzt. Diese Aktion lässt sich nicht rückgängig machen.</p>
+            <div className="flex gap-2 justify-end">
+              <button type="button" onClick={() => setShowConfirmReset(false)} className="btn btn-outline btn-sm">
+                Abbrechen
+              </button>
+              <button type="button" onClick={confirmReset} className="btn btn-success btn-sm">
+                Ja, zurücksetzen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Paste confirm */}
+      {pendingPasteRows && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 print:hidden"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-6">
+            <h3 className="font-bold text-gray-900 mb-2">{pendingPasteRows.length} Zeile(n) erkannt</h3>
+            <p className="text-sm text-gray-600 mb-5">
+              Aktuelle Eingaben ersetzen? Tipp: kopieren Sie die Daten direkt aus Excel oder LibreOffice Calc.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button type="button" onClick={() => setPendingPasteRows(null)} className="btn btn-outline btn-sm">
+                Abbrechen
+              </button>
+              <button type="button" onClick={confirmPaste} className="btn btn-success btn-sm">
+                Ersetzen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Preset confirm */}
+      {pendingPresetRows && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 print:hidden"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-6">
+            <h3 className="font-bold text-gray-900 mb-2">Vorlage „{pendingPresetLabel}" laden?</h3>
+            <p className="text-sm text-gray-600 mb-5">Aktuelle Eingaben gehen verloren.</p>
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingPresetRows(null);
+                  setPendingPresetLabel(null);
+                }}
+                className="btn btn-outline btn-sm"
+              >
+                Abbrechen
+              </button>
+              <button type="button" onClick={confirmPreset} className="btn btn-success btn-sm">
+                Vorlage laden
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* CROSS-CTA */}
       <section className="section print:hidden">
         <div className="container-page">
@@ -886,8 +1014,9 @@ function NumCell({
     <td className="px-2 py-2">
       <input
         type="number"
+        inputMode="decimal"
         value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+        onChange={(e) => onChange(Math.max(0, parseFloat(e.target.value) || 0))}
         step={step}
         min="0"
         className={cn(

@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Helmet } from 'react-helmet-async';
-import { ShieldCheck, Info, FileText, Shield, Banknote, BarChart3, Scale, AlertTriangle, Wallet } from 'lucide-react';
+import { ShieldCheck, Info, FileText, Shield, Banknote, BarChart3, Scale, AlertTriangle, Wallet, FileSpreadsheet, Printer } from 'lucide-react';
 import { canonical } from '@/lib/seo';
 import { softwareApplicationSchema } from '@/lib/toolSchema';
 import AndereTools from '@/components/sections/AndereTools';
@@ -72,6 +72,7 @@ export default function Buergschaft() {
   const [showBareinbehalt, setShowBareinbehalt] = useState(false);
   const [bareinbehaltProz, setBareinbehaltProz] = useState(3); // VOB/B § 17 Abs. 6
   const [eigenkapitalKosten, setEigenkapitalKosten] = useState(8); // % p.a. Opportunitätskosten
+  const [exportingExcel, setExportingExcel] = useState(false);
 
   const result = useMemo(() => {
     const erfBetrag = vertragssumme * (erfuellungsProz / 100);
@@ -80,7 +81,7 @@ export default function Buergschaft() {
     const erfAvalKosten = (erfBetrag * (effektiverAvalProz / 100) * erfuellungsLaufzeitMonate) / 12;
     const gewAvalKosten = gewBetrag * (effektiverAvalProz / 100) * gewaehrleistungsLaufzeitJahre;
     const gesamtAvalKosten = erfAvalKosten + gewAvalKosten;
-    const gesamtAvalProz = (gesamtAvalKosten / vertragssumme) * 100;
+    const gesamtAvalProz = vertragssumme > 0 ? (gesamtAvalKosten / vertragssumme) * 100 : 0;
     const aufErstesMehrkosten = aufErstesAnfordern
       ? ((erfBetrag * (aufErstesAufpreisProz / 100) * erfuellungsLaufzeitMonate) / 12) +
         gewBetrag * (aufErstesAufpreisProz / 100) * gewaehrleistungsLaufzeitJahre
@@ -122,6 +123,59 @@ export default function Buergschaft() {
     bareinbehaltProz,
     eigenkapitalKosten,
   ]);
+
+  async function exportExcel() {
+    setExportingExcel(true);
+    try {
+      const XLSX = await import('xlsx');
+      const data: (string | number)[][] = [
+        ['Bürgschaftskalkulation'],
+        [],
+        ['Vertragssumme netto €', Number(vertragssumme.toFixed(2))],
+        [],
+        ['Bürgschaftstyp', 'Höhe (€)', 'Avalsatz (% p.a.)', 'Laufzeit', 'Kosten (€)'],
+        [
+          'Vertragserfüllungs-Bürgschaft',
+          Number(result.erfBetrag.toFixed(2)),
+          result.effektiverAvalProz,
+          `${erfuellungsLaufzeitMonate} Monate`,
+          Number(result.erfAvalKosten.toFixed(2)),
+        ],
+        [
+          'Gewährleistungs-Bürgschaft',
+          Number(result.gewBetrag.toFixed(2)),
+          result.effektiverAvalProz,
+          `${gewaehrleistungsLaufzeitJahre} Jahre`,
+          Number(result.gewAvalKosten.toFixed(2)),
+        ],
+        [],
+        ['Σ Gesamtkosten Avalprovision €', '', '', '', Number(result.gesamtAvalKosten.toFixed(2))],
+        ['als % der Vertragssumme', '', '', '', Number(result.gesamtAvalProz.toFixed(3))],
+      ];
+      if (aufErstesAnfordern) {
+        data.push([]);
+        data.push(['davon „auf erstes Anfordern"-Aufpreis €', '', '', '', Number(result.aufErstesMehrkosten.toFixed(2))]);
+      }
+      if (showBareinbehalt) {
+        data.push([]);
+        data.push(['Bareinbehalt-Vergleich (VOB/B § 17 Abs. 6)']);
+        data.push(['Bareinbehalt-Quote %', bareinbehaltProz]);
+        data.push(['Einbehalt-Summe €', Number(result.bareinbehaltSumme.toFixed(2))]);
+        data.push(['Liquiditätskosten (WACC ' + eigenkapitalKosten + ' %)', Number(result.bareinbehaltLiquKosten.toFixed(2))]);
+        data.push(['Bürgschafts-Alternative für gleiche Höhe', Number(result.buergschaftAltKosten.toFixed(2))]);
+        data.push([result.bareinbehaltGuenstiger ? 'Empfehlung: Bareinbehalt günstiger' : 'Empfehlung: Bürgschaft günstiger', '', '', '', Number(result.bareinbehaltDelta.toFixed(2))]);
+      }
+      data.push([]);
+      data.push(['Hinweis: Berechnungsmodell: lineare Pro-rata, ohne Mindestgebühren']);
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      ws['!cols'] = [{ wch: 40 }, { wch: 18 }, { wch: 18 }, { wch: 14 }, { wch: 18 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Bürgschaft');
+      XLSX.writeFile(wb, `kalku-buergschaft-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } finally {
+      setExportingExcel(false);
+    }
+  }
 
   return (
     <>
@@ -182,8 +236,9 @@ export default function Buergschaft() {
                   <div className="relative">
                     <input
                       type="number"
+                      inputMode="decimal"
                       value={vertragssumme}
-                      onChange={(e) => setVertragssumme(parseFloat(e.target.value) || 0)}
+                      onChange={(e) => setVertragssumme(Math.max(0, parseFloat(e.target.value) || 0))}
                       step={1000}
                       min={0}
                       className="input pr-12 text-right tabular-nums"
@@ -231,8 +286,9 @@ export default function Buergschaft() {
                     <div className="relative">
                       <input
                         type="number"
+                        inputMode="decimal"
                         value={erfuellungsLaufzeitMonate}
-                        onChange={(e) => setErfuellungsLaufzeitMonate(parseInt(e.target.value) || 0)}
+                        onChange={(e) => setErfuellungsLaufzeitMonate(Math.max(0, parseInt(e.target.value) || 0))}
                         min={0}
                         max={36}
                         className="input pr-14 text-right tabular-nums"
@@ -245,8 +301,9 @@ export default function Buergschaft() {
                     <div className="relative">
                       <input
                         type="number"
+                        inputMode="decimal"
                         value={gewaehrleistungsLaufzeitJahre}
-                        onChange={(e) => setGewaehrleistungsLaufzeitJahre(parseInt(e.target.value) || 0)}
+                        onChange={(e) => setGewaehrleistungsLaufzeitJahre(Math.max(0, parseInt(e.target.value) || 0))}
                         min={0}
                         max={10}
                         className="input pr-14 text-right tabular-nums"
@@ -354,6 +411,16 @@ export default function Buergschaft() {
                   Ihre Gemeinkosten oder direkt als Zuschlag in die Kalkulation. Wer sie vergisst,
                   unterbietet sich.
                 </p>
+              </div>
+
+              <div className="flex flex-wrap gap-2 print:hidden">
+                <button type="button" onClick={exportExcel} disabled={exportingExcel} className="btn btn-success btn-sm">
+                  <FileSpreadsheet className="w-4 h-4" />
+                  {exportingExcel ? 'wird erstellt …' : 'Excel (.xlsx)'}
+                </button>
+                <button type="button" onClick={() => window.print()} className="btn btn-outline btn-sm">
+                  <Printer className="w-4 h-4" /> Drucken
+                </button>
               </div>
             </div>
           </div>
