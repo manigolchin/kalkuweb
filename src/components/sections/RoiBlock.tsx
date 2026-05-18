@@ -92,7 +92,7 @@ export default function RoiBlock() {
                 </li>
                 <li className="flex justify-between gap-3">
                   <span>Risiko: Krankheit, Rente, Urlaub</span>
-                  <span className="font-semibold text-red-600">hoch</span>
+                  <span className="font-semibold text-red-700">hoch</span>
                 </li>
               </ul>
             </div>

@@ -37,3 +37,9 @@ coverage
 # Per-developer Claude config + harness worktrees
 # (matches sibling project kalku-procurement — .claude/ is personal, not shared)
 .claude/
+
+# API service data + env
+/api/node_modules/
+/api/data/
+/api/.env
+/api/.env.local

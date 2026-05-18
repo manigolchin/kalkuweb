@@ -110,12 +110,29 @@ export default function ExitIntent() {
     if (!email.includes('@') || !consent) return;
     setSending(true);
     localStorage.setItem(LEAD_KEY, JSON.stringify({ email, ts: Date.now() }));
-    const subject = encodeURIComponent('Whitepaper-Anfrage über kalku.de');
-    const body = encodeURIComponent(`Whitepaper-Anfrage\n\nEmail: ${email}\n`);
-    window.location.href = `mailto:it@kalku.de?subject=${subject}&body=${body}`;
-    setSubmitted(true);
-    setSending(false);
-    dismiss();
+
+    // Try API first (Phase 4 backend) — fall through to mailto on any failure.
+    try {
+      const res = await fetch('/api/forms/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'whitepaper', email }),
+      });
+      if (res.ok) {
+        setSubmitted(true);
+        setSending(false);
+        dismiss();
+        return;
+      }
+      throw new Error('backend-not-ready');
+    } catch {
+      const subject = encodeURIComponent('Whitepaper-Anfrage über kalku.de');
+      const body = encodeURIComponent(`Whitepaper-Anfrage\n\nEmail: ${email}\n`);
+      window.location.href = `mailto:it@kalku.de?subject=${subject}&body=${body}`;
+      setSubmitted(true);
+      setSending(false);
+      dismiss();
+    }
   }
 
   // Simple focus-trap fallback: on Tab inside dialog, ensure focus stays in dialog

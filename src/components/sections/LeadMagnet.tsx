@@ -16,11 +16,27 @@ export default function LeadMagnet() {
     if (!email.includes('@') || !consent) return;
     setSending(true);
     localStorage.setItem(LEAD_KEY, JSON.stringify({ email, ts: Date.now() }));
-    const subject = encodeURIComponent('Checkliste-Anfrage über kalku.de');
-    const body = encodeURIComponent(`Checkliste-Anfrage\n\nEmail: ${email}\n`);
-    window.location.href = `mailto:it@kalku.de?subject=${subject}&body=${body}`;
-    setSent(true);
-    setSending(false);
+
+    // Try API first (Phase 4 backend) — fall through to mailto on any failure.
+    try {
+      const res = await fetch('/api/forms/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'lead-magnet-checklist', email }),
+      });
+      if (res.ok) {
+        setSent(true);
+        setSending(false);
+        return;
+      }
+      throw new Error('backend-not-ready');
+    } catch {
+      const subject = encodeURIComponent('Checkliste-Anfrage über kalku.de');
+      const body = encodeURIComponent(`Checkliste-Anfrage\n\nEmail: ${email}\n`);
+      window.location.href = `mailto:it@kalku.de?subject=${subject}&body=${body}`;
+      setSent(true);
+      setSending(false);
+    }
   }
 
   return (
