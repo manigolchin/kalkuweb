@@ -46,6 +46,22 @@ function selectText(p: Position, mode: TextMode): string {
   return [p.kurztext, p.langtext].filter(Boolean).join('\n');
 }
 
+// LV-Art is the authoritative source of truth for which text columns appear:
+//   kurz → only Kurztext, Langtext suppressed
+//   lang → only Langtext, Kurztext suppressed
+//   both → both text columns
+// It overrides the Spalten-Auswahl text-column checkboxes (which then only
+// matter for the non-text columns: OZ, Einheit, Menge, EP, GP).
+function effectiveCols(columns: Columns, textMode: TextMode): Columns {
+  if (textMode === 'kurz') {
+    return { ...columns, kurztext: true, langtext: false };
+  }
+  if (textMode === 'lang') {
+    return { ...columns, kurztext: false, langtext: true };
+  }
+  return { ...columns, kurztext: true, langtext: true };
+}
+
 // ── Excel ────────────────────────────────────────────────────────────────────
 export async function exportExcel(
   parsed: ParsedGaeb,
@@ -53,7 +69,7 @@ export async function exportExcel(
 ): Promise<void> {
   const XLSX = await import('xlsx');
 
-  const cols = opts.columns;
+  const cols = effectiveCols(opts.columns, opts.textMode);
   const headers: string[] = [];
   if (cols.oz) headers.push('OZ');
   if (cols.kurztext) headers.push('Kurztext');
@@ -118,7 +134,7 @@ export function exportCsv(
   parsed: ParsedGaeb,
   opts: { textMode: TextMode; columns: Columns },
 ): void {
-  const cols = opts.columns;
+  const cols = effectiveCols(opts.columns, opts.textMode);
   const headers: string[] = [];
   if (cols.oz) headers.push('OZ');
   if (cols.kurztext) headers.push('Kurztext');
@@ -151,8 +167,6 @@ export function exportCsv(
   // BOM so Excel opens UTF-8 cleanly
   const blob = new Blob(['﻿' + out.join('\n')], { type: 'text/csv;charset=utf-8' });
   downloadBlob(blob, `${safeFilename(parsed.projectName ?? 'gaeb')}-LV.csv`);
-  // eat the textMode arg so TS doesn't complain about it being unused
-  void opts.textMode;
 }
 
 // ── JSON ─────────────────────────────────────────────────────────────────────
@@ -198,6 +212,11 @@ export async function exportPdf(parsed: ParsedGaeb, opts: PdfOptions): Promise<v
     doc.addPage();
   }
 
+  if (opts.withToc && parsed.groups.length > 0) {
+    drawToc(doc, parsed);
+    doc.addPage();
+  }
+
   // Header
   doc.setFontSize(11);
   doc.setFont('helvetica', 'normal');
@@ -209,26 +228,46 @@ export async function exportPdf(parsed: ParsedGaeb, opts: PdfOptions): Promise<v
     doc.text(`Auftraggeber: ${parsed.awardingAuthority}`, margin, margin + 28);
   }
 
-  // Table head & rows
+  // Table head & rows. mengeBelow=true → Menge and Einheit are inlined into the
+  // Bezeichnung cell (printed below the description), so we drop those columns.
   const head: string[] = ['OZ', 'Bezeichnung'];
-  head.push('Menge', 'EH');
+  if (!opts.mengeBelow) head.push('Menge', 'EH');
   if (opts.withPrices) head.push('EP €', 'GP €');
 
   const body: (string | number)[][] = [];
   for (const p of parsed.positions) {
     const text = selectText(p, opts.textMode);
-    const row: (string | number)[] = [
-      p.oz,
-      text,
-      p.menge != null ? fmtNum(p.menge) : '',
-      p.einheit,
-    ];
+    const desc = opts.mengeBelow && (p.menge != null || p.einheit)
+      ? `${text}\nMenge: ${p.menge != null ? fmtNum(p.menge) : '—'} ${p.einheit}`.trim()
+      : text;
+    const row: (string | number)[] = [p.oz, desc];
+    if (!opts.mengeBelow) {
+      row.push(p.menge != null ? fmtNum(p.menge) : '');
+      row.push(p.einheit);
+    }
     if (opts.withPrices) {
       row.push(p.ep != null ? fmtNum(p.ep) : '');
       row.push(p.gp != null ? fmtNum(p.gp) : '');
     }
     body.push(row);
   }
+
+  // Column widths depend on whether mengeBelow merged Menge/EH into Bezeichnung
+  const columnStyles: Record<number, { cellWidth?: number | 'auto'; halign?: 'right'; fontStyle?: 'bold' }> = opts.mengeBelow
+    ? {
+        0: { cellWidth: 60, fontStyle: 'bold' },
+        1: { cellWidth: 'auto' },
+        2: { cellWidth: 55, halign: 'right' },
+        3: { cellWidth: 65, halign: 'right' },
+      }
+    : {
+        0: { cellWidth: 60, fontStyle: 'bold' },
+        1: { cellWidth: 'auto' },
+        2: { cellWidth: 50, halign: 'right' },
+        3: { cellWidth: 30 },
+        4: { cellWidth: 55, halign: 'right' },
+        5: { cellWidth: 65, halign: 'right' },
+      };
 
   autoTable(doc, {
     head: [head],
@@ -238,14 +277,7 @@ export async function exportPdf(parsed: ParsedGaeb, opts: PdfOptions): Promise<v
     styles: { fontSize: 8, cellPadding: 4, valign: 'top' },
     headStyles: { fillColor: [26, 82, 118], textColor: 255, fontStyle: 'bold' },
     alternateRowStyles: { fillColor: [248, 250, 252] },
-    columnStyles: {
-      0: { cellWidth: 60, fontStyle: 'bold' },
-      1: { cellWidth: 'auto' },
-      2: { cellWidth: 50, halign: 'right' },
-      3: { cellWidth: 30 },
-      4: { cellWidth: 55, halign: 'right' },
-      5: { cellWidth: 65, halign: 'right' },
-    },
+    columnStyles,
     didDrawPage: () => {
       const str = `${parsed.projectName ?? 'GAEB-LV'} — Seite ${
         doc.getCurrentPageInfo().pageNumber
@@ -286,8 +318,41 @@ export async function exportPdf(parsed: ParsedGaeb, opts: PdfOptions): Promise<v
   }
 
   doc.save(`${safeFilename(parsed.projectName ?? 'gaeb')}-LV.pdf`);
-  void opts.mengeBelow;
-  void opts.withToc;
+}
+
+function drawToc(doc: import('jspdf').jsPDF, parsed: ParsedGaeb) {
+  const w = doc.internal.pageSize.getWidth();
+  const margin = 40;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(18);
+  doc.text('Inhaltsverzeichnis', margin, margin + 20);
+
+  doc.setDrawColor(26, 82, 118);
+  doc.setLineWidth(2);
+  doc.line(margin, margin + 28, margin + 60, margin + 28);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+
+  let y = margin + 60;
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  for (const g of parsed.groups) {
+    if (y > pageHeight - margin) {
+      doc.addPage();
+      y = margin;
+    }
+    const indent = margin + g.level * 14;
+    doc.setFont('helvetica', g.level === 0 ? 'bold' : 'normal');
+    doc.text(g.oz, indent, y);
+    const labelStart = indent + 60;
+    const labelMaxWidth = w - labelStart - margin;
+    const label = (g.label || '—').slice(0, 200);
+    const wrapped = doc.splitTextToSize(label, labelMaxWidth);
+    doc.text(wrapped, labelStart, y);
+    y += 14 * Math.max(1, wrapped.length);
+  }
 }
 
 function drawCover(doc: import('jspdf').jsPDF, parsed: ParsedGaeb, opts: PdfOptions) {
