@@ -71,8 +71,8 @@ export function jsonLd(obj: unknown): string {
   return JSON.stringify(obj, null, 0);
 }
 
-/** FAQPage schema for a list of question/answer pairs. */
-export function faqPageSchema(items: { q: string; a: string }[]) {
+/** FAQPage schema for a list of question/answer pairs (trade pages variant). */
+export function faqPageSchemaTrade(items: { q: string; a: string }[]) {
   return {
     '@context': 'https://schema.org',
     '@type': 'FAQPage',
@@ -84,8 +84,8 @@ export function faqPageSchema(items: { q: string; a: string }[]) {
   };
 }
 
-/** BreadcrumbList schema for a list of crumbs (name + path). */
-export function breadcrumbSchema(crumbs: { name: string; path: string }[]) {
+/** BreadcrumbList schema for a list of crumbs (trade pages variant). */
+export function breadcrumbSchemaTrade(crumbs: { name: string; path: string }[]) {
   return {
     '@context': 'https://schema.org',
     '@type': 'BreadcrumbList',

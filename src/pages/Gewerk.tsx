@@ -13,7 +13,7 @@ import {
   Calendar,
   ShieldCheck,
 } from 'lucide-react';
-import { canonical, faqPageSchema, breadcrumbSchema } from '@/lib/seo';
+import { canonical, faqPageSchemaTrade, breadcrumbSchemaTrade } from '@/lib/seo';
 import { TRADES } from '@/lib/constants';
 import { TRADE_CONTENT } from '@/lib/tradeContent';
 import SectionHeader from '@/components/ui/SectionHeader';
@@ -103,11 +103,11 @@ export default function Gewerk() {
         <meta name="description" content={description} />
         <link rel="canonical" href={canonical(`/leistungen/${trade.slug}/`)} />
         {content?.faq && content.faq.length > 0 && (
-          <script type="application/ld+json">{JSON.stringify(faqPageSchema(content.faq))}</script>
+          <script type="application/ld+json">{JSON.stringify(faqPageSchemaTrade(content.faq))}</script>
         )}
         <script type="application/ld+json">
           {JSON.stringify(
-            breadcrumbSchema([
+            breadcrumbSchemaTrade([
               { name: 'Start', path: '/' },
               { name: 'Leistungen', path: '/leistungen/' },
               { name: trade.name, path: `/leistungen/${trade.slug}/` },
