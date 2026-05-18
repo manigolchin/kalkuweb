@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Upload,
   FileText,
@@ -18,6 +18,7 @@ import {
   Settings2,
   ChevronDown,
   ChevronRight,
+  Calculator,
 } from 'lucide-react';
 import { canonical } from '@/lib/seo';
 import { softwareApplicationSchema } from '@/lib/toolSchema';
@@ -42,6 +43,7 @@ import type {
   Columns,
   PdfOptions,
 } from '@/lib/gaeb';
+import { writeKalkulatorHandoff } from '@/lib/toolHandoff';
 
 const TITLE = 'GAEB-Konverter (kostenlos, im Browser) | KALKU';
 const DESC =
@@ -132,6 +134,7 @@ export default function GaebKonverter() {
   const [lastExport, setLastExport] = useState<TargetFormat | null>(null);
   const [fileSizeWarning, setFileSizeWarning] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
 
   function reset() {
     setParsed(null);
@@ -256,6 +259,26 @@ export default function GaebKonverter() {
     setSubmitted(true);
   }
 
+  function handoffToKalkulator() {
+    if (!parsed) return;
+    const items = parsed.positions.filter((p) => p.type === 'item');
+    if (items.length === 0) return;
+    writeKalkulatorHandoff({
+      source: 'gaeb-konverter',
+      filename: parsed.filename,
+      projectName: parsed.projectName,
+      positionCount: items.length,
+      rows: items.map((p) => ({
+        pos: p.oz,
+        text: p.kurztext || p.langtext.slice(0, 120),
+        einheit: p.einheit || 'St',
+        menge: p.menge ?? 1,
+        material: p.ep,
+      })),
+    });
+    navigate('/tools/kalkulator/?from=gaeb');
+  }
+
   // Filtered preview
   const filtered = useMemo(() => {
     if (!parsed) return [];
@@ -290,6 +313,7 @@ export default function GaebKonverter() {
               'Spaltenwahl beim Excel-Export',
               'PDF mit Deckblatt + Unterschriftenfeld',
               'Volltext-Suche in Positionen',
+              'Direkt-Übergabe an Position-Kalkulator zum Bepreisen',
               '100 % Browser-Verarbeitung, kein Datei-Upload',
             ],
           }))}
@@ -619,6 +643,16 @@ export default function GaebKonverter() {
                         Konvertieren
                       </>
                     )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handoffToKalkulator}
+                    disabled={parsed.positions.filter((p) => p.type === 'item').length === 0}
+                    className="btn btn-outline"
+                    title="Positionen ins KALKU-Kalkulator-Tool übernehmen und EP/GP-Preise eintragen"
+                  >
+                    <Calculator className="w-4 h-4" />
+                    Im Kalkulator bepreisen
                   </button>
                   {lastExport && !converting && (
                     <span className="inline-flex items-center gap-2 text-sm text-emerald-700">

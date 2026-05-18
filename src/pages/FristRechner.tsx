@@ -9,6 +9,9 @@ import {
   Info,
   XCircle,
   MapPin,
+  Scale,
+  CheckCircle2,
+  Gavel,
 } from 'lucide-react';
 import { canonical } from '@/lib/seo';
 import { softwareApplicationSchema } from '@/lib/toolSchema';
@@ -36,6 +39,70 @@ const BUNDESLAENDER = [
 ] as const;
 
 type LandCode = (typeof BUNDESLAENDER)[number]['code'];
+
+/**
+ * VOB/A § 12a (Unterschwellenwert) und § 10 / GWB-VgV (Oberschwelle) Mindestfristen.
+ * Werte als Kalendertage zwischen Auftragsbekanntmachung und Angebotsfrist.
+ */
+type Verfahrensart = {
+  key: string;
+  label: string;
+  paragraph: string;
+  mindestKalenderTage: number;
+  hint: string;
+};
+
+const VERFAHRENSARTEN: Verfahrensart[] = [
+  {
+    key: 'offen-uvgo',
+    label: 'Öffentliche Ausschreibung (UVgO/VOB/A § 12 Abs. 1)',
+    paragraph: 'VOB/A § 10 Abs. 1',
+    mindestKalenderTage: 10,
+    hint: 'Unterhalb EU-Schwellenwert. Bekanntmachungs- und Angebotsfrist „angemessen", in der Praxis min. 10 Werktage.',
+  },
+  {
+    key: 'beschraenkt-uvgo',
+    label: 'Beschränkte Ausschreibung mit Teilnahmewettbewerb',
+    paragraph: 'VOB/A § 10 Abs. 1',
+    mindestKalenderTage: 10,
+    hint: 'Vorgeschalteter Teilnahmewettbewerb. Angemessene Frist analog UVgO.',
+  },
+  {
+    key: 'beschraenkt-ohne',
+    label: 'Beschränkte Ausschreibung ohne Teilnahmewettbewerb',
+    paragraph: 'VOB/A § 10 Abs. 1',
+    mindestKalenderTage: 10,
+    hint: 'Direkte Bieterauswahl durch AG. Angemessene Frist.',
+  },
+  {
+    key: 'verhandlungsvergabe',
+    label: 'Verhandlungsvergabe',
+    paragraph: 'VOB/A § 10',
+    mindestKalenderTage: 7,
+    hint: 'Ohne förmliches Verfahren; Frist „angemessen" nach Komplexität.',
+  },
+  {
+    key: 'offen-eu',
+    label: 'Offenes Verfahren (EU-weit, VgV § 15)',
+    paragraph: 'VgV § 15 / GWB',
+    mindestKalenderTage: 35,
+    hint: 'Mindestens 35 Tage ab Absendung der Auftragsbekanntmachung. Bei elektronischer Übermittlung des Angebots: −5 Tage = 30 Tage.',
+  },
+  {
+    key: 'nichtoffen-eu',
+    label: 'Nicht-offenes Verfahren (EU-weit, VgV § 16)',
+    paragraph: 'VgV § 16',
+    mindestKalenderTage: 30,
+    hint: 'Teilnahmewettbewerb 30 Tage + Angebotsfrist 30 Tage. Mit elektronischer Abgabe verkürzbar.',
+  },
+  {
+    key: 'verhandlungsverfahren-eu',
+    label: 'Verhandlungsverfahren EU-weit (VgV § 17)',
+    paragraph: 'VgV § 17',
+    mindestKalenderTage: 30,
+    hint: 'Teilnahmefrist 30 Tage, anschließend Verhandlungsphase mit verkürzbaren Fristen.',
+  },
+];
 
 const TITLE = 'Submissions-Frist-Rechner | KALKU';
 const DESC =
@@ -177,6 +244,10 @@ export default function FristRechner() {
   const [time, setTime] = useState('11:00');
   const [versandTage, setVersandTage] = useState(2);
   const [land, setLand] = useState<LandCode>('SL');
+  const [verfahrensart, setVerfahrensart] = useState<string>(''); // empty = nicht prüfen
+  const [bekanntmachungsDatum, setBekanntmachungsDatum] = useState<string>('');
+  const [bindefristTage, setBindefristTage] = useState<number>(30);
+  const [showVobCheck, setShowVobCheck] = useState<boolean>(false);
 
   // Live ticker — re-render every second so countdown stays accurate
   const [now, setNow] = useState(() => new Date());
@@ -210,8 +281,51 @@ export default function FristRechner() {
     const hoursLeft = Math.floor(msLeft / 3600000);
     const minutesLeft = Math.floor((msLeft % 3600000) / 60000);
     const secondsLeft = Math.floor((msLeft % 60000) / 1000);
-    return { isPast, workdaysLeft, calendarDaysLeft, versandLatest, bieterfragenLatest, hoursLeft, minutesLeft, secondsLeft };
-  }, [submissionsTermin, now, versandTage, land]);
+
+    // VOB/A § 12a Mindestfrist-Prüfung (sofern Bekanntmachungsdatum + Verfahrensart gewählt)
+    let vobCheck: {
+      verfahren: Verfahrensart;
+      tatsaechlicheTage: number;
+      mindestTage: number;
+      eingehalten: boolean;
+      fehlteTage: number;
+    } | null = null;
+    if (verfahrensart && bekanntmachungsDatum) {
+      const v = VERFAHRENSARTEN.find((x) => x.key === verfahrensart);
+      if (v) {
+        const bekDate = new Date(bekanntmachungsDatum);
+        bekDate.setHours(0, 0, 0, 0);
+        const subDate = new Date(submissionsTermin);
+        subDate.setHours(0, 0, 0, 0);
+        const tage = Math.max(0, Math.round((subDate.getTime() - bekDate.getTime()) / 86400000));
+        vobCheck = {
+          verfahren: v,
+          tatsaechlicheTage: tage,
+          mindestTage: v.mindestKalenderTage,
+          eingehalten: tage >= v.mindestKalenderTage,
+          fehlteTage: Math.max(0, v.mindestKalenderTage - tage),
+        };
+      }
+    }
+
+    // Bindefrist nach VOB/A § 10 Abs. 2 (Default 30 Kalendertage ab Submission)
+    const bindefristEnde = addDays(submissionsTermin, bindefristTage);
+    const bindefristWarnTermin = previousWorkdays(bindefristEnde, 3, holidays); // 3 Wt vor Ablauf
+
+    return {
+      isPast,
+      workdaysLeft,
+      calendarDaysLeft,
+      versandLatest,
+      bieterfragenLatest,
+      hoursLeft,
+      minutesLeft,
+      secondsLeft,
+      vobCheck,
+      bindefristEnde,
+      bindefristWarnTermin,
+    };
+  }, [submissionsTermin, now, versandTage, land, verfahrensart, bekanntmachungsDatum, bindefristTage]);
 
   function exportCalendar() {
     downloadIcs([
@@ -232,6 +346,18 @@ export default function FristRechner() {
         date: result.bieterfragenLatest,
         type: 'bieterfragen',
         description: `Spätestens jetzt sollten Bieterfragen an die Vergabestelle gestellt sein (mindestens 6 Werktage vor Submission gem. VOB-Praxis).`,
+      },
+      {
+        title: 'Bindefrist-Warnung (3 Wt vor Ablauf)',
+        date: result.bindefristWarnTermin,
+        type: 'bindefrist-warn',
+        description: `In 3 Werktagen läuft die Bindefrist von ${bindefristTage} Tagen ab — Verlängerung anfordern oder Auftragsabschluss klären.`,
+      },
+      {
+        title: 'Bindefrist-Ablauf',
+        date: result.bindefristEnde,
+        type: 'bindefrist-ende',
+        description: `Bindefrist nach VOB/A § 10 Abs. 2 läuft heute ab. Danach ist das Angebot nicht mehr bindend.`,
       },
     ]);
   }
@@ -262,7 +388,7 @@ export default function FristRechner() {
             name: 'Submissions-Frist-Rechner',
             description: DESC,
             path: '/tools/frist-rechner/',
-            featureList: ['Werktage-Zähler', 'Bundesland-spezifische Feiertage', 'Bieterfragen-Frist VOB', 'ICS-Kalender-Export', 'Live-Countdown'],
+            featureList: ['Werktage-Zähler', 'Bundesland-spezifische Feiertage', 'Bieterfragen-Frist VOB', 'VOB/A § 12a Mindestfrist-Prüfung', 'Bindefrist-Tracking VOB/A § 10 Abs. 2', 'ICS-Kalender-Export', 'Live-Countdown'],
           }))}
         </script>
       </Helmet>
@@ -351,8 +477,73 @@ export default function FristRechner() {
                 </p>
               </div>
 
+              <div className="mt-6 pt-6 border-t border-gray-100">
+                <label className="label inline-flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5" /> Bindefrist (Tage ab Submission)
+                </label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    value={bindefristTage}
+                    onChange={(e) => setBindefristTage(parseInt(e.target.value))}
+                    min={14}
+                    max={90}
+                    step={1}
+                    className="flex-1 accent-rose-600"
+                  />
+                  <span className="font-bold text-rose-700 tabular-nums w-14 text-right">{bindefristTage} T</span>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  VOB/A § 10 Abs. 2: 30 Tage Standard. Bei großen Bauvorhaben oft 60–90 Tage in Bekanntmachung gesetzt.
+                </p>
+              </div>
+
+              <div className="mt-6 pt-6 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setShowVobCheck((v) => !v)}
+                  className="flex items-center gap-1.5 text-xs uppercase tracking-wider font-bold text-gray-500 hover:text-gray-700"
+                >
+                  <Scale className="w-3.5 h-3.5" />
+                  VOB/A § 12a Mindestfrist-Prüfung
+                  <span className="text-[10px] text-gray-400 font-normal normal-case tracking-normal">
+                    {showVobCheck ? '— ausblenden' : '— prüfen'}
+                  </span>
+                </button>
+
+                {showVobCheck && (
+                  <div className="mt-3 space-y-3">
+                    <div>
+                      <label className="label text-xs">Verfahrensart</label>
+                      <select
+                        value={verfahrensart}
+                        onChange={(e) => setVerfahrensart(e.target.value)}
+                        className="input text-sm"
+                      >
+                        <option value="">— bitte wählen —</option>
+                        {VERFAHRENSARTEN.map((v) => (
+                          <option key={v.key} value={v.key}>{v.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label text-xs">Datum der Auftragsbekanntmachung</label>
+                      <input
+                        type="date"
+                        value={bekanntmachungsDatum}
+                        onChange={(e) => setBekanntmachungsDatum(e.target.value)}
+                        className="input text-sm"
+                      />
+                      <p className="text-[11px] text-gray-500 mt-1">
+                        Datum der Veröffentlichung der Auftragsbekanntmachung im e-Vergabe-Portal oder TED.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <button type="button" onClick={exportCalendar} className="btn btn-outline w-full mt-6">
-                <Download className="w-4 h-4" /> ICS-Kalender exportieren
+                <Download className="w-4 h-4" /> ICS-Kalender exportieren (inkl. Bindefrist)
               </button>
             </div>
 
@@ -419,6 +610,60 @@ export default function FristRechner() {
                 </p>
                 <p className="font-bold text-gray-900">{fmtDate(submissionsTermin)} um {fmtTime(submissionsTermin)} Uhr</p>
               </div>
+
+              <div className="card-flat">
+                <p className="text-[11px] uppercase tracking-wider font-bold text-gray-500 mb-2 inline-flex items-center gap-1.5">
+                  <Gavel className="w-3.5 h-3.5" /> Bindefrist-Ablauf
+                </p>
+                <p className="font-bold text-gray-900">{fmtDate(result.bindefristEnde)}</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {bindefristTage} Kalendertage nach Submission · Erinnerung im ICS am {fmtDate(result.bindefristWarnTermin)}
+                </p>
+              </div>
+
+              {result.vobCheck && (
+                <div
+                  className={`card-flat border-2 ${
+                    result.vobCheck.eingehalten
+                      ? 'border-emerald-200 bg-emerald-50'
+                      : 'border-rose-300 bg-rose-50'
+                  }`}
+                >
+                  <p
+                    className={`text-[11px] uppercase tracking-wider font-bold mb-2 inline-flex items-center gap-1.5 ${
+                      result.vobCheck.eingehalten ? 'text-emerald-800' : 'text-rose-800'
+                    }`}
+                  >
+                    {result.vobCheck.eingehalten ? (
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                    ) : (
+                      <AlertCircle className="w-3.5 h-3.5" />
+                    )}
+                    VOB/A Mindestfrist · {result.vobCheck.verfahren.paragraph}
+                  </p>
+                  <p
+                    className={`font-bold ${
+                      result.vobCheck.eingehalten ? 'text-emerald-900' : 'text-rose-900'
+                    }`}
+                  >
+                    {result.vobCheck.tatsaechlicheTage} Tage angesetzt · Mindestfrist {result.vobCheck.mindestTage} Tage
+                  </p>
+                  <p
+                    className={`text-xs mt-1 ${
+                      result.vobCheck.eingehalten ? 'text-emerald-800' : 'text-rose-800'
+                    }`}
+                  >
+                    {result.vobCheck.eingehalten ? (
+                      <>Mindestfrist eingehalten. Kein Rügegrund aus § 12a.</>
+                    ) : (
+                      <>
+                        <strong>{result.vobCheck.fehlteTage} Tag(e) zu kurz!</strong> Möglicher Rügegrund nach VOB/A {result.vobCheck.verfahren.paragraph} —
+                        Bieterrüge schriftlich an die Vergabestelle und Nachprüfungsantrag prüfen.
+                      </>
+                    )}
+                  </p>
+                </div>
+              )}
               </>
               )}
             </div>

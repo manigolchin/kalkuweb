@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Helmet } from 'react-helmet-async';
-import { ShieldCheck, Info, FileText, Shield, Banknote, BarChart3, FileSpreadsheet, Printer } from 'lucide-react';
+import { ShieldCheck, Info, FileText, Shield, Banknote, BarChart3, Scale, AlertTriangle, Wallet, FileSpreadsheet, Printer } from 'lucide-react';
 import { canonical } from '@/lib/seo';
 import { softwareApplicationSchema } from '@/lib/toolSchema';
 import AndereTools from '@/components/sections/AndereTools';
@@ -66,17 +66,63 @@ export default function Buergschaft() {
   const [avalProvProzPa, setAvalProvProzPa] = useState(1.5);
   const [erfuellungsLaufzeitMonate, setErfuellungsLaufzeitMonate] = useState(18);
   const [gewaehrleistungsLaufzeitJahre, setGewaehrleistungsLaufzeitJahre] = useState(5);
+  // Erweiterungen: Auf-erstes-Anfordern Aufpreis + Bareinbehalt-Vergleich
+  const [aufErstesAnfordern, setAufErstesAnfordern] = useState(false);
+  const [aufErstesAufpreisProz, setAufErstesAufpreisProz] = useState(0.4); // %-Punkte p.a. Aufschlag
+  const [showBareinbehalt, setShowBareinbehalt] = useState(false);
+  const [bareinbehaltProz, setBareinbehaltProz] = useState(3); // VOB/B § 17 Abs. 6
+  const [eigenkapitalKosten, setEigenkapitalKosten] = useState(8); // % p.a. Opportunitätskosten
   const [exportingExcel, setExportingExcel] = useState(false);
 
   const result = useMemo(() => {
     const erfBetrag = vertragssumme * (erfuellungsProz / 100);
     const gewBetrag = vertragssumme * (gewaehrleistungsProz / 100);
-    const erfAvalKosten = (erfBetrag * (avalProvProzPa / 100) * erfuellungsLaufzeitMonate) / 12;
-    const gewAvalKosten = gewBetrag * (avalProvProzPa / 100) * gewaehrleistungsLaufzeitJahre;
+    const effektiverAvalProz = aufErstesAnfordern ? avalProvProzPa + aufErstesAufpreisProz : avalProvProzPa;
+    const erfAvalKosten = (erfBetrag * (effektiverAvalProz / 100) * erfuellungsLaufzeitMonate) / 12;
+    const gewAvalKosten = gewBetrag * (effektiverAvalProz / 100) * gewaehrleistungsLaufzeitJahre;
     const gesamtAvalKosten = erfAvalKosten + gewAvalKosten;
     const gesamtAvalProz = vertragssumme > 0 ? (gesamtAvalKosten / vertragssumme) * 100 : 0;
-    return { erfBetrag, gewBetrag, erfAvalKosten, gewAvalKosten, gesamtAvalKosten, gesamtAvalProz };
-  }, [vertragssumme, erfuellungsProz, gewaehrleistungsProz, avalProvProzPa, erfuellungsLaufzeitMonate, gewaehrleistungsLaufzeitJahre]);
+    const aufErstesMehrkosten = aufErstesAnfordern
+      ? ((erfBetrag * (aufErstesAufpreisProz / 100) * erfuellungsLaufzeitMonate) / 12) +
+        gewBetrag * (aufErstesAufpreisProz / 100) * gewaehrleistungsLaufzeitJahre
+      : 0;
+
+    // Bareinbehalt-Vergleich: AG behält bareinbehaltProz von jeder Rechnung ein,
+    // gibt frei nach Abnahme. Liquiditätskosten = Eigenkapital-Verzinsung über Erfüllungszeit.
+    const bareinbehaltSumme = vertragssumme * (bareinbehaltProz / 100);
+    const bareinbehaltLiquKosten = (bareinbehaltSumme * (eigenkapitalKosten / 100) * erfuellungsLaufzeitMonate) / 12;
+    // Bürgschafts-Alternativ-Kosten für gleiche Erfüllungs-Sicherheit:
+    const buergschaftAltKosten = (bareinbehaltSumme * (effektiverAvalProz / 100) * erfuellungsLaufzeitMonate) / 12;
+    const bareinbehaltGuenstiger = bareinbehaltLiquKosten < buergschaftAltKosten;
+    const bareinbehaltDelta = Math.abs(bareinbehaltLiquKosten - buergschaftAltKosten);
+
+    return {
+      erfBetrag,
+      gewBetrag,
+      erfAvalKosten,
+      gewAvalKosten,
+      gesamtAvalKosten,
+      gesamtAvalProz,
+      effektiverAvalProz,
+      aufErstesMehrkosten,
+      bareinbehaltSumme,
+      bareinbehaltLiquKosten,
+      buergschaftAltKosten,
+      bareinbehaltGuenstiger,
+      bareinbehaltDelta,
+    };
+  }, [
+    vertragssumme,
+    erfuellungsProz,
+    gewaehrleistungsProz,
+    avalProvProzPa,
+    erfuellungsLaufzeitMonate,
+    gewaehrleistungsLaufzeitJahre,
+    aufErstesAnfordern,
+    aufErstesAufpreisProz,
+    bareinbehaltProz,
+    eigenkapitalKosten,
+  ]);
 
   async function exportExcel() {
     setExportingExcel(true);
@@ -91,25 +137,38 @@ export default function Buergschaft() {
         [
           'Vertragserfüllungs-Bürgschaft',
           Number(result.erfBetrag.toFixed(2)),
-          avalProvProzPa,
+          result.effektiverAvalProz,
           `${erfuellungsLaufzeitMonate} Monate`,
           Number(result.erfAvalKosten.toFixed(2)),
         ],
         [
           'Gewährleistungs-Bürgschaft',
           Number(result.gewBetrag.toFixed(2)),
-          avalProvProzPa,
+          result.effektiverAvalProz,
           `${gewaehrleistungsLaufzeitJahre} Jahre`,
           Number(result.gewAvalKosten.toFixed(2)),
         ],
         [],
         ['Σ Gesamtkosten Avalprovision €', '', '', '', Number(result.gesamtAvalKosten.toFixed(2))],
         ['als % der Vertragssumme', '', '', '', Number(result.gesamtAvalProz.toFixed(3))],
-        [],
-        ['Hinweis: Berechnungsmodell: lineare Pro-rata, ohne Mindestgebühren'],
       ];
+      if (aufErstesAnfordern) {
+        data.push([]);
+        data.push(['davon „auf erstes Anfordern"-Aufpreis €', '', '', '', Number(result.aufErstesMehrkosten.toFixed(2))]);
+      }
+      if (showBareinbehalt) {
+        data.push([]);
+        data.push(['Bareinbehalt-Vergleich (VOB/B § 17 Abs. 6)']);
+        data.push(['Bareinbehalt-Quote %', bareinbehaltProz]);
+        data.push(['Einbehalt-Summe €', Number(result.bareinbehaltSumme.toFixed(2))]);
+        data.push(['Liquiditätskosten (WACC ' + eigenkapitalKosten + ' %)', Number(result.bareinbehaltLiquKosten.toFixed(2))]);
+        data.push(['Bürgschafts-Alternative für gleiche Höhe', Number(result.buergschaftAltKosten.toFixed(2))]);
+        data.push([result.bareinbehaltGuenstiger ? 'Empfehlung: Bareinbehalt günstiger' : 'Empfehlung: Bürgschaft günstiger', '', '', '', Number(result.bareinbehaltDelta.toFixed(2))]);
+      }
+      data.push([]);
+      data.push(['Hinweis: Berechnungsmodell: lineare Pro-rata, ohne Mindestgebühren']);
       const ws = XLSX.utils.aoa_to_sheet(data);
-      ws['!cols'] = [{ wch: 36 }, { wch: 18 }, { wch: 18 }, { wch: 14 }, { wch: 18 }];
+      ws['!cols'] = [{ wch: 40 }, { wch: 18 }, { wch: 18 }, { wch: 14 }, { wch: 18 }];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Bürgschaft');
       XLSX.writeFile(wb, `kalku-buergschaft-${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -129,7 +188,7 @@ export default function Buergschaft() {
             name: 'Bürgschafts-Rechner (VOB)',
             description: DESC,
             path: '/tools/buergschaft/',
-            featureList: ['VOB/B § 17', 'Vertragserfüllungs-Bürgschaft', 'Gewährleistungs-Bürgschaft', 'Avalprovision über Laufzeit', 'Szenario-Vergleich Konservativ/Marktüblich/Optimal'],
+            featureList: ['VOB/B § 17', 'Vertragserfüllungs-Bürgschaft', 'Gewährleistungs-Bürgschaft', 'Avalprovision über Laufzeit', 'Szenario-Vergleich Konservativ/Marktüblich/Optimal', '„Auf erstes Anfordern"-Aufschlag', 'Bareinbehalt-vs-Bürgschaft-Vergleich (VOB/B § 17 Abs. 6)'],
           }))}
         </script>
       </Helmet>
@@ -253,6 +312,44 @@ export default function Buergschaft() {
                     </div>
                   </div>
                 </div>
+
+                {/* Auf erstes Anfordern */}
+                <div className="pt-4 border-t border-gray-100">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={aufErstesAnfordern}
+                      onChange={(e) => setAufErstesAnfordern(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <div className="flex-1">
+                      <span className="font-semibold text-sm text-gray-900 inline-flex items-center gap-1.5">
+                        <Scale className="w-3.5 h-3.5 text-indigo-600" />
+                        „Auf erstes Anfordern" verlangt (Aufpreis)
+                      </span>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Erhöht die Avalprovision um typ. <strong>0,3–0,5 % p.a.</strong> Bei VOB/B-Vergaben unzulässig (BGH-Rspr.); bei privaten Verträgen häufig — Verhandlungsargument.
+                      </p>
+                    </div>
+                  </label>
+                  {aufErstesAnfordern && (
+                    <div className="mt-3 pl-7 grid grid-cols-2 gap-3 items-end">
+                      <Slider
+                        label="Aufschlag p.a."
+                        value={aufErstesAufpreisProz}
+                        onChange={setAufErstesAufpreisProz}
+                        min={0.1}
+                        max={1.0}
+                        step={0.05}
+                        suffix="%"
+                      />
+                      <div className="text-right">
+                        <p className="text-[11px] uppercase tracking-wider font-bold text-gray-500">Mehrkosten gesamt</p>
+                        <p className="text-lg font-extrabold text-indigo-700 tabular-nums">{eur(result.aufErstesMehrkosten, 0)}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -294,6 +391,14 @@ export default function Buergschaft() {
                     <span>als % der Vertragssumme</span>
                     <span className="tabular-nums">{fmt(result.gesamtAvalProz)} %</span>
                   </div>
+                  {aufErstesAnfordern && (
+                    <div className="flex justify-between text-xs text-rose-700 pt-1">
+                      <span className="inline-flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" /> davon „auf erstes Anfordern"-Aufschlag
+                      </span>
+                      <span className="tabular-nums font-semibold">{eur(result.aufErstesMehrkosten, 0)}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -363,6 +468,150 @@ export default function Buergschaft() {
                 );
               })}
             </div>
+          </div>
+
+          {/* BAREINBEHALT-VERGLEICH */}
+          <div className="max-w-5xl mx-auto mt-10">
+            <div className="text-center mb-7">
+              <p className="text-xs uppercase tracking-[0.18em] font-bold text-gray-500 mb-2 inline-flex items-center gap-1.5">
+                <Wallet className="w-3.5 h-3.5" /> Entscheidungs-Hilfe
+              </p>
+              <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">
+                Bürgschaft oder Bareinbehalt? Was kostet weniger?
+              </h2>
+              <p className="text-sm text-gray-600 mt-2 max-w-2xl mx-auto">
+                Auftraggeber gewährt nach VOB/B § 17 Abs. 6 oft die Wahl: <strong>5 % Bürgschaft</strong> (= Avalprovision)
+                oder <strong>3 % Bareinbehalt</strong> (= gebundenes Eigenkapital). Echte Bauunternehmer-Entscheidung.
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowBareinbehalt((v) => !v)}
+                className="btn btn-outline btn-sm mt-4"
+              >
+                {showBareinbehalt ? 'Bareinbehalt-Vergleich ausblenden' : 'Bareinbehalt-Vergleich anzeigen'}
+              </button>
+            </div>
+
+            {showBareinbehalt && (
+              <div className="grid md:grid-cols-2 gap-5">
+                <div className="card">
+                  <div className="flex items-center gap-2 mb-4">
+                    <ShieldCheck className="w-5 h-5 text-indigo-600" />
+                    <h3 className="font-bold text-gray-900">Variante A: Bürgschaft</h3>
+                  </div>
+                  <div className="space-y-3 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Bürgschaftshöhe</span>
+                      <span className="tabular-nums font-medium">
+                        {fmt(bareinbehaltProz)} % = {eur(result.bareinbehaltSumme, 0)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Avalprovision</span>
+                      <span className="tabular-nums font-medium">
+                        {fmt(result.effektiverAvalProz)} % p.a.
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Laufzeit (Erfüllung)</span>
+                      <span className="tabular-nums font-medium">{erfuellungsLaufzeitMonate} Monate</span>
+                    </div>
+                    <div className="pt-3 mt-3 border-t border-gray-100 flex justify-between items-baseline">
+                      <span className="font-bold text-gray-900">Aval-Kosten</span>
+                      <span className="tabular-nums font-extrabold text-2xl text-indigo-700">
+                        {eur(result.buergschaftAltKosten, 0)}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      = echte Bürokosten, jedes Jahr neu fällig.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="card">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Wallet className="w-5 h-5 text-amber-600" />
+                    <h3 className="font-bold text-gray-900">Variante B: Bareinbehalt</h3>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="label text-xs">Bareinbehalt</label>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            value={bareinbehaltProz}
+                            onChange={(e) => setBareinbehaltProz(parseFloat(e.target.value) || 0)}
+                            min={0}
+                            max={10}
+                            step={0.5}
+                            className="input pr-8 text-right tabular-nums"
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="label text-xs">Eigenkapital-Kosten</label>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            value={eigenkapitalKosten}
+                            onChange={(e) => setEigenkapitalKosten(parseFloat(e.target.value) || 0)}
+                            min={0}
+                            max={25}
+                            step={0.5}
+                            className="input pr-8 text-right tabular-nums"
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">%</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Einbehalt-Summe</span>
+                        <span className="tabular-nums font-medium">{eur(result.bareinbehaltSumme, 0)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Bindungs-Dauer</span>
+                        <span className="tabular-nums font-medium">{erfuellungsLaufzeitMonate} Monate</span>
+                      </div>
+                      <div className="pt-3 mt-1 border-t border-gray-100 flex justify-between items-baseline">
+                        <span className="font-bold text-gray-900">Opportunitätskosten</span>
+                        <span className="tabular-nums font-extrabold text-2xl text-amber-700">
+                          {eur(result.bareinbehaltLiquKosten, 0)}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        = entgangener Ertrag durch gebundene Liquidität ({fmt(eigenkapitalKosten)} % WACC-Annahme).
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  className={`md:col-span-2 card-flat ${
+                    result.bareinbehaltGuenstiger ? 'bg-amber-50 border-amber-200' : 'bg-indigo-50 border-indigo-200'
+                  }`}
+                >
+                  <p className="text-xs uppercase tracking-wider font-bold mb-1 text-gray-700">
+                    Empfehlung
+                  </p>
+                  <p className="text-base text-gray-900">
+                    Bei diesen Annahmen ist{' '}
+                    <strong>
+                      {result.bareinbehaltGuenstiger ? 'der Bareinbehalt' : 'die Bürgschaft'}
+                    </strong>{' '}
+                    um <strong className="tabular-nums">{eur(result.bareinbehaltDelta, 0)}</strong>{' '}
+                    günstiger über die Erfüllungs-Laufzeit von {erfuellungsLaufzeitMonate} Monaten.
+                  </p>
+                  <p className="text-xs text-gray-600 mt-2">
+                    Achtung: Bareinbehalt kostet <em>Liquidität</em>, Bürgschaft kostet <em>Cash</em>. Wer
+                    knapp an liquiden Mitteln ist (z. B. parallele Baustellen mit Vorfinanzierung),
+                    wählt die Bürgschaft auch dann, wenn rechnerisch teurer.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="max-w-3xl mx-auto mt-10 bg-indigo-50 border border-indigo-200 rounded-lg p-5">
