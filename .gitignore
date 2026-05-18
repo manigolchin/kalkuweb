@@ -34,5 +34,6 @@ pnpm-debug.log*
 coverage
 .eslintcache
 
-# Editor / harness worktrees
-.claude/worktrees/
+# Per-developer Claude config + harness worktrees
+# (matches sibling project kalku-procurement — .claude/ is personal, not shared)
+.claude/
