@@ -1,4 +1,5 @@
 export { default as Home } from './Home';
+export { default as NeuLanding } from './NeuLanding';
 export { default as LeistungenIndex } from './LeistungenIndex';
 export { default as Gewerk } from './Gewerk';
 export { default as Ablauf } from './Ablauf';

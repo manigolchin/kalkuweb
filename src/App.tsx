@@ -2,6 +2,7 @@ import { Routes, Route } from 'react-router-dom';
 import { Layout } from '@/components/layout';
 import {
   Home,
+  NeuLanding,
   LeistungenIndex,
   Gewerk,
   Ablauf,
@@ -29,6 +30,7 @@ export default function App() {
     <Routes>
       <Route element={<Layout />}>
         <Route index element={<Home />} />
+        <Route path="neu" element={<NeuLanding />} />
 
         <Route path="leistungen">
           <Route index element={<LeistungenIndex />} />

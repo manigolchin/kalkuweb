@@ -23,6 +23,13 @@
   ::selection {
     @apply bg-primary-100 text-primary-900;
   }
+
+  /* Mobile inputs: ≥16px font-size to prevent iOS Safari from zooming on focus */
+  @media (max-width: 768px) {
+    input, select, textarea {
+      font-size: 16px;
+    }
+  }
 }
 
 @layer components {
@@ -106,6 +113,119 @@
   .section-tight {
     @apply py-12 sm:py-16;
   }
+
+  /* === V2 editorial typography helpers (only used on /neu/ landing page) === */
+
+  /* Display headline for hero-class places — tighter line-height, balanced wrap */
+  .display-h1 {
+    @apply text-4xl sm:text-5xl lg:text-[3.75rem] font-extrabold tracking-tight text-gray-900;
+    line-height: 1.04;
+    letter-spacing: -0.02em;
+  }
+  .display-h2 {
+    @apply text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-gray-900;
+    line-height: 1.08;
+    letter-spacing: -0.018em;
+  }
+
+  /* Eyebrow pill — small uppercase chip variant of .eyebrow */
+  .eyebrow-pill {
+    @apply inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary-50 text-primary-700 text-[11px] font-bold uppercase tracking-[0.16em];
+  }
+  .eyebrow-pill-dark {
+    @apply inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-white text-[11px] font-bold uppercase tracking-[0.16em] ring-1 ring-white/15;
+  }
+
+  /* Paper / parchment background for editorial sections */
+  .bg-paper {
+    background-color: #fbfaf7;
+  }
+  .bg-paper-soft {
+    background-color: #f9f8f4;
+  }
+
+  /* Hairline divider — subtle horizontal rule */
+  .hairline {
+    @apply h-px bg-gray-200;
+  }
+
+  /* Monogram — the AC-style initial plate */
+  .monogram {
+    @apply inline-flex items-center justify-center font-extrabold tracking-tight tabular-nums;
+    font-feature-settings: 'cv02', 'cv03', 'cv11', 'ss03';
+  }
+
+  /* Status dot — pulsing live indicator */
+  .status-dot {
+    @apply inline-block w-2 h-2 rounded-full;
+    background: #10b981;
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+    animation: status-pulse 2s ease-out infinite;
+  }
+  .status-dot-amber {
+    background: #f59e0b;
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.6);
+  }
+  @keyframes status-pulse {
+    0%   { box-shadow: 0 0 0 0   rgba(16, 185, 129, 0.55); }
+    70%  { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);    }
+    100% { box-shadow: 0 0 0 0   rgba(16, 185, 129, 0);    }
+  }
+
+  /* Magnetic CTA — subtle shimmer + lift on hover, premium feel */
+  .cta-magnetic {
+    @apply relative overflow-hidden;
+    transition: transform 200ms cubic-bezier(0.2, 0.6, 0.2, 1), box-shadow 200ms;
+  }
+  .cta-magnetic:hover {
+    transform: translateY(-1px);
+  }
+  .cta-magnetic::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.25) 50%, transparent 70%);
+    transform: translateX(-100%);
+    transition: transform 600ms ease;
+    pointer-events: none;
+  }
+  .cta-magnetic:hover::after {
+    transform: translateX(100%);
+  }
+
+  /* Editorial number — for big stat numbers */
+  .editorial-number {
+    @apply font-extrabold tabular-nums tracking-tight;
+    font-feature-settings: 'tnum', 'cv11', 'ss03', 'ss04';
+    letter-spacing: -0.025em;
+  }
+
+  /* Editorial body — reading line-length */
+  .prose-body {
+    @apply text-gray-600 leading-relaxed;
+    max-width: 64ch;
+  }
+}
+
+/* === V2 utilities outside @layer === */
+
+.bg-dot-grid {
+  background-image: radial-gradient(rgba(15, 23, 42, 0.06) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.halo {
+  position: absolute;
+  inset: -2rem;
+  background: radial-gradient(closest-side, rgba(26, 82, 118, 0.12), transparent 70%);
+  filter: blur(40px);
+  pointer-events: none;
+}
+
+.lv-grid {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr) 4.5rem 5rem;
+  align-items: baseline;
 }
 
 /* Custom scrollbar */
