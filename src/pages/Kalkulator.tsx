@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useId } from 'react';
 import { Helmet } from 'react-helmet-async';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Plus,
   Trash2,
@@ -14,11 +14,13 @@ import {
   Sparkles,
   Shield,
   Clipboard,
+  Percent,
 } from 'lucide-react';
 import { canonical } from '@/lib/seo';
 import { cn } from '@/lib/utils';
 import { softwareApplicationSchema } from '@/lib/toolSchema';
 import AndereTools from '@/components/sections/AndereTools';
+import { readKalkulatorHandoff, clearKalkulatorHandoff } from '@/lib/toolHandoff';
 
 type Row = {
   id: string;
@@ -37,6 +39,7 @@ const DESC =
   'Online-Kalkulator für Bauunternehmer: Lohn × Zeit + Material + Zuschlag = EP. Trade-Vorlagen (GaLaBau, Tiefbau, Elektro), Excel + CSV Export, Auto-Save. Kostenlos, im Browser.';
 
 const STORAGE_KEY = 'kalku.kalkulator.rows';
+const ADJ_STORAGE_KEY = 'kalku.kalkulator.adjustments';
 
 type Preset = {
   slug: string;
@@ -149,6 +152,79 @@ export default function Kalkulator() {
   const [exportingExcel, setExportingExcel] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const formId = useId();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [handoffSource, setHandoffSource] = useState<{ filename?: string; projectName?: string; count: number } | null>(null);
+
+  // Bid-tuning: globaler Nachlass, Skonto, Wagnis & Gewinn (Schlussblatt-Logik)
+  const [nachlassPct, setNachlassPct] = useState<number>(0);
+  const [skontoPct, setSkontoPct] = useState<number>(0);
+  const [wagnisGewinnPct, setWagnisGewinnPct] = useState<number>(0);
+  const [showAdjustments, setShowAdjustments] = useState<boolean>(false);
+
+  // Persist adjustments
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const saved = localStorage.getItem(ADJ_STORAGE_KEY);
+      if (saved) {
+        const d = JSON.parse(saved);
+        if (typeof d.nachlassPct === 'number') setNachlassPct(d.nachlassPct);
+        if (typeof d.skontoPct === 'number') setSkontoPct(d.skontoPct);
+        if (typeof d.wagnisGewinnPct === 'number') setWagnisGewinnPct(d.wagnisGewinnPct);
+        if (typeof d.showAdjustments === 'boolean') setShowAdjustments(d.showAdjustments);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(
+          ADJ_STORAGE_KEY,
+          JSON.stringify({ nachlassPct, skontoPct, wagnisGewinnPct, showAdjustments }),
+        );
+      } catch {
+        /* ignore */
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [nachlassPct, skontoPct, wagnisGewinnPct, showAdjustments]);
+
+  // Handoff from GAEB-Konverter: consume once and load into table
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const fromHandoff = searchParams.get('from') === 'gaeb';
+    if (!fromHandoff) return;
+    const payload = readKalkulatorHandoff();
+    if (!payload || payload.rows.length === 0) {
+      // strip param even if there's nothing
+      searchParams.delete('from');
+      setSearchParams(searchParams, { replace: true });
+      return;
+    }
+    setRows(
+      payload.rows.map((r) =>
+        newRow({
+          pos: r.pos,
+          text: r.text,
+          einheit: r.einheit || 'St',
+          menge: r.menge || 1,
+          lohn: r.lohn ?? 48,
+          zeit: r.zeit ?? 1,
+          material: r.material ?? 0,
+          zuschlag: r.zuschlag ?? 14,
+        }),
+      ),
+    );
+    setHandoffSource({ filename: payload.filename, projectName: payload.projectName, count: payload.rows.length });
+    clearKalkulatorHandoff();
+    searchParams.delete('from');
+    setSearchParams(searchParams, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Auto-save to localStorage on every change (debounced via state effect)
   useEffect(() => {
@@ -167,12 +243,36 @@ export default function Kalkulator() {
   const totals = useMemo(() => {
     const eps = rows.map(computeEp);
     const gps = rows.map((r, i) => eps[i] * r.menge);
-    const total = gps.reduce((s, v) => s + v, 0);
+    const zwischensumme = gps.reduce((s, v) => s + v, 0);
     const lohnTotal = rows.reduce((s, r) => s + r.lohn * r.zeit * r.menge * (1 + r.zuschlag / 100), 0);
     const materialTotal = rows.reduce((s, r) => s + r.material * r.menge * (1 + r.zuschlag / 100), 0);
     const stundenTotal = rows.reduce((s, r) => s + r.zeit * r.menge, 0);
-    return { eps, gps, total, lohnTotal, materialTotal, stundenTotal };
-  }, [rows]);
+    // Schlussblatt: Zwischensumme → +W&G → −Nachlass = Angebotssumme netto
+    const wagnisGewinnBetrag = zwischensumme * (wagnisGewinnPct / 100);
+    const nettoNachWG = zwischensumme + wagnisGewinnBetrag;
+    const nachlassBetrag = nettoNachWG * (nachlassPct / 100);
+    const angebotssumme = nettoNachWG - nachlassBetrag;
+    const skontoBetrag = angebotssumme * (skontoPct / 100);
+    const zahlbetragMitSkonto = angebotssumme - skontoBetrag;
+    const mwst = angebotssumme * 0.19;
+    const angebotssummeBrutto = angebotssumme + mwst;
+    return {
+      eps,
+      gps,
+      total: zwischensumme, // kept for backwards-compat
+      zwischensumme,
+      lohnTotal,
+      materialTotal,
+      stundenTotal,
+      wagnisGewinnBetrag,
+      nachlassBetrag,
+      angebotssumme,
+      skontoBetrag,
+      zahlbetragMitSkonto,
+      mwst,
+      angebotssummeBrutto,
+    };
+  }, [rows, nachlassPct, skontoPct, wagnisGewinnPct]);
 
   function updateRow(id: string, patch: Partial<Row>) {
     setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -273,7 +373,19 @@ export default function Kalkulator() {
       );
     });
     lines.push('');
-    lines.push(['', 'SUMME', '', '', '', '', '', '', '', fmt(totals.total)].join(';'));
+    lines.push(['', 'Zwischensumme netto', '', '', '', '', '', '', '', fmt(totals.zwischensumme)].join(';'));
+    if (wagnisGewinnPct > 0) {
+      lines.push(['', `+ Wagnis & Gewinn (${fmt(wagnisGewinnPct)}%)`, '', '', '', '', '', '', '', fmt(totals.wagnisGewinnBetrag)].join(';'));
+    }
+    if (nachlassPct > 0) {
+      lines.push(['', `- Nachlass (${fmt(nachlassPct)}%)`, '', '', '', '', '', '', '', fmt(-totals.nachlassBetrag)].join(';'));
+    }
+    lines.push(['', 'Angebotssumme netto', '', '', '', '', '', '', '', fmt(totals.angebotssumme)].join(';'));
+    lines.push(['', '+ 19% MwSt.', '', '', '', '', '', '', '', fmt(totals.mwst)].join(';'));
+    lines.push(['', 'Angebotssumme brutto', '', '', '', '', '', '', '', fmt(totals.angebotssummeBrutto)].join(';'));
+    if (skontoPct > 0) {
+      lines.push(['', `Zahlbetrag bei ${fmt(skontoPct)}% Skonto`, '', '', '', '', '', '', '', fmt(totals.zahlbetragMitSkonto * 1.19)].join(';'));
+    }
     const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -287,26 +399,42 @@ export default function Kalkulator() {
     setExportingExcel(true);
     try {
       const XLSX = await import('xlsx');
+      const positions: (string | number)[][] = rows.map((r, i) => {
+        const ep = computeEp(r);
+        const gp = ep * r.menge;
+        return [
+          r.pos || `${i + 1}`,
+          r.text,
+          r.einheit,
+          r.lohn,
+          r.zeit,
+          r.material,
+          r.zuschlag,
+          r.menge,
+          Number(ep.toFixed(2)),
+          Number(gp.toFixed(2)),
+        ];
+      });
+      const schluss: (string | number)[][] = [
+        [],
+        ['', 'Zwischensumme netto', '', '', '', '', '', '', '', Number(totals.zwischensumme.toFixed(2))],
+      ];
+      if (wagnisGewinnPct > 0) {
+        schluss.push(['', `+ Wagnis & Gewinn (${fmt(wagnisGewinnPct)}%)`, '', '', '', '', '', '', '', Number(totals.wagnisGewinnBetrag.toFixed(2))]);
+      }
+      if (nachlassPct > 0) {
+        schluss.push(['', `- Nachlass (${fmt(nachlassPct)}%)`, '', '', '', '', '', '', '', Number((-totals.nachlassBetrag).toFixed(2))]);
+      }
+      schluss.push(['', 'Angebotssumme netto', '', '', '', '', '', '', '', Number(totals.angebotssumme.toFixed(2))]);
+      schluss.push(['', '+ 19% MwSt.', '', '', '', '', '', '', '', Number(totals.mwst.toFixed(2))]);
+      schluss.push(['', 'Angebotssumme brutto', '', '', '', '', '', '', '', Number(totals.angebotssummeBrutto.toFixed(2))]);
+      if (skontoPct > 0) {
+        schluss.push(['', `Zahlbetrag bei ${fmt(skontoPct)}% Skonto`, '', '', '', '', '', '', '', Number((totals.zahlbetragMitSkonto * 1.19).toFixed(2))]);
+      }
       const data: (string | number)[][] = [
         ['Pos.', 'Beschreibung', 'Einheit', 'Lohn €/h', 'Zeit h', 'Material €', 'Zuschlag %', 'Menge', 'EP €', 'GP €'],
-        ...rows.map((r, i) => {
-          const ep = computeEp(r);
-          const gp = ep * r.menge;
-          return [
-            r.pos || `${i + 1}`,
-            r.text,
-            r.einheit,
-            r.lohn,
-            r.zeit,
-            r.material,
-            r.zuschlag,
-            r.menge,
-            Number(ep.toFixed(2)),
-            Number(gp.toFixed(2)),
-          ];
-        }),
-        [],
-        ['', 'SUMME netto', '', '', '', '', '', '', '', Number(totals.total.toFixed(2))],
+        ...positions,
+        ...schluss,
       ];
       const ws = XLSX.utils.aoa_to_sheet(data);
       ws['!cols'] = [
@@ -338,7 +466,7 @@ export default function Kalkulator() {
             name: 'Position-Kalkulator',
             description: DESC,
             path: '/tools/kalkulator/',
-            featureList: ['EP/GP-Berechnung', 'Trade-Vorlagen GaLaBau/Tiefbau/Elektro/Hochbau', 'Excel + CSV Export', 'Auto-Save in Browser', 'Excel-Paste aus Zwischenablage'],
+            featureList: ['EP/GP-Berechnung', 'Trade-Vorlagen GaLaBau/Tiefbau/Elektro/Hochbau', 'GAEB-Import-Übernahme aus GAEB-Konverter', 'Schlussblatt: Wagnis & Gewinn · Nachlass · Skonto', 'Excel + CSV Export inkl. Schlussblatt', 'Auto-Save in Browser', 'Excel-Paste aus Zwischenablage'],
           }))}
         </script>
       </Helmet>
@@ -369,6 +497,36 @@ export default function Kalkulator() {
           </div>
         </div>
       </section>
+
+      {/* HANDOFF BANNER */}
+      {handoffSource && (
+        <section className="-mt-2">
+          <div className="container-page">
+            <div className="max-w-5xl mx-auto bg-emerald-50 border border-emerald-200 rounded-lg p-4 flex items-start gap-3">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-semibold text-emerald-900">
+                  {handoffSource.count} Positionen aus GAEB übernommen
+                  {handoffSource.projectName && (
+                    <span className="font-normal text-emerald-800"> · {handoffSource.projectName}</span>
+                  )}
+                </p>
+                <p className="text-sm text-emerald-800 mt-0.5">
+                  Tragen Sie jetzt Lohn × Zeit + Material + Zuschlag pro Position ein. Mengen und Einheiten
+                  sind bereits aus der LV-Datei{handoffSource.filename ? ` (${handoffSource.filename})` : ''} übernommen.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setHandoffSource(null)}
+                className="text-emerald-700 hover:text-emerald-900 text-xs font-semibold"
+              >
+                schließen
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* TRADE PRESETS */}
       <section className="-mt-2">
@@ -491,10 +649,102 @@ export default function Kalkulator() {
                 </p>
               </div>
               <div className="bg-primary-700 text-white rounded-lg p-4">
-                <p className="text-[11px] uppercase tracking-wider font-bold text-primary-200 mb-1">SUMME netto</p>
-                <p className="text-2xl font-extrabold tabular-nums">{fmtCurrency(totals.total)}</p>
+                <p className="text-[11px] uppercase tracking-wider font-bold text-primary-200 mb-1">
+                  {showAdjustments && (wagnisGewinnPct > 0 || nachlassPct > 0) ? 'ZWISCHENSUMME' : 'SUMME netto'}
+                </p>
+                <p className="text-2xl font-extrabold tabular-nums">{fmtCurrency(totals.zwischensumme)}</p>
               </div>
             </div>
+
+            {/* Schlussblatt: Nachlass / Skonto / Wagnis & Gewinn */}
+            <div className="mt-4 print:hidden">
+              <button
+                type="button"
+                onClick={() => setShowAdjustments((v) => !v)}
+                className="flex items-center gap-1.5 text-xs uppercase tracking-wider font-bold text-gray-500 hover:text-gray-700"
+              >
+                <Percent className="w-3.5 h-3.5" />
+                Schlussblatt: Nachlass · Skonto · Wagnis & Gewinn
+                <span className="text-[10px] text-gray-400 font-normal normal-case tracking-normal">
+                  {showAdjustments ? '— ausblenden' : '— anzeigen'}
+                </span>
+              </button>
+            </div>
+
+            {showAdjustments && (
+              <div className="mt-3 grid lg:grid-cols-2 gap-4 print:grid-cols-2">
+                <div className="card-flat space-y-4">
+                  <SchlussSlider
+                    label="Wagnis & Gewinn"
+                    value={wagnisGewinnPct}
+                    onChange={setWagnisGewinnPct}
+                    min={0}
+                    max={20}
+                    step={0.5}
+                    hint="VHB Bund 221: typ. 3–8 % auf Zwischensumme (Aufschlag)"
+                  />
+                  <SchlussSlider
+                    label="Globaler Nachlass"
+                    value={nachlassPct}
+                    onChange={setNachlassPct}
+                    min={0}
+                    max={15}
+                    step={0.25}
+                    hint="Endrabatt nach W&G — übliche Bid-Tuning-Stellschraube"
+                  />
+                  <SchlussSlider
+                    label="Skonto bei 14 Tagen"
+                    value={skontoPct}
+                    onChange={setSkontoPct}
+                    min={0}
+                    max={5}
+                    step={0.25}
+                    hint="2 % bei 14 Tagen typisch; rechnet Zahlbetrag aus"
+                  />
+                </div>
+
+                <div className="card bg-gradient-to-br from-primary-700 to-primary-900 text-white">
+                  <p className="text-[11px] uppercase tracking-wider font-bold text-primary-200 mb-3">
+                    Schlussblatt
+                  </p>
+                  <div className="space-y-1.5 text-sm">
+                    <SchlussLine label="Zwischensumme" value={totals.zwischensumme} accent="muted" />
+                    {wagnisGewinnPct > 0 && (
+                      <SchlussLine
+                        label={`+ Wagnis & Gewinn (${fmt(wagnisGewinnPct)} %)`}
+                        value={totals.wagnisGewinnBetrag}
+                        accent="muted"
+                      />
+                    )}
+                    {nachlassPct > 0 && (
+                      <SchlussLine
+                        label={`− Nachlass (${fmt(nachlassPct)} %)`}
+                        value={-totals.nachlassBetrag}
+                        accent="muted"
+                      />
+                    )}
+                    <div className="border-t border-primary-600 mt-2 pt-2">
+                      <SchlussLine label="Angebotssumme netto" value={totals.angebotssumme} accent="bold" />
+                      <SchlussLine label="+ 19 % MwSt." value={totals.mwst} accent="muted" />
+                      <SchlussLine label="Angebotssumme brutto" value={totals.angebotssummeBrutto} accent="strong" />
+                    </div>
+                    {skontoPct > 0 && (
+                      <div className="border-t border-primary-600 mt-2 pt-2">
+                        <SchlussLine
+                          label={`Zahlbetrag bei ${fmt(skontoPct)} % Skonto`}
+                          value={totals.zahlbetragMitSkonto * 1.19}
+                          accent="bold"
+                        />
+                        <p className="text-[11px] text-primary-300 mt-0.5">
+                          Skontobetrag {fmtCurrency(totals.skontoBetrag * 1.19)} = Ihre Mehrkosten,
+                          wenn Auftraggeber zieht.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Action bar */}
             <div className="flex flex-wrap gap-2 mt-6 pt-5 border-t border-gray-100 print:hidden">
@@ -646,5 +896,82 @@ function NumCell({
         )}
       />
     </td>
+  );
+}
+
+function SchlussSlider({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  step,
+  hint,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  min: number;
+  max: number;
+  step: number;
+  hint?: string;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <label className="text-xs uppercase tracking-wider font-bold text-gray-600">{label}</label>
+        <div className="inline-flex items-center gap-1.5">
+          <input
+            type="number"
+            value={value}
+            onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+            min={min}
+            max={max}
+            step={step}
+            className="w-16 px-2 py-1 text-right tabular-nums text-sm border border-gray-200 rounded focus:border-primary-500 focus:ring-0"
+          />
+          <span className="text-gray-400 text-sm w-3">%</span>
+        </div>
+      </div>
+      <input
+        type="range"
+        value={value}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        min={min}
+        max={max}
+        step={step}
+        className="w-full accent-primary-600"
+      />
+      {hint && <p className="text-[11px] text-gray-500 mt-1.5">{hint}</p>}
+    </div>
+  );
+}
+
+function SchlussLine({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: number;
+  accent: 'muted' | 'bold' | 'strong';
+}) {
+  const valueClass =
+    accent === 'strong'
+      ? 'text-2xl font-extrabold tabular-nums text-white'
+      : accent === 'bold'
+        ? 'text-lg font-bold tabular-nums text-white'
+        : 'tabular-nums text-primary-100';
+  const labelClass =
+    accent === 'strong'
+      ? 'text-white font-bold'
+      : accent === 'bold'
+        ? 'text-white font-semibold'
+        : 'text-primary-200';
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className={cn('text-sm', labelClass)}>{label}</span>
+      <span className={valueClass}>{fmtCurrency(value)}</span>
+    </div>
   );
 }

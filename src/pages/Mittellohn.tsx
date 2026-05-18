@@ -14,6 +14,7 @@ import {
   Shield,
   Users,
   Info,
+  Briefcase,
 } from 'lucide-react';
 import { canonical } from '@/lib/seo';
 import { cn } from '@/lib/utils';
@@ -28,6 +29,78 @@ type Person = {
 };
 
 const STORAGE_KEY = 'kalku.mittellohn.team';
+
+/**
+ * BRTV-Bau Tarifsätze Bauhauptgewerbe (Stand 2026).
+ * Quelle: ZDB / HDB / IG Bau Tariftabelle Bundesrahmentarifvertrag Bau.
+ * Bitte vor verbindlicher Kalkulation den aktuellen Tarif prüfen — Tarifrunden ändern Werte i.d.R. jährlich.
+ */
+type Lohngruppe = {
+  key: 'L1' | 'L2' | 'L3' | 'L4' | 'L5' | 'L6';
+  bezeichnung: string;
+  west: number;
+  ost: number;
+};
+
+const BRTV_LOHNGRUPPEN: Lohngruppe[] = [
+  { key: 'L1', bezeichnung: 'Werker / Ungelernter (LG 1)', west: 16.0, ost: 15.5 },
+  { key: 'L2', bezeichnung: 'Fachwerker / Spezialfacharbeiter (LG 2)', west: 19.71, ost: 19.4 },
+  { key: 'L3', bezeichnung: 'Facharbeiter / Geselle (LG 3)', west: 23.41, ost: 22.42 },
+  { key: 'L4', bezeichnung: 'Vorarbeiter (LG 4)', west: 24.96, ost: 23.84 },
+  { key: 'L5', bezeichnung: 'Werkpolier (LG 5)', west: 27.51, ost: 26.18 },
+  { key: 'L6', bezeichnung: 'Geprüfter Polier (LG 6)', west: 30.31, ost: 28.81 },
+];
+
+type TeamPreset = {
+  slug: string;
+  label: string;
+  desc: string;
+  members: Array<{ lohngruppe: Lohngruppe['key']; anzahl: number }>;
+};
+
+const TEAM_PRESETS: TeamPreset[] = [
+  {
+    slug: 'kolonne-klein',
+    label: 'Bau-Kolonne klein (3 Mann)',
+    desc: 'Vorarbeiter + Facharbeiter + Helfer — typische Reparatur/Sanierungs-Trupp.',
+    members: [
+      { lohngruppe: 'L4', anzahl: 1 },
+      { lohngruppe: 'L3', anzahl: 1 },
+      { lohngruppe: 'L1', anzahl: 1 },
+    ],
+  },
+  {
+    slug: 'kolonne-standard',
+    label: 'Bau-Kolonne Standard (5 Mann)',
+    desc: 'Polier + Vorarbeiter + 2 Geselle + 1 Helfer — klassische Hochbau-Kolonne.',
+    members: [
+      { lohngruppe: 'L6', anzahl: 1 },
+      { lohngruppe: 'L4', anzahl: 1 },
+      { lohngruppe: 'L3', anzahl: 2 },
+      { lohngruppe: 'L1', anzahl: 1 },
+    ],
+  },
+  {
+    slug: 'tiefbau-team',
+    label: 'Tiefbau-Trupp (4 Mann)',
+    desc: 'Werkpolier + Maschinist + 2 Facharbeiter — typischer Kanalbau/Erdbau-Trupp.',
+    members: [
+      { lohngruppe: 'L5', anzahl: 1 },
+      { lohngruppe: 'L3', anzahl: 3 },
+    ],
+  },
+  {
+    slug: 'rohbau-gross',
+    label: 'Rohbau-Kolonne groß (8 Mann)',
+    desc: 'Polier + Vorarbeiter + 4 Geselle + 2 Helfer — Sichtbeton, Stahlbeton-Großbaustelle.',
+    members: [
+      { lohngruppe: 'L6', anzahl: 1 },
+      { lohngruppe: 'L4', anzahl: 1 },
+      { lohngruppe: 'L3', anzahl: 4 },
+      { lohngruppe: 'L1', anzahl: 2 },
+    ],
+  },
+];
 
 const DEFAULT_TEAM: Omit<Person, 'id'>[] = [
   { rolle: 'Polier', stundensatz: 32.5, anzahl: 1 },
@@ -135,6 +208,33 @@ export default function Mittellohn() {
     setZulagen(0);
   }
 
+  function loadTeamPreset(preset: TeamPreset) {
+    const hasWork = team.some((p) => p.rolle && p.stundensatz > 0);
+    if (hasWork && !window.confirm(`Aktuelles Team durch „${preset.label}" ersetzen?`)) return;
+    const newTeam: Person[] = preset.members.map((m) => {
+      const lg = BRTV_LOHNGRUPPEN.find((l) => l.key === m.lohngruppe)!;
+      return newRow({
+        rolle: lg.bezeichnung,
+        stundensatz: tarifgebiet === 'west' ? lg.west : lg.ost,
+        anzahl: m.anzahl,
+      });
+    });
+    setTeam(newTeam);
+  }
+
+  function applyTarifsaetzeAllRows() {
+    // Re-map current rolle-Beschriftungen auf aktuellen BRTV-Wert (best effort match)
+    setTeam((rs) =>
+      rs.map((p) => {
+        const lg = BRTV_LOHNGRUPPEN.find((l) => p.rolle.includes(`(${l.key})`));
+        if (lg) {
+          return { ...p, stundensatz: tarifgebiet === 'west' ? lg.west : lg.ost };
+        }
+        return p;
+      }),
+    );
+  }
+
   function exportCsv() {
     const lines = ['Rolle;Stundensatz EUR;Anzahl;Lohnsumme EUR'];
     team.forEach((p) => {
@@ -191,7 +291,7 @@ export default function Mittellohn() {
             name: 'Mittellohn-Rechner',
             description: DESC,
             path: '/tools/mittellohn/',
-            featureList: ['Mittellohn AS + ASL', 'Lohnnebenkosten-Breakdown (SOKA/RV/KV/BG)', 'Bundesgebiet West/Ost', 'Auto-Save', 'Excel-Export'],
+            featureList: ['Mittellohn AS + ASL', 'BRTV-Bau Team-Vorlagen mit Tarif 2026 (LG 1-6)', 'Lohnnebenkosten-Breakdown (SOKA/RV/KV/BG)', 'Tarifgebiet West/Ost', 'Auto-Save', 'Excel-Export'],
           }))}
         </script>
       </Helmet>
@@ -215,6 +315,72 @@ export default function Mittellohn() {
               <span className="inline-flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-amber-600" /> Auto-Save aktiv
               </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* BRTV-BAU PRESETS */}
+      <section className="-mt-2">
+        <div className="container-page">
+          <div className="card-flat max-w-6xl mx-auto py-5">
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-wider font-bold text-gray-500 mb-1 inline-flex items-center gap-1.5">
+                    <Briefcase className="w-3.5 h-3.5" /> BRTV-Bau Team-Vorlagen (Tarif 2026)
+                  </p>
+                  <p className="text-sm text-gray-700">
+                    Ein Klick lädt eine typische Bau-Kolonne mit aktuellen Tarif-Stundensätzen West/Ost.
+                  </p>
+                </div>
+                <div className="inline-flex gap-1.5 rounded-lg bg-white border border-gray-200 p-1 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => applyTarifgebiet('west')}
+                    className={cn(
+                      'px-3 py-1.5 rounded-md font-semibold transition-colors',
+                      tarifgebiet === 'west' ? 'bg-amber-600 text-white' : 'text-gray-600 hover:bg-gray-50',
+                    )}
+                  >
+                    Tarif West
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyTarifgebiet('ost')}
+                    className={cn(
+                      'px-3 py-1.5 rounded-md font-semibold transition-colors',
+                      tarifgebiet === 'ost' ? 'bg-amber-600 text-white' : 'text-gray-600 hover:bg-gray-50',
+                    )}
+                  >
+                    Tarif Ost
+                  </button>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {TEAM_PRESETS.map((p) => (
+                  <button
+                    key={p.slug}
+                    type="button"
+                    onClick={() => loadTeamPreset(p)}
+                    className="btn btn-sm btn-outline"
+                    title={p.desc}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={applyTarifsaetzeAllRows}
+                  className="btn btn-sm btn-ghost ml-auto"
+                  title="Aktualisiert nur Zeilen, die BRTV-Lohngruppen-Marker (LG 1)..(LG 6) im Rollennamen enthalten"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" /> Tarif-Stundensätze refresh
+                </button>
+              </div>
+              <p className="text-[11px] text-gray-400">
+                BRTV-Bau-Werte sind tarifgebunden und werden bei Tarifrunden angepasst — vor verbindlicher Kalkulation Ihren Tarifvertrag prüfen.
+              </p>
             </div>
           </div>
         </div>
