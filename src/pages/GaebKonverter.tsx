@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
 import {
@@ -10,152 +10,102 @@ import {
   Shield,
   ArrowRight,
   Download,
-  FileSpreadsheet,
   FileCheck2,
   Trash2,
   Search,
+  Loader2,
+  Sparkles,
+  Settings2,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { canonical } from '@/lib/seo';
 import { softwareApplicationSchema } from '@/lib/toolSchema';
 import AndereTools from '@/components/sections/AndereTools';
 import SectionHeader from '@/components/ui/SectionHeader';
 import FaqItem from '@/components/ui/FaqItem';
-
-type Position = {
-  pos: string;
-  text: string;
-  einheit: string;
-  menge?: number;
-  ep?: number;
-  gp?: number;
-};
-
-type ParsedGaeb = {
-  filename: string;
-  size: number;
-  format: string;
-  formatLabel: string;
-  projectName?: string;
-  positionCount: number;
-  positions: Position[];
-  estimatedValue?: number;
-  bidder?: string;
-};
+import {
+  ACCEPTED_EXTENSIONS,
+  parseGaebFile,
+  exportExcel,
+  exportCsv,
+  exportJson,
+  exportPdf,
+  exportGaebXml,
+  exportGaeb90,
+  DEFAULT_COLUMNS,
+} from '@/lib/gaeb';
+import type {
+  ParsedGaeb,
+  SourceFormatHint,
+  TextMode,
+  Columns,
+  PdfOptions,
+} from '@/lib/gaeb';
 
 const TITLE = 'GAEB-Konverter (kostenlos, im Browser) | KALKU';
 const DESC =
-  'GAEB-Datei (X81–X89, D81–D84, P83/P84) im Browser öffnen, Positionen anzeigen, als Excel oder CSV exportieren. Datei verlässt Ihren Computer nie. Kostenlos.';
+  'GAEB-Datei in Excel, PDF oder GAEB XML wandeln. Unterstützt X81–X89, D81–D86, P81–P94 und ÖNorm A2063. Komplett im Browser — Ihre Datei verlässt Ihren Computer nicht. Kostenlos, ohne Anmeldung.';
 
-const ACCEPTED_EXTENSIONS = ['.x81', '.x83', '.x84', '.x85', '.x86', '.x89', '.d81', '.d83', '.d84', '.p83', '.p84', '.xml'];
+type TargetFormat =
+  | 'xlsx'
+  | 'csv'
+  | 'json'
+  | 'pdf'
+  | 'gaeb-xml-3.2'
+  | 'gaeb-90'
+  | 'onorm-a2063';
 
-const FORMAT_LABELS: Record<string, string> = {
-  x81: 'GAEB DA XML 3.x — LV-Anfrage',
-  x83: 'GAEB DA XML 3.x — Angebotsaufforderung',
-  x84: 'GAEB DA XML 3.x — Angebot Bieter',
-  x85: 'GAEB DA XML 3.x — Nebenangebot',
-  x86: 'GAEB DA XML 3.x — Auftrag',
-  x89: 'GAEB DA XML 3.x — Spez. Aufmaß',
-  d81: 'GAEB ASCII 90/2000 — LV-Anfrage',
-  d83: 'GAEB ASCII 90/2000 — Angebotsaufforderung',
-  d84: 'GAEB ASCII 90/2000 — Angebot Bieter',
-  p83: 'GAEB Datenträger — Pseudo-Format',
-  p84: 'GAEB Datenträger — Pseudo-Format Angebot',
-  xml: 'XML / ÖNorm A2063',
-};
+const SOURCE_OPTIONS: { value: SourceFormatHint; label: string }[] = [
+  { value: 'auto', label: 'Automatisch erkennen' },
+  { value: 'gaeb-90', label: 'GAEB 90 (D81–D86)' },
+  { value: 'gaeb-2000', label: 'GAEB 2000 (P81–P94)' },
+  { value: 'gaeb-xml', label: 'GAEB DA XML 3.x (X81–X89)' },
+  { value: 'onorm-a2063', label: 'ÖNorm A2063' },
+  { value: 'd83', label: 'D83 — Angebotsaufforderung' },
+];
+
+const TARGET_OPTIONS: { value: TargetFormat; label: string }[] = [
+  { value: 'xlsx', label: 'Excel (XLSX)' },
+  { value: 'csv', label: 'CSV (semikolongetrennt)' },
+  { value: 'pdf', label: 'PDF-Druckansicht' },
+  { value: 'json', label: 'JSON (für Entwickler)' },
+  { value: 'gaeb-xml-3.2', label: 'GAEB DA XML 3.2 (.x83)' },
+  { value: 'gaeb-90', label: 'GAEB 90 ASCII (.d83)' },
+];
+
+const LV_ART: { value: TextMode; label: string }[] = [
+  { value: 'lang', label: 'Langtext-LV ohne Kurztexte' },
+  { value: 'kurz', label: 'Kurztext-LV ohne Langtexte' },
+  { value: 'both', label: 'LV mit Kurz- und Langtexten' },
+];
 
 const FAQ = [
   {
     q: 'Was ist GAEB?',
-    a: 'Der „Gemeinsame Ausschuss Elektronik im Bauwesen" (GAEB) hat das Standard-Datenformat für die elektronische Übergabe von Leistungsverzeichnissen zwischen Auftraggeber und Bieter definiert. Versionen: GAEB 90, GAEB 2000, GAEB DA XML 3.x.',
+    a: 'Der „Gemeinsame Ausschuss Elektronik im Bauwesen" (GAEB) hat das Standard-Datenformat für die elektronische Übergabe von Leistungsverzeichnissen zwischen Auftraggeber und Bieter definiert. Versionen: GAEB 90 (ASCII), GAEB 2000 (P-Format), GAEB DA XML 3.1–3.3.',
   },
   {
     q: 'Welche Versionen werden unterstützt?',
-    a: 'GAEB DA XML 3.1, 3.2, 3.3 (X81, X83, X84, X85, X86, X89), GAEB ASCII 90/2000 (D81, D83, D84) sowie ÖNORM A2063. Die Vorschau zeigt Projektdaten, alle Positionen mit Mengen und ggf. Preise. Excel-Export inklusive.',
+    a: 'GAEB DA XML 3.1, 3.2, 3.3 (X81, X83, X84, X85, X86, X89, X93, X94), GAEB ASCII 90 (D81, D83, D84, D85, D86), GAEB 2000 Pseudo-Format (P81–P94) sowie ÖNorm A2063. Die Vorschau zeigt Projektdaten, alle Positionen mit Kurz- und Langtext, Mengen, Einheit und ggf. Preise.',
+  },
+  {
+    q: 'Welche Zielformate kann ich exportieren?',
+    a: 'Excel (.xlsx, mit Spaltenwahl), CSV (semikolongetrennt für Excel-Import), PDF-Druckansicht (mit Deckblatt, Mengenzeile, Unterschriftenfeld), JSON, GAEB DA XML 3.2 (.x83) und GAEB 90 ASCII (.d83). Damit konvertieren Sie zwischen allen gängigen Submission-Formaten.',
   },
   {
     q: 'Werden meine Daten auf einen Server hochgeladen?',
-    a: 'Nein. Die Vorschau und alle Exports (Excel, CSV) erfolgen vollständig in Ihrem Browser — Ihre Datei verlässt Ihren Computer nicht. Erst wenn Sie aktiv die optionale Premium-Auswertung per E-Mail anfordern, übertragen wir die Datei verschlüsselt an unseren Server.',
+    a: 'Nein. Die Konvertierung — auch der PDF- und Excel-Export — läuft vollständig in Ihrem Browser. Ihre Datei verlässt Ihren Computer nicht. Erst wenn Sie aktiv die optionale Premium-Auswertung per E-Mail anfordern, übertragen wir die Datei verschlüsselt an unseren Server.',
   },
   {
-    q: 'Was bekomme ich bei der Premium-Auswertung?',
-    a: 'Sie erhalten per Mail: (1) eine saubere PDF-Druckansicht des kompletten LVs, (2) eine Excel-Tabelle aller Positionen mit Mengen, (3) eine KI-gestützte Klassifizierung pro Gewerk inkl. Material/Hersteller-Detection. Kostenlos, einmalig — Bearbeitung 1–2 Werktage.',
+    q: 'Kurztext vs. Langtext — was ist der Unterschied?',
+    a: 'Der Kurztext ist die einzeilige Stichwort-Beschreibung (z. B. „Mauerwerk 24 cm KS"), der Langtext die ausformulierte technische Spezifikation mit allen Anforderungen. Beim Excel- und PDF-Export können Sie wählen, welcher Text ausgegeben werden soll — oder beide untereinander.',
   },
   {
     q: 'Funktioniert das auch offline?',
-    a: 'Sobald die Seite einmal im Browser-Cache liegt, funktioniert die Vorschau offline. Nur die optionale Premium-Auswertung benötigt Internetzugang.',
+    a: 'Sobald die Seite einmal im Browser-Cache liegt, funktioniert die Konvertierung offline. Nur die optionale Premium-Auswertung per E-Mail benötigt Internetzugang.',
   },
 ];
-
-function detectFormat(filename: string): { ext: string; label: string } {
-  const ext = (filename.split('.').pop() || '').toLowerCase();
-  return { ext, label: FORMAT_LABELS[ext] ?? `Format .${ext}` };
-}
-
-function parseXml(text: string): { projectName?: string; positions: Position[]; estimatedValue?: number; bidder?: string } {
-  try {
-    const doc = new DOMParser().parseFromString(text, 'application/xml');
-    const projectName =
-      doc.querySelector('NamePrjGes, NamePrj, NamePrjBlock')?.textContent?.trim() ||
-      doc.querySelector('PrjInfo > NamePrjGes')?.textContent?.trim();
-
-    // Bidder name (X84 / X85)
-    const bidder =
-      doc.querySelector('LblBdr, BdrPrjInfo > Name')?.textContent?.trim();
-
-    const positions: Position[] = [];
-    let totalSum = 0;
-    doc.querySelectorAll('Position').forEach((p) => {
-      const itemId = p.querySelector('ItemReference, RNoPart, ItemNo')?.textContent?.trim()
-                   || p.getAttribute('RNoPart') || '';
-      const desc =
-        p.querySelector('OutlineSpecText, ShortText, OutlineText')?.textContent?.trim()
-        || p.querySelector('Description')?.textContent?.trim()
-        || '';
-      const einheit = p.querySelector('QU, Qu')?.textContent?.trim() || '';
-      const qtyText = p.querySelector('Qty')?.textContent?.trim();
-      const upText = p.querySelector('UP')?.textContent?.trim();
-      const itText = p.querySelector('IT')?.textContent?.trim();
-      const menge = qtyText ? parseFloat(qtyText) : undefined;
-      const ep = upText ? parseFloat(upText) : undefined;
-      const gp = itText ? parseFloat(itText) : (menge && ep ? menge * ep : undefined);
-      if (gp && !isNaN(gp)) totalSum += gp;
-      positions.push({
-        pos: itemId,
-        text: desc.replace(/\s+/g, ' ').slice(0, 240),
-        einheit,
-        menge: menge && !isNaN(menge) ? menge : undefined,
-        ep: ep && !isNaN(ep) ? ep : undefined,
-        gp: gp && !isNaN(gp) ? gp : undefined,
-      });
-    });
-    return { projectName, positions, estimatedValue: totalSum > 0 ? totalSum : undefined, bidder };
-  } catch {
-    return { positions: [] };
-  }
-}
-
-function parseAscii(text: string, filename: string): { projectName?: string; positions: Position[] } {
-  // GAEB ASCII has 21.* lines for positions, 02. for project name
-  const lines = text.split(/\r?\n/);
-  const positions: Position[] = [];
-  let projectName: string | undefined;
-  for (const line of lines) {
-    if (line.startsWith('02.')) {
-      projectName = line.slice(3).trim().slice(0, 200);
-    }
-    if (/^21\.\d/.test(line)) {
-      const pos = line.slice(0, 14).trim();
-      const text = line.slice(14, 100).trim();
-      const einheit = line.slice(100, 110).trim();
-      positions.push({ pos, text, einheit });
-    }
-  }
-  return { projectName: projectName ?? filename.replace(/\.[^.]+$/, ''), positions };
-}
-
-function fmt(n: number): string {
-  return n.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 export default function GaebKonverter() {
   const [parsed, setParsed] = useState<ParsedGaeb | null>(null);
@@ -163,43 +113,67 @@ export default function GaebKonverter() {
   const [dragOver, setDragOver] = useState(false);
   const [email, setEmail] = useState('');
   const [submitted, setSubmitted] = useState(false);
-  const [exportingExcel, setExportingExcel] = useState(false);
+  const [parsing, setParsing] = useState(false);
+  const [converting, setConverting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Conversion options
+  const [sourceHint, setSourceHint] = useState<SourceFormatHint>('auto');
+  const [targetFormat, setTargetFormat] = useState<TargetFormat>('xlsx');
+  const [textMode, setTextMode] = useState<TextMode>('both');
+  const [columns, setColumns] = useState<Columns>(DEFAULT_COLUMNS);
+  const [withCover, setWithCover] = useState(true);
+  const [withToc, setWithToc] = useState(false);
+  const [withSummary, setWithSummary] = useState(true);
+  const [withPrices, setWithPrices] = useState(true);
+  const [signatureOmit, setSignatureOmit] = useState(false);
+  const [mengeBelow, setMengeBelow] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  const [lastExport, setLastExport] = useState<TargetFormat | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // When parsed file changes, auto-set the source-format display
+  useEffect(() => {
+    if (parsed && sourceHint === 'auto') {
+      // No-op; we keep "auto" so user can still override
+    }
+  }, [parsed, sourceHint]);
 
   function reset() {
     setParsed(null);
     setError(null);
     setEmail('');
     setSubmitted(false);
+    setSearchQuery('');
+    setLastExport(null);
     if (fileRef.current) fileRef.current.value = '';
   }
 
   async function handleFile(file: File) {
     setError(null);
     setSubmitted(false);
+    setLastExport(null);
+    setParsing(true);
 
-    const { ext, label } = detectFormat(file.name);
-    if (!ACCEPTED_EXTENSIONS.includes('.' + ext)) {
-      setError(`Format .${ext} wird nicht unterstützt. Akzeptiert: ${ACCEPTED_EXTENSIONS.join(', ')}.`);
+    const ext = '.' + (file.name.split('.').pop() ?? '').toLowerCase();
+    if (!ACCEPTED_EXTENSIONS.includes(ext)) {
+      setError(`Format ${ext} wird nicht direkt unterstützt. Akzeptiert: ${ACCEPTED_EXTENSIONS.join(', ')}. Tipp: Wenn Ihre Datei ein GAEB-Format ist, benennen Sie sie z. B. auf .x83 um.`);
+      setParsing(false);
       return;
     }
 
-    const text = await file.text();
-    const isXml = ext.startsWith('x') || ext.startsWith('p') || ext === 'xml';
-    const result = isXml ? parseXml(text) : parseAscii(text, file.name);
-
-    setParsed({
-      filename: file.name,
-      size: file.size,
-      format: ext.toUpperCase(),
-      formatLabel: label,
-      projectName: result.projectName ?? file.name.replace(/\.[^.]+$/, ''),
-      positionCount: result.positions.length,
-      positions: result.positions,
-      estimatedValue: 'estimatedValue' in result ? (result as { estimatedValue?: number }).estimatedValue : undefined,
-      bidder: 'bidder' in result ? (result as { bidder?: string }).bidder : undefined,
-    });
+    try {
+      const result = await parseGaebFile(file, sourceHint);
+      if (result.positionCount === 0 && result.format === 'unknown') {
+        setError('Die Datei konnte nicht als GAEB-Datei interpretiert werden. Falls Sie das Format kennen, wählen Sie es bitte oben manuell aus.');
+      }
+      setParsed(result);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unbekannter Fehler beim Lesen der Datei.');
+    } finally {
+      setParsing(false);
+    }
   }
 
   function onInputChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -214,64 +188,61 @@ export default function GaebKonverter() {
     if (f) void handleFile(f);
   }
 
-  function exportCsv() {
-    if (!parsed) return;
-    const header = ['Pos.', 'Beschreibung', 'Einheit', 'Menge', 'EP €', 'GP €'];
-    const lines = [header.join(';')];
-    parsed.positions.forEach((p) => {
-      lines.push([
-        p.pos,
-        `"${p.text.replace(/"/g, '""')}"`,
-        p.einheit,
-        p.menge != null ? fmt(p.menge) : '',
-        p.ep != null ? fmt(p.ep) : '',
-        p.gp != null ? fmt(p.gp) : '',
-      ].join(';'));
-    });
-    if (parsed.estimatedValue) {
-      lines.push('');
-      lines.push(['', 'SUMME', '', '', '', fmt(parsed.estimatedValue)].join(';'));
+  async function loadDemo() {
+    try {
+      setParsing(true);
+      setError(null);
+      const res = await fetch('/demo/sample-x83.xml');
+      if (!res.ok) throw new Error('Beispieldatei konnte nicht geladen werden.');
+      const text = await res.text();
+      const blob = new Blob([text], { type: 'application/xml' });
+      const file = new File([blob], 'beispiel-projekt.x83', { type: 'application/xml' });
+      await handleFile(file);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Beispieldatei konnte nicht geladen werden.');
+      setParsing(false);
     }
-    const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${parsed.projectName?.replace(/[^\w-]/g, '_') ?? 'gaeb'}-positionen.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
   }
 
-  async function exportExcel() {
+  async function convert() {
     if (!parsed) return;
-    setExportingExcel(true);
+    setConverting(true);
+    setLastExport(null);
     try {
-      const XLSX = await import('xlsx');
-      const data: (string | number)[][] = [
-        ['Projekt:', parsed.projectName ?? ''],
-        ['Format:', parsed.formatLabel],
-        ['Positionen:', parsed.positionCount],
-        ...(parsed.bidder ? [['Bieter:', parsed.bidder]] : []),
-        [],
-        ['Pos.', 'Beschreibung', 'Einheit', 'Menge', 'EP €', 'GP €'],
-        ...parsed.positions.map((p) => [
-          p.pos,
-          p.text,
-          p.einheit,
-          p.menge != null ? Number(p.menge.toFixed(2)) : '',
-          p.ep != null ? Number(p.ep.toFixed(2)) : '',
-          p.gp != null ? Number(p.gp.toFixed(2)) : '',
-        ]),
-        ...(parsed.estimatedValue
-          ? [[], ['', 'SUMME netto', '', '', '', Number(parsed.estimatedValue.toFixed(2))]]
-          : []),
-      ];
-      const ws = XLSX.utils.aoa_to_sheet(data);
-      ws['!cols'] = [{ wch: 12 }, { wch: 60 }, { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 14 }];
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'GAEB-LV');
-      XLSX.writeFile(wb, `${parsed.projectName?.replace(/[^\w-]/g, '_') ?? 'gaeb'}-positionen.xlsx`);
+      const pdfOpts: PdfOptions = {
+        textMode,
+        withPrices,
+        withCover,
+        withToc,
+        withSummary,
+        signatureOmit,
+        mengeBelow,
+      };
+      switch (targetFormat) {
+        case 'xlsx':
+          await exportExcel(parsed, { textMode, columns });
+          break;
+        case 'csv':
+          exportCsv(parsed, { textMode, columns });
+          break;
+        case 'json':
+          exportJson(parsed);
+          break;
+        case 'pdf':
+          await exportPdf(parsed, pdfOpts);
+          break;
+        case 'gaeb-xml-3.2':
+          exportGaebXml(parsed);
+          break;
+        case 'gaeb-90':
+          exportGaeb90(parsed);
+          break;
+      }
+      setLastExport(targetFormat);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Export fehlgeschlagen.');
     } finally {
-      setExportingExcel(false);
+      setConverting(false);
     }
   }
 
@@ -280,6 +251,19 @@ export default function GaebKonverter() {
     if (!email.includes('@') || !parsed) return;
     setSubmitted(true);
   }
+
+  // Filtered preview
+  const filtered = useMemo(() => {
+    if (!parsed) return [];
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return parsed.positions;
+    return parsed.positions.filter(
+      (p) =>
+        p.oz.toLowerCase().includes(q) ||
+        p.kurztext.toLowerCase().includes(q) ||
+        p.langtext.toLowerCase().includes(q),
+    );
+  }, [parsed, searchQuery]);
 
   return (
     <>
@@ -292,7 +276,18 @@ export default function GaebKonverter() {
             name: 'GAEB-Konverter',
             description: DESC,
             path: '/tools/gaeb-konverter/',
-            featureList: ['GAEB DA XML 3.x (X81-X89)', 'GAEB ASCII (D81-D84)', 'Excel + CSV Export', 'Position-Suche', 'Format-Auto-Erkennung'],
+            featureList: [
+              'GAEB DA XML 3.1/3.2/3.3 (X81-X89, X93, X94)',
+              'GAEB 90 ASCII (D81-D86)',
+              'GAEB 2000 Pseudo (P81-P94)',
+              'ÖNorm A2063',
+              'Export: Excel (XLSX), CSV, PDF, JSON, GAEB XML, GAEB 90',
+              'Kurztext / Langtext Auswahl',
+              'Spaltenwahl beim Excel-Export',
+              'PDF mit Deckblatt + Unterschriftenfeld',
+              'Volltext-Suche in Positionen',
+              '100 % Browser-Verarbeitung, kein Datei-Upload',
+            ],
           }))}
         </script>
       </Helmet>
@@ -305,19 +300,25 @@ export default function GaebKonverter() {
               GAEB-Konverter
             </p>
             <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-gray-900 mb-5 leading-tight">
-              GAEB-Datei in Sekunden öffnen.
+              GAEB-Datei konvertieren.
             </h1>
             <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-              Drag & Drop. Sofortige Vorschau aller Positionen. Excel- und CSV-Export.
-              Komplett im Browser — Ihre Datei verlässt Ihren Computer nicht.
+              GAEB 90, GAEB 2000 und GAEB DA XML in Excel, PDF oder ÖNorm wandeln —
+              komplett im Browser. Ihre Datei verlässt Ihren Computer nicht.
             </p>
-            <div className="mt-7 inline-flex items-center gap-4 text-xs text-gray-500">
+            <div className="mt-7 inline-flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-gray-500">
               <span className="inline-flex items-center gap-1.5">
                 <Shield className="w-3.5 h-3.5 text-primary-600" /> 100 % lokal
               </span>
               <span className="text-gray-300" aria-hidden>·</span>
               <span className="inline-flex items-center gap-1.5">
-                <FileCheck2 className="w-3.5 h-3.5 text-primary-600" /> X81–X89 · D81–D84 · P83/P84 · ÖNorm
+                <FileCheck2 className="w-3.5 h-3.5 text-primary-600" />
+                X81–X89 · D81–D86 · P81–P94 · ÖNorm
+              </span>
+              <span className="text-gray-300" aria-hidden>·</span>
+              <span className="inline-flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-primary-600" />
+                6 Zielformate
               </span>
             </div>
           </div>
@@ -328,55 +329,72 @@ export default function GaebKonverter() {
       <section className="section-tight">
         <div className="container-page">
           {!parsed && (
-            <label
-              htmlFor="gaeb-file"
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragOver(true);
-              }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={onDrop}
-              className={cn(
-                'relative block max-w-3xl mx-auto cursor-pointer rounded-3xl border-2 border-dashed transition-all',
-                dragOver
-                  ? 'border-primary-500 bg-primary-50/60 scale-[1.005]'
-                  : 'border-gray-300 bg-gray-50 hover:border-primary-400 hover:bg-primary-50/30',
-              )}
-            >
-              <input
-                ref={fileRef}
-                id="gaeb-file"
-                type="file"
-                accept={ACCEPTED_EXTENSIONS.join(',')}
-                onChange={onInputChange}
-                className="sr-only"
-              />
-              <div className="px-8 py-16 text-center">
-                <div className={cn(
-                  'w-16 h-16 rounded-2xl bg-white shadow-sm border flex items-center justify-center mx-auto mb-5 transition-colors',
-                  dragOver ? 'border-primary-300' : 'border-gray-100',
-                )}>
-                  <Upload className="w-8 h-8 text-primary-500" />
+            <>
+              <label
+                htmlFor="gaeb-file"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragOver(true);
+                }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={onDrop}
+                className={cn(
+                  'relative block max-w-3xl mx-auto cursor-pointer rounded-3xl border-2 border-dashed transition-all',
+                  dragOver
+                    ? 'border-primary-500 bg-primary-50/60 scale-[1.005]'
+                    : 'border-gray-300 bg-gray-50 hover:border-primary-400 hover:bg-primary-50/30',
+                )}
+              >
+                <input
+                  ref={fileRef}
+                  id="gaeb-file"
+                  type="file"
+                  accept={ACCEPTED_EXTENSIONS.join(',')}
+                  onChange={onInputChange}
+                  className="sr-only"
+                />
+                <div className="px-8 py-16 text-center">
+                  <div className={cn(
+                    'w-16 h-16 rounded-2xl bg-white shadow-sm border flex items-center justify-center mx-auto mb-5 transition-colors',
+                    dragOver ? 'border-primary-300' : 'border-gray-100',
+                  )}>
+                    {parsing ? (
+                      <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
+                    ) : (
+                      <Upload className="w-8 h-8 text-primary-500" />
+                    )}
+                  </div>
+                  <p className="text-lg font-semibold text-gray-900 mb-2">
+                    {parsing ? 'Datei wird gelesen…' : 'Datei hier ablegen oder klicken zum Auswählen'}
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    Akzeptiert: {ACCEPTED_EXTENSIONS.slice(0, 10).join(', ')} … +{ACCEPTED_EXTENSIONS.length - 10} weitere
+                  </p>
+                  <p className="inline-flex items-center gap-1.5 text-xs text-gray-400 mt-5">
+                    <Shield className="w-3.5 h-3.5" /> 100 % lokale Verarbeitung — Datei verlässt Ihren Browser nicht
+                  </p>
                 </div>
-                <p className="text-lg font-semibold text-gray-900 mb-2">
-                  GAEB-Datei hierhin ziehen — oder klicken
-                </p>
-                <p className="text-sm text-gray-500">
-                  Akzeptiert: {ACCEPTED_EXTENSIONS.join(', ')}
-                </p>
-                <p className="inline-flex items-center gap-1.5 text-xs text-gray-400 mt-5">
-                  <Shield className="w-3.5 h-3.5" /> Datei verlässt Ihren Browser nicht
-                </p>
-              </div>
-            </label>
+              </label>
+
+              <p className="text-center text-sm text-gray-500 mt-4">
+                Kein GAEB-File zur Hand?{' '}
+                <button
+                  type="button"
+                  onClick={loadDemo}
+                  className="font-semibold text-primary-700 hover:text-primary-800 underline underline-offset-2"
+                >
+                  Beispiel-LV laden (X83)
+                </button>
+              </p>
+            </>
           )}
 
           {error && (
-            <div className="card max-w-3xl mx-auto border-red-200 bg-red-50">
+            <div className="card max-w-3xl mx-auto mt-6 border-red-200 bg-red-50">
               <div className="flex items-start gap-3">
                 <XCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
                 <div className="flex-1">
-                  <p className="font-semibold text-red-900 mb-1">Datei nicht akzeptiert</p>
+                  <p className="font-semibold text-red-900 mb-1">Datei konnte nicht gelesen werden</p>
                   <p className="text-sm text-red-700">{error}</p>
                 </div>
                 <button type="button" onClick={reset} className="btn btn-sm btn-outline">
@@ -397,7 +415,7 @@ export default function GaebKonverter() {
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2 mb-1">
                       <h2 className="font-bold text-gray-900 truncate">{parsed.filename}</h2>
-                      <span className="badge badge-success">Geladen</span>
+                      <span className="badge badge-success">{parsed.positionCount} Positionen</span>
                     </div>
                     <p className="text-xs text-gray-600">{parsed.formatLabel}</p>
                     <p className="text-xs text-gray-400 mt-0.5">
@@ -414,93 +432,254 @@ export default function GaebKonverter() {
                   <Metric label="Positionen" value={parsed.positionCount.toString()} />
                   <Metric
                     label="Vorab-Schätzung"
-                    value={parsed.estimatedValue ? parsed.estimatedValue.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' }) : '—'}
+                    value={parsed.estimatedValue ? parsed.estimatedValue.toLocaleString('de-DE', { style: 'currency', currency: parsed.currency || 'EUR' }) : '—'}
                   />
                 </div>
 
-                {parsed.bidder && (
-                  <p className="text-xs text-gray-500 mt-3">
-                    Bieter laut Datei: <span className="font-medium text-gray-700">{parsed.bidder}</span>
-                  </p>
+                {(parsed.awardingAuthority || parsed.bidder || parsed.date) && (
+                  <div className="grid sm:grid-cols-3 gap-3 mt-4 pt-4 border-t border-gray-50">
+                    {parsed.awardingAuthority && (
+                      <Metric label="Auftraggeber" value={parsed.awardingAuthority} />
+                    )}
+                    {parsed.bidder && <Metric label="Bieter" value={parsed.bidder} />}
+                    {parsed.date && <Metric label="Datum" value={parsed.date} />}
+                  </div>
+                )}
+              </div>
+
+              {/* Conversion controls */}
+              <div className="card">
+                <div className="flex items-center gap-3 mb-5">
+                  <Settings2 className="w-5 h-5 text-primary-600" />
+                  <h3 className="font-bold text-gray-900">Konvertierung</h3>
+                </div>
+
+                <div className="grid sm:grid-cols-2 gap-5">
+                  <div>
+                    <label className="label text-xs uppercase tracking-wider font-bold text-gray-500" htmlFor="src-fmt">
+                      Quellformat
+                    </label>
+                    <select
+                      id="src-fmt"
+                      value={sourceHint}
+                      onChange={(e) => setSourceHint(e.target.value as SourceFormatHint)}
+                      className="input"
+                    >
+                      {SOURCE_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1.5">
+                      Erkannt: <span className="font-medium text-gray-700">{parsed.formatLabel}</span>
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="label text-xs uppercase tracking-wider font-bold text-gray-500" htmlFor="tgt-fmt">
+                      Zielformat
+                    </label>
+                    <select
+                      id="tgt-fmt"
+                      value={targetFormat}
+                      onChange={(e) => setTargetFormat(e.target.value as TargetFormat)}
+                      className="input"
+                    >
+                      {TARGET_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* LV-Art: textmode */}
+                {(targetFormat === 'xlsx' || targetFormat === 'csv' || targetFormat === 'pdf') && (
+                  <div className="mt-5 pt-5 border-t border-gray-100">
+                    <p className="text-xs uppercase tracking-wider font-bold text-gray-500 mb-3">
+                      LV-Art
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {LV_ART.map((o) => (
+                        <label
+                          key={o.value}
+                          className={cn(
+                            'flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-sm transition-colors',
+                            textMode === o.value
+                              ? 'border-primary-500 bg-primary-50 text-primary-900'
+                              : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300',
+                          )}
+                        >
+                          <input
+                            type="radio"
+                            name="lv-art"
+                            value={o.value}
+                            checked={textMode === o.value}
+                            onChange={() => setTextMode(o.value)}
+                            className="sr-only"
+                          />
+                          <span className="w-3 h-3 rounded-full border-2 border-current flex items-center justify-center">
+                            {textMode === o.value && <span className="w-1.5 h-1.5 rounded-full bg-current" />}
+                          </span>
+                          {o.label}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
                 )}
 
-                {/* Action buttons */}
-                <div className="flex flex-wrap gap-2 mt-6 pt-5 border-t border-gray-100">
-                  <button type="button" onClick={exportExcel} disabled={exportingExcel || parsed.positionCount === 0} className="btn btn-success btn-sm">
-                    <FileSpreadsheet className="w-4 h-4" />
-                    {exportingExcel ? 'Excel-Datei wird erstellt …' : 'Excel exportieren (.xlsx)'}
+                {/* PDF-specific options */}
+                {targetFormat === 'pdf' && (
+                  <div className="mt-5 pt-5 border-t border-gray-100 space-y-4">
+                    <p className="text-xs uppercase tracking-wider font-bold text-gray-500">
+                      Druckoptionen
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <PriceModeRadio active={withPrices} setActive={setWithPrices} value={false} label="Druck als Blankett (ohne Preise)" />
+                      <PriceModeRadio active={withPrices} setActive={setWithPrices} value={true} label="Druck mit Preisen" />
+                    </div>
+                    <div className="grid sm:grid-cols-2 gap-2">
+                      <CheckboxRow checked={withCover} onChange={setWithCover} label="Deckblatt ausgeben" />
+                      <CheckboxRow checked={withToc} onChange={setWithToc} label="Inhaltsverzeichnis" />
+                      <CheckboxRow checked={withSummary} onChange={setWithSummary} label="Summenzusammenstellung drucken" />
+                      <CheckboxRow checked={mengeBelow} onChange={setMengeBelow} label="Mengenzeile unter der Position" />
+                      <CheckboxRow checked={signatureOmit} onChange={setSignatureOmit} label="PDF-Unterschriften nicht ausgeben" />
+                    </div>
+                  </div>
+                )}
+
+                {/* Excel column picker (advanced) */}
+                {(targetFormat === 'xlsx' || targetFormat === 'csv') && (
+                  <div className="mt-5 pt-5 border-t border-gray-100">
+                    <button
+                      type="button"
+                      onClick={() => setShowAdvanced((v) => !v)}
+                      className="flex items-center gap-1.5 text-xs uppercase tracking-wider font-bold text-gray-500 hover:text-gray-700"
+                    >
+                      {showAdvanced ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                      Spalten-Auswahl
+                    </button>
+                    {showAdvanced && (
+                      <div className="mt-3 grid sm:grid-cols-3 gap-2 gap-y-2">
+                        {(Object.keys(DEFAULT_COLUMNS) as (keyof Columns)[]).map((key) => (
+                          <CheckboxRow
+                            key={key}
+                            checked={columns[key]}
+                            onChange={(v) => setColumns((c) => ({ ...c, [key]: v }))}
+                            label={
+                              key === 'oz' ? 'OZ (Ordnungszahl)'
+                              : key === 'kurztext' ? 'Kurztext'
+                              : key === 'langtext' ? 'Langtext'
+                              : key === 'einheit' ? 'Einheit (ME)'
+                              : key === 'menge' ? 'Menge'
+                              : key === 'ep' ? 'EP (Einheitspreis)'
+                              : 'GP (Gesamtpreis)'
+                            }
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Convert button */}
+                <div className="mt-6 pt-5 border-t border-gray-100 flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={convert}
+                    disabled={converting || parsed.positionCount === 0}
+                    className="btn btn-success"
+                  >
+                    {converting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Wird erzeugt …
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-4 h-4" />
+                        Konvertieren
+                      </>
+                    )}
                   </button>
-                  <button type="button" onClick={exportCsv} disabled={parsed.positionCount === 0} className="btn btn-outline btn-sm">
-                    <Download className="w-4 h-4" /> CSV
-                  </button>
+                  {lastExport && !converting && (
+                    <span className="inline-flex items-center gap-2 text-sm text-emerald-700">
+                      <CheckCircle2 className="w-4 h-4" />
+                      Konvertierung erfolgreich! Datei wurde heruntergeladen.
+                    </span>
+                  )}
+                  <span className="text-xs text-gray-400 ml-auto">
+                    Tipp: Spalten-Auswahl oben für individuellen Excel-Export
+                  </span>
                 </div>
               </div>
 
               {/* Position table with search */}
-              {parsed.positions.length > 0 ? (() => {
-                const q = searchQuery.trim().toLowerCase();
-                const filtered = q
-                  ? parsed.positions.filter((p) =>
-                      p.pos.toLowerCase().includes(q) || p.text.toLowerCase().includes(q),
-                    )
-                  : parsed.positions;
-                const visible = filtered.slice(0, 200);
-                return (
-                  <div className="card overflow-x-auto">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-                      <p className="text-xs uppercase tracking-wider font-bold text-gray-500">
-                        Positionen-Vorschau · {q ? `${filtered.length} von ${parsed.positions.length}` : `${parsed.positions.length}`} Einträge
-                      </p>
-                      <div className="relative w-full sm:w-72">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input
-                          type="search"
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          placeholder="Pos. oder Text suchen…"
-                          className="input pl-9 text-sm"
-                        />
-                      </div>
+              {parsed.positions.length > 0 && (
+                <div className="card overflow-x-auto">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                    <p className="text-xs uppercase tracking-wider font-bold text-gray-500">
+                      Positionen-Vorschau · {searchQuery ? `${filtered.length} von ${parsed.positions.length}` : `${parsed.positions.length}`} Einträge
+                      {parsed.hasLongtext && <span className="ml-2 badge badge-primary">mit Langtext</span>}
+                    </p>
+                    <div className="relative w-full sm:w-72">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="search"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="OZ, Kurz- oder Langtext suchen…"
+                        className="input pl-9 text-sm"
+                      />
                     </div>
-                    <table className="min-w-full text-xs">
-                      <thead>
-                        <tr className="border-b-2 border-gray-200">
-                          <th className="text-left px-2 py-2 font-bold text-gray-500 uppercase tracking-wider w-24">Pos.</th>
-                          <th className="text-left px-2 py-2 font-bold text-gray-500 uppercase tracking-wider min-w-[280px]">Beschreibung</th>
-                          <th className="text-center px-2 py-2 font-bold text-gray-500 uppercase tracking-wider w-12">Einh.</th>
-                          <th className="text-right px-2 py-2 font-bold text-gray-500 uppercase tracking-wider w-20">Menge</th>
-                          <th className="text-right px-2 py-2 font-bold text-gray-500 uppercase tracking-wider w-20">EP €</th>
-                          <th className="text-right px-2 py-2 font-bold text-gray-500 uppercase tracking-wider w-24">GP €</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {visible.map((p, i) => (
-                          <tr key={i} className="border-b border-gray-100 hover:bg-gray-50/50 transition-colors">
-                            <td className="px-2 py-2 font-mono text-gray-500">{p.pos}</td>
-                            <td className="px-2 py-2 text-gray-700">{p.text}</td>
-                            <td className="px-2 py-2 text-center text-gray-500">{p.einheit}</td>
-                            <td className="px-2 py-2 text-right tabular-nums">{p.menge != null ? fmt(p.menge) : '—'}</td>
-                            <td className="px-2 py-2 text-right tabular-nums text-gray-700">{p.ep != null ? fmt(p.ep) : '—'}</td>
-                            <td className="px-2 py-2 text-right tabular-nums font-semibold text-primary-700">{p.gp != null ? fmt(p.gp) : '—'}</td>
-                          </tr>
-                        ))}
-                        {filtered.length === 0 && (
-                          <tr>
-                            <td colSpan={6} className="px-2 py-6 text-center text-sm text-gray-500">
-                              Keine Positionen mit „{searchQuery}" gefunden.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                    {filtered.length > 200 && (
-                      <p className="text-xs text-gray-400 text-center mt-4">
-                        Vorschau zeigt erste 200 von {filtered.length} gefilterten Positionen — Excel-Export enthält alle.
-                      </p>
-                    )}
                   </div>
-                );
-              })() : (
+                  <table className="min-w-full text-xs">
+                    <thead>
+                      <tr className="border-b-2 border-gray-200">
+                        <th className="text-left px-2 py-2 font-bold text-gray-500 uppercase tracking-wider w-24">OZ</th>
+                        <th className="text-left px-2 py-2 font-bold text-gray-500 uppercase tracking-wider min-w-[280px]">Beschreibung</th>
+                        <th className="text-center px-2 py-2 font-bold text-gray-500 uppercase tracking-wider w-12">Einh.</th>
+                        <th className="text-right px-2 py-2 font-bold text-gray-500 uppercase tracking-wider w-20">Menge</th>
+                        <th className="text-right px-2 py-2 font-bold text-gray-500 uppercase tracking-wider w-20">EP €</th>
+                        <th className="text-right px-2 py-2 font-bold text-gray-500 uppercase tracking-wider w-24">GP €</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.slice(0, 200).map((p, i) => (
+                        <tr key={i} className="border-b border-gray-100 hover:bg-gray-50/50 transition-colors align-top">
+                          <td className="px-2 py-2 font-mono text-gray-500 whitespace-nowrap">{p.oz}</td>
+                          <td className="px-2 py-2 text-gray-700">
+                            <div className="font-medium">{p.kurztext || '—'}</div>
+                            {p.langtext && p.langtext !== p.kurztext && (
+                              <div className="text-[11px] text-gray-500 mt-1 line-clamp-2">{p.langtext}</div>
+                            )}
+                          </td>
+                          <td className="px-2 py-2 text-center text-gray-500 whitespace-nowrap">{p.einheit}</td>
+                          <td className="px-2 py-2 text-right tabular-nums">{p.menge != null ? p.menge.toLocaleString('de-DE', { maximumFractionDigits: 2 }) : (p.qtyTBD ? 'X' : '—')}</td>
+                          <td className="px-2 py-2 text-right tabular-nums text-gray-700">{p.ep != null ? p.ep.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
+                          <td className="px-2 py-2 text-right tabular-nums font-semibold text-primary-700">{p.gp != null ? p.gp.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
+                        </tr>
+                      ))}
+                      {filtered.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="px-2 py-6 text-center text-sm text-gray-500">
+                            Keine Positionen mit „{searchQuery}" gefunden.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                  {filtered.length > 200 && (
+                    <p className="text-xs text-gray-400 text-center mt-4">
+                      Vorschau zeigt erste 200 von {filtered.length} gefilterten Positionen — Export enthält alle.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {parsed.positions.length === 0 && (
                 <div className="card text-center text-sm text-gray-500">
                   Keine Positionen erkannt. Möglich bei verschlüsselten oder beschädigten Dateien — bei
                   Bedarf nutzen Sie unten die Premium-Auswertung.
@@ -599,7 +778,64 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-// ── helpers ──────────────────────────────────────────────────────────────────
+function CheckboxRow({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+}) {
+  return (
+    <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 select-none">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+      />
+      {label}
+    </label>
+  );
+}
+
+function PriceModeRadio({
+  active,
+  setActive,
+  value,
+  label,
+}: {
+  active: boolean;
+  setActive: (v: boolean) => void;
+  value: boolean;
+  label: string;
+}) {
+  const checked = active === value;
+  return (
+    <label
+      className={cn(
+        'flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-sm transition-colors',
+        checked
+          ? 'border-primary-500 bg-primary-50 text-primary-900'
+          : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300',
+      )}
+    >
+      <input
+        type="radio"
+        name="price-mode"
+        checked={checked}
+        onChange={() => setActive(value)}
+        className="sr-only"
+      />
+      <span className="w-3 h-3 rounded-full border-2 border-current flex items-center justify-center">
+        {checked && <span className="w-1.5 h-1.5 rounded-full bg-current" />}
+      </span>
+      {label}
+    </label>
+  );
+}
+
 function cn(...cs: (string | false | null | undefined)[]): string {
   return cs.filter(Boolean).join(' ');
 }
