@@ -174,3 +174,61 @@
     transform: rotate(360deg);
   }
 }
+
+/* Print: A4 landscape, header-blue table, no shadows, page numbers */
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 12mm 10mm 14mm 10mm;
+  }
+  html, body {
+    background: white !important;
+  }
+  body {
+    font-size: 10pt;
+    line-height: 1.35;
+  }
+  .section, .section-tight {
+    padding: 0 !important;
+  }
+  .card, .card-flat {
+    border: 0 !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+  }
+  table {
+    page-break-inside: auto;
+  }
+  thead {
+    display: table-header-group;
+  }
+  tr {
+    page-break-inside: avoid;
+  }
+  /* Header dark-blue on print — matches Excel header */
+  thead.print\:bg-primary-700 {
+    background: #1a5276 !important;
+    color: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  thead.print\:bg-primary-700 th {
+    color: white !important;
+  }
+  .print\:text-white {
+    color: white !important;
+  }
+  /* Hide layout chrome (header / footer / banners that aren't already covered) */
+  header, footer, nav, [role="navigation"], [data-noprint] {
+    display: none !important;
+  }
+  /* Page numbers in bottom-right via @page margin boxes (Webkit ignores, Firefox/Chrome partial) */
+  @page {
+    @bottom-right {
+      content: "Seite " counter(page) " / " counter(pages);
+      font-size: 9pt;
+      color: #6b7280;
+    }
+  }
+}

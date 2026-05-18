@@ -1,9 +1,8 @@
-import { useState, useMemo, useEffect, useId } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
 import {
   Plus,
-  Trash2,
   Download,
   Mail,
   ArrowRight,
@@ -14,89 +13,34 @@ import {
   Sparkles,
   Shield,
   Clipboard,
+  Share2,
+  Users,
 } from 'lucide-react';
 import { canonical } from '@/lib/seo';
-import { cn } from '@/lib/utils';
 import { softwareApplicationSchema } from '@/lib/toolSchema';
 import AndereTools from '@/components/sections/AndereTools';
-
-type Row = {
-  id: string;
-  pos: string;
-  text: string;
-  einheit: string;
-  lohn: number;
-  zeit: number;
-  material: number;
-  zuschlag: number;
-  menge: number;
-};
+import type { Row, Aufschlaege } from '@/lib/kalkulator/types';
+import { DEFAULT_AUFSCHLAEGE } from '@/lib/kalkulator/types';
+import {
+  computeEp,
+  computeTotals,
+  fmt,
+  fmtCurrency,
+  parseGermanNumber,
+} from '@/lib/kalkulator/calc';
+import { PRESETS, type Preset } from '@/lib/kalkulator/presets';
+import { exportToExcel } from '@/lib/kalkulator/excelExport';
+import { buildShareUrl, readHashSnapshot } from '@/lib/kalkulator/share';
+import AufschlagPanel from '@/components/kalkulator/AufschlagPanel';
+import ShareDialog from '@/components/kalkulator/ShareDialog';
+import PositionRow from '@/components/kalkulator/PositionRow';
 
 const TITLE = 'Position-Kalkulator (EP/GP berechnen) | KALKU';
 const DESC =
-  'Online-Kalkulator für Bauunternehmer: Lohn × Zeit + Material + Zuschlag = EP. Trade-Vorlagen (GaLaBau, Tiefbau, Elektro), Excel + CSV Export, Auto-Save. Kostenlos, im Browser.';
+  'Online-Kalkulator für Bauunternehmer: Lohn × Zeit + Material + Zuschlag = EP. Mit VOB-konformen Aufschlägen (BGK/AGK/W&G/MwSt), Subunternehmer-Modus, Plausibilitäts-Ampel, Excel-Export mit echten Formeln. Kostenlos, im Browser.';
 
-const STORAGE_KEY = 'kalku.kalkulator.rows';
-
-type Preset = {
-  slug: string;
-  label: string;
-  lohn: number;
-  zuschlag: number;
-  einheit: string;
-  rows: Array<Pick<Row, 'pos' | 'text' | 'einheit' | 'lohn' | 'zeit' | 'material' | 'zuschlag' | 'menge'>>;
-};
-
-const PRESETS: Preset[] = [
-  {
-    slug: 'galabau',
-    label: 'GaLaBau',
-    lohn: 48,
-    zuschlag: 14,
-    einheit: 'm²',
-    rows: [
-      { pos: '01.01.10', text: 'Pflasterfläche, Granitpflaster geliefert + verlegt', einheit: 'm²', lohn: 48, zeit: 0.85, material: 62, zuschlag: 14, menge: 240 },
-      { pos: '01.02.20', text: 'Mutterboden liefern + andecken, h = 25 cm', einheit: 'm³', lohn: 42, zeit: 0.4, material: 28, zuschlag: 14, menge: 180 },
-      { pos: '01.03.05', text: 'Bepflanzung Sträucher, Container 5L', einheit: 'St', lohn: 42, zeit: 0.3, material: 18.5, zuschlag: 14, menge: 60 },
-    ],
-  },
-  {
-    slug: 'tiefbau',
-    label: 'Tiefbau',
-    lohn: 52,
-    zuschlag: 12,
-    einheit: 'm³',
-    rows: [
-      { pos: '01.01.10', text: 'Asphaltdecke fräsen, t = 4 cm', einheit: 'm²', lohn: 52, zeit: 0.06, material: 0, zuschlag: 12, menge: 1240 },
-      { pos: '01.02.20', text: 'PE-HD-Rohr DN 250 SDR 17, geliefert + verlegt', einheit: 'm', lohn: 52, zeit: 0.45, material: 38.5, zuschlag: 12, menge: 180 },
-      { pos: '01.03.40', text: 'Schotter 0/45 mm, geliefert + eingebaut', einheit: 't', lohn: 52, zeit: 0.18, material: 22, zuschlag: 12, menge: 320 },
-    ],
-  },
-  {
-    slug: 'elektro',
-    label: 'Elektro',
-    lohn: 58,
-    zuschlag: 18,
-    einheit: 'St',
-    rows: [
-      { pos: '01.01.10', text: 'NYM-J 3×1,5 mm² geliefert + verlegt UP', einheit: 'm', lohn: 58, zeit: 0.08, material: 1.45, zuschlag: 18, menge: 420 },
-      { pos: '01.02.20', text: 'Steckdose UP, 1-fach, weiß, mit Rahmen', einheit: 'St', lohn: 58, zeit: 0.25, material: 8.9, zuschlag: 18, menge: 32 },
-      { pos: '01.03.05', text: 'BMA-Linienmelder, automatisch, mit Sockel', einheit: 'St', lohn: 58, zeit: 0.65, material: 145, zuschlag: 18, menge: 14 },
-    ],
-  },
-  {
-    slug: 'hochbau',
-    label: 'Hochbau',
-    lohn: 50,
-    zuschlag: 15,
-    einheit: 'm³',
-    rows: [
-      { pos: '01.01.10', text: 'Stahlbeton C25/30, Wand, geliefert + eingebaut', einheit: 'm³', lohn: 50, zeit: 1.2, material: 145, zuschlag: 15, menge: 38 },
-      { pos: '01.02.20', text: 'Schalung Wand, beidseitig, Sichtbetonklasse SB1', einheit: 'm²', lohn: 50, zeit: 0.45, material: 12, zuschlag: 15, menge: 180 },
-      { pos: '01.03.05', text: 'Bewehrungsstahl BSt 500 S, geliefert + verlegt', einheit: 't', lohn: 50, zeit: 6, material: 1280, zuschlag: 15, menge: 4.2 },
-    ],
-  },
-];
+const STORAGE_KEY = 'kalku.kalkulator.rows.v2';
+const STORAGE_KEY_A = 'kalku.kalkulator.aufschlaege.v2';
 
 function newRow(seed?: Partial<Row>): Row {
   return {
@@ -109,77 +53,82 @@ function newRow(seed?: Partial<Row>): Row {
     material: 0,
     zuschlag: 14,
     menge: 1,
+    nu: false,
+    bemerkung: '',
     ...seed,
   };
 }
 
-function computeEp(r: Row): number {
-  const base = r.lohn * r.zeit + r.material;
-  return base * (1 + r.zuschlag / 100);
-}
-
-function fmt(n: number): string {
-  return n.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function fmtCurrency(n: number): string {
-  return n.toLocaleString('de-DE', {
-    style: 'currency',
-    currency: 'EUR',
-    minimumFractionDigits: 2,
-  });
+function presetToRows(p: Preset): Row[] {
+  return p.rows.map((r) => newRow(r as Partial<Row>));
 }
 
 export default function Kalkulator() {
-  const [rows, setRows] = useState<Row[]>(() => {
-    if (typeof window === 'undefined') return PRESETS[0].rows.map((r) => newRow(r));
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed: Row[] = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {
-      /* ignore */
+  // ----- Initial state: Hash-Snapshot > localStorage > Default-Preset -----
+  const initial = useMemo(() => {
+    const fromHash = typeof window !== 'undefined' ? readHashSnapshot() : undefined;
+    if (fromHash) return { rows: fromHash.rows, a: fromHash.a, fromShare: true };
+    if (typeof window === 'undefined') {
+      return { rows: presetToRows(PRESETS[0]), a: DEFAULT_AUFSCHLAEGE, fromShare: false };
     }
-    return PRESETS[0].rows.map((r) => newRow(r));
-  });
+    try {
+      const savedRows = localStorage.getItem(STORAGE_KEY);
+      const savedA = localStorage.getItem(STORAGE_KEY_A);
+      const rows = savedRows ? (JSON.parse(savedRows) as Row[]) : null;
+      const a = savedA ? (JSON.parse(savedA) as Aufschlaege) : null;
+      return {
+        rows: Array.isArray(rows) && rows.length > 0 ? rows.map((r) => ({ ...newRow(), ...r })) : presetToRows(PRESETS[0]),
+        a: a ?? DEFAULT_AUFSCHLAEGE,
+        fromShare: false,
+      };
+    } catch {
+      return { rows: presetToRows(PRESETS[0]), a: DEFAULT_AUFSCHLAEGE, fromShare: false };
+    }
+  }, []);
+
+  const [rows, setRows] = useState<Row[]>(initial.rows);
+  const [aufschlaege, setAufschlaege] = useState<Aufschlaege>(initial.a);
+  const [showAufschlaege, setShowAufschlaege] = useState(false);
   const [email, setEmail] = useState('');
   const [emailSent, setEmailSent] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
+  const [excelError, setExcelError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareUrl, setShareUrl] = useState('');
+  const [sharedBanner, setSharedBanner] = useState(initial.fromShare);
   const formId = useId();
 
-  // Auto-save to localStorage on every change (debounced via state effect)
+  // Wenn vom Share-Link geladen: Hash entfernen, damit beim Edit-/Speichern keine Verwirrung entsteht
+  useEffect(() => {
+    if (initial.fromShare && typeof window !== 'undefined' && window.location.hash) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  }, [initial.fromShare]);
+
+  // Auto-save (debounced)
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const t = setTimeout(() => {
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(rows));
+        localStorage.setItem(STORAGE_KEY_A, JSON.stringify(aufschlaege));
         setSavedAt(new Date());
       } catch {
-        /* quota — ignore */
+        /* quota */
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [rows]);
+  }, [rows, aufschlaege]);
 
-  const totals = useMemo(() => {
-    const eps = rows.map(computeEp);
-    const gps = rows.map((r, i) => eps[i] * r.menge);
-    const total = gps.reduce((s, v) => s + v, 0);
-    const lohnTotal = rows.reduce((s, r) => s + r.lohn * r.zeit * r.menge * (1 + r.zuschlag / 100), 0);
-    const materialTotal = rows.reduce((s, r) => s + r.material * r.menge * (1 + r.zuschlag / 100), 0);
-    const stundenTotal = rows.reduce((s, r) => s + r.zeit * r.menge, 0);
-    return { eps, gps, total, lohnTotal, materialTotal, stundenTotal };
-  }, [rows]);
+  const totals = useMemo(() => computeTotals(rows, aufschlaege), [rows, aufschlaege]);
+  const hasNu = useMemo(() => rows.some((r) => r.nu), [rows]);
 
-  function updateRow(id: string, patch: Partial<Row>) {
+  const updateRow = useCallback((id: string, patch: Partial<Row>) => {
     setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
-  }
+  }, []);
 
-  function addRow() {
-    // copy default lohn/zuschlag from last row
+  const addRow = useCallback(() => {
     const last = rows[rows.length - 1];
     setRows((rs) => [
       ...rs,
@@ -189,25 +138,24 @@ export default function Kalkulator() {
         zuschlag: last?.zuschlag ?? 14,
       }),
     ]);
-  }
+  }, [rows]);
 
-  function deleteRow(id: string) {
+  const deleteRow = useCallback((id: string) => {
     setRows((rs) => (rs.length > 1 ? rs.filter((r) => r.id !== id) : rs));
-  }
+  }, []);
 
   function loadPreset(p: Preset) {
     if (rows.length > 0 && rows.some((r) => r.text || r.material > 0)) {
-      const ok = window.confirm(
-        `Aktuelle Eingaben gehen verloren — Vorlage „${p.label}" laden?`,
-      );
+      const ok = window.confirm(`Aktuelle Eingaben gehen verloren — Vorlage „${p.label}" laden?`);
       if (!ok) return;
     }
-    setRows(p.rows.map((r) => newRow(r)));
+    setRows(presetToRows(p));
   }
 
   function reset() {
     if (!window.confirm('Alle Positionen löschen — sicher?')) return;
     setRows([newRow()]);
+    setSharedBanner(false);
   }
 
   async function pasteFromClipboard() {
@@ -217,12 +165,10 @@ export default function Kalkulator() {
         alert('Zwischenablage ist leer.');
         return;
       }
-      // Parse tab-separated (Excel) or semicolon-separated (CSV) rows
       const sep = text.includes('\t') ? '\t' : ';';
       const lines = text.split(/\r?\n/).filter((l) => l.trim());
       const parsed: Row[] = lines.map((line, i) => {
         const cells = line.split(sep).map((c) => c.trim().replace(/^"|"$/g, ''));
-        // Auto-detect: if first cell is a header, skip
         return newRow({
           pos: cells[0] || `${i + 1}`,
           text: cells[1] || '',
@@ -234,7 +180,6 @@ export default function Kalkulator() {
           menge: parseGermanNumber(cells[7]) || 1,
         });
       });
-      // Drop the first row if it looks like a header (text in lohn column)
       const firstLohn = parsed[0]?.lohn;
       const headerLikely = firstLohn === 48 && (parsed[0]?.text.toLowerCase().includes('beschr') || parsed[0]?.text.toLowerCase().includes('lohn'));
       const finalRows = headerLikely ? parsed.slice(1) : parsed;
@@ -246,79 +191,76 @@ export default function Kalkulator() {
         `${finalRows.length} Zeile(n) erkannt. Aktuelle Eingaben ersetzen?\n(Tipp: kopiere die Daten direkt aus Excel oder LibreOffice Calc.)`,
       );
       if (ok) setRows(finalRows);
-    } catch (err) {
+    } catch {
       alert('Zwischenablage nicht zugänglich. Erlaube Clipboard-Zugriff in deinem Browser, oder importiere via CSV.');
     }
   }
 
   function exportCsv() {
-    const header = ['Pos.', 'Beschreibung', 'Einheit', 'Lohn EUR/h', 'Zeit h', 'Material EUR', 'Zuschlag %', 'Menge', 'EP EUR', 'GP EUR'];
+    const header = [
+      'Pos.', 'Kurztext', 'Langtext', 'Menge', 'Einheit',
+      'EP Material', 'EP Lohn', 'EP gesamt', 'GP', 'Min/Einheit', 'NU', 'Bemerkung',
+    ];
     const lines = [header.join(';')];
     rows.forEach((r, i) => {
-      const ep = computeEp(r);
+      const ep = computeEp(r, aufschlaege);
       const gp = ep * r.menge;
+      const nuFactor = r.nu ? 1 + aufschlaege.nuZuschlag / 100 : 1;
+      const materialEp = r.material * (1 + r.zuschlag / 100) * nuFactor;
+      const lohnEp = r.lohn * r.zeit * (1 + r.zuschlag / 100) * nuFactor;
       lines.push(
         [
           r.pos || `${i + 1}`,
+          `"${r.text.replace(/"/g, '""').slice(0, 32)}"`,
           `"${r.text.replace(/"/g, '""')}"`,
-          r.einheit,
-          fmt(r.lohn),
-          fmt(r.zeit),
-          fmt(r.material),
-          fmt(r.zuschlag),
           fmt(r.menge),
+          r.einheit,
+          fmt(materialEp),
+          fmt(lohnEp),
           fmt(ep),
           fmt(gp),
+          fmt(r.zeit * 60),
+          r.nu ? 'NU' : 'EL',
+          `"${(r.bemerkung || '').replace(/"/g, '""')}"`,
         ].join(';'),
       );
     });
     lines.push('');
-    lines.push(['', 'SUMME', '', '', '', '', '', '', '', fmt(totals.total)].join(';'));
+    lines.push(['', 'Netto-Bauleistung', '', '', '', '', '', '', fmt(totals.netto), '', '', ''].join(';'));
+    lines.push(['', `BGK (${fmt(aufschlaege.bgk)} %)`, '', '', '', '', '', '', fmt(totals.bgk), '', '', ''].join(';'));
+    lines.push(['', `AGK (${fmt(aufschlaege.agk)} %)`, '', '', '', '', '', '', fmt(totals.agk), '', '', ''].join(';'));
+    lines.push(['', `W&G (${fmt(aufschlaege.wug)} %)`, '', '', '', '', '', '', fmt(totals.wug), '', '', ''].join(';'));
+    lines.push(['', 'Netto-Auftrag', '', '', '', '', '', '', fmt(totals.nettoMitZuschlaegen), '', '', ''].join(';'));
+    lines.push(['', `MwSt (${fmt(aufschlaege.mwst)} %)`, '', '', '', '', '', '', fmt(totals.mwst), '', '', ''].join(';'));
+    lines.push(['', 'Brutto', '', '', '', '', '', '', fmt(totals.brutto), '', '', ''].join(';'));
     const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `kalku-positionen-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `kalku-kalkulation-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
-  async function exportExcel() {
+  async function handleExcel() {
     setExportingExcel(true);
+    setExcelError(null);
     try {
-      const XLSX = await import('xlsx');
-      const data: (string | number)[][] = [
-        ['Pos.', 'Beschreibung', 'Einheit', 'Lohn €/h', 'Zeit h', 'Material €', 'Zuschlag %', 'Menge', 'EP €', 'GP €'],
-        ...rows.map((r, i) => {
-          const ep = computeEp(r);
-          const gp = ep * r.menge;
-          return [
-            r.pos || `${i + 1}`,
-            r.text,
-            r.einheit,
-            r.lohn,
-            r.zeit,
-            r.material,
-            r.zuschlag,
-            r.menge,
-            Number(ep.toFixed(2)),
-            Number(gp.toFixed(2)),
-          ];
-        }),
-        [],
-        ['', 'SUMME netto', '', '', '', '', '', '', '', Number(totals.total.toFixed(2))],
-      ];
-      const ws = XLSX.utils.aoa_to_sheet(data);
-      ws['!cols'] = [
-        { wch: 10 }, { wch: 50 }, { wch: 8 }, { wch: 10 }, { wch: 8 },
-        { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 14 },
-      ];
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Kalkulation');
-      XLSX.writeFile(wb, `kalku-positionen-${new Date().toISOString().slice(0, 10)}.xlsx`);
+      await exportToExcel(rows, aufschlaege);
+    } catch (err) {
+      console.error('Excel export failed', err);
+      setExcelError(
+        err instanceof Error ? err.message : 'Excel-Export fehlgeschlagen. Bitte CSV als Alternative.',
+      );
     } finally {
       setExportingExcel(false);
     }
+  }
+
+  function openShare() {
+    const url = buildShareUrl(rows, aufschlaege);
+    setShareUrl(url);
+    setShareOpen(true);
   }
 
   function submitEmail(e: React.FormEvent) {
@@ -338,13 +280,24 @@ export default function Kalkulator() {
             name: 'Position-Kalkulator',
             description: DESC,
             path: '/tools/kalkulator/',
-            featureList: ['EP/GP-Berechnung', 'Trade-Vorlagen GaLaBau/Tiefbau/Elektro/Hochbau', 'Excel + CSV Export', 'Auto-Save in Browser', 'Excel-Paste aus Zwischenablage'],
+            featureList: [
+              'EP/GP-Berechnung',
+              'VOB-konforme Aufschläge (BGK, AGK, W&G, MwSt)',
+              'Subunternehmer-Modus mit separatem NU-Zuschlag',
+              'Plausibilitäts-Ampel je Position (Marktpreis-Abgleich)',
+              'Speichern & Teilen via Link',
+              'Trade-Vorlagen GaLaBau, Tiefbau, Elektro, Hochbau, Trockenbau, HLS',
+              'Excel-Export mit echten Formeln, Header-Branding, Druckbereich',
+              'CSV + Druck (PDF) Export',
+              'Auto-Save in Browser',
+              'Excel-Paste aus Zwischenablage',
+            ],
           }))}
         </script>
       </Helmet>
 
       {/* HERO */}
-      <section className="section-tight bg-gradient-to-br from-gray-50 to-white">
+      <section className="section-tight bg-gradient-to-br from-gray-50 to-white print:hidden">
         <div className="container-page">
           <div className="text-center max-w-3xl mx-auto">
             <p className="text-xs uppercase tracking-[0.18em] text-primary-700 font-bold mb-3">
@@ -354,10 +307,11 @@ export default function Kalkulator() {
               EP und GP in Sekunden berechnen.
             </h1>
             <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-              Lohn × Zeit + Material + Zuschlag = Einheitspreis. Mit Trade-Vorlagen, Auto-Save,
-              Excel + CSV Export. Komplett im Browser — Ihre Daten verlassen Ihren PC nicht.
+              Lohn × Zeit + Material + Zuschlag = Einheitspreis. Mit VOB-konformen Aufschlägen,
+              Subunternehmer-Modus, Plausibilitäts-Ampel und Excel-Export mit echten Formeln.
+              Komplett im Browser — Ihre Daten verlassen Ihren PC nicht.
             </p>
-            <div className="mt-7 inline-flex items-center gap-4 text-xs text-gray-500">
+            <div className="mt-7 inline-flex flex-wrap items-center justify-center gap-4 text-xs text-gray-500">
               <span className="inline-flex items-center gap-1.5">
                 <Shield className="w-3.5 h-3.5 text-primary-600" /> Datenschutz: 100 % lokal
               </span>
@@ -365,13 +319,36 @@ export default function Kalkulator() {
               <span className="inline-flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-primary-600" /> Auto-Save aktiv
               </span>
+              <span className="text-gray-300" aria-hidden>·</span>
+              <span className="inline-flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-primary-600" /> NU-Modus
+              </span>
             </div>
           </div>
         </div>
       </section>
 
+      {/* SHARED-BANNER */}
+      {sharedBanner && (
+        <section className="-mt-2 print:hidden">
+          <div className="container-page">
+            <div className="max-w-5xl mx-auto px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-800 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+              <span>Kalkulation aus geteiltem Link geladen. Ihre Änderungen werden lokal gespeichert.</span>
+              <button
+                type="button"
+                onClick={() => setSharedBanner(false)}
+                className="ml-auto text-emerald-700 hover:text-emerald-900 text-xs underline"
+              >
+                Ausblenden
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* TRADE PRESETS */}
-      <section className="-mt-2">
+      <section className="-mt-2 print:hidden">
         <div className="container-page">
           <div className="card-flat max-w-5xl mx-auto py-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -402,9 +379,22 @@ export default function Kalkulator() {
       <section className="section-tight">
         <div className="container-page">
           <div className="card overflow-x-auto print:shadow-none print:border-0 print:p-0">
+            {/* Print header — only visible in print */}
+            <div className="hidden print:block print:mb-6">
+              <div className="flex items-baseline justify-between border-b-2 border-primary-700 pb-2">
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-primary-700 font-bold">KALKU Kalkulation</p>
+                  <p className="text-xl font-bold text-gray-900">Positions-Übersicht</p>
+                </div>
+                <p className="text-xs text-gray-500">
+                  {new Date().toLocaleDateString('de-DE')} · {rows.length} Position{rows.length === 1 ? '' : 'en'}
+                </p>
+              </div>
+            </div>
+
             <table className="min-w-full text-sm">
-              <thead className="sticky top-0 bg-white z-10">
-                <tr className="border-b-2 border-gray-200">
+              <thead className="sticky top-0 bg-white z-10 print:bg-primary-700 print:text-white">
+                <tr className="border-b-2 border-gray-200 print:border-primary-700">
                   <Th className="w-16 text-left">Pos.</Th>
                   <Th className="text-left min-w-[220px]">Beschreibung</Th>
                   <Th className="w-16 text-center">Einh.</Th>
@@ -413,66 +403,34 @@ export default function Kalkulator() {
                   <Th className="w-24 text-right">Material €</Th>
                   <Th className="w-16 text-right">Zuschl. %</Th>
                   <Th className="w-16 text-right">Menge</Th>
-                  <Th className="w-24 text-right text-primary-700">EP €</Th>
-                  <Th className="w-28 text-right text-primary-700">GP €</Th>
+                  <Th className="w-24 text-right text-primary-700 print:text-white">EP €</Th>
+                  <Th className="w-28 text-right text-primary-700 print:text-white">GP €</Th>
+                  <Th className="w-10 text-center print:hidden">NU</Th>
                   <Th className="w-8 print:hidden"></Th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r, i) => {
-                  const ep = computeEp(r);
-                  const gp = ep * r.menge;
-                  return (
-                    <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50/50 transition-colors">
-                      <td className="px-2 py-2">
-                        <input
-                          type="text"
-                          value={r.pos || ''}
-                          onChange={(e) => updateRow(r.id, { pos: e.target.value })}
-                          placeholder={`${i + 1}`}
-                          className="w-full px-2 py-1.5 font-mono text-xs text-gray-500 border border-transparent rounded-md hover:border-gray-200 focus:border-primary-500 focus:ring-0"
-                        />
-                      </td>
-                      <td className="px-2 py-2">
-                        <input
-                          type="text"
-                          value={r.text}
-                          onChange={(e) => updateRow(r.id, { text: e.target.value })}
-                          className="w-full px-2 py-1.5 border border-transparent rounded-md hover:border-gray-200 focus:border-primary-500 focus:ring-0"
-                          placeholder="z.B. Asphalt fräsen, t = 4 cm"
-                        />
-                      </td>
-                      <td className="px-2 py-2">
-                        <input
-                          type="text"
-                          value={r.einheit}
-                          onChange={(e) => updateRow(r.id, { einheit: e.target.value })}
-                          className="w-12 px-2 py-1.5 text-center text-xs border border-transparent rounded-md hover:border-gray-200 focus:border-primary-500 focus:ring-0"
-                        />
-                      </td>
-                      <NumCell value={r.lohn} onChange={(v) => updateRow(r.id, { lohn: v })} step={0.5} />
-                      <NumCell value={r.zeit} onChange={(v) => updateRow(r.id, { zeit: v })} step={0.05} />
-                      <NumCell value={r.material} onChange={(v) => updateRow(r.id, { material: v })} step={0.5} />
-                      <NumCell value={r.zuschlag} onChange={(v) => updateRow(r.id, { zuschlag: v })} step={1} width="w-14" />
-                      <NumCell value={r.menge} onChange={(v) => updateRow(r.id, { menge: v })} step={1} />
-                      <td className="px-2 py-2 text-right tabular-nums text-primary-700 font-medium">{fmt(ep)}</td>
-                      <td className="px-2 py-2 text-right tabular-nums font-bold text-primary-700">{fmt(gp)}</td>
-                      <td className="px-1 py-2 print:hidden">
-                        <button
-                          type="button"
-                          onClick={() => deleteRow(r.id)}
-                          disabled={rows.length === 1}
-                          className="p-1.5 text-gray-300 hover:text-red-500 disabled:opacity-30 disabled:hover:text-gray-300 rounded"
-                          aria-label={`Position ${i + 1} löschen`}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {rows.map((r, i) => (
+                  <PositionRow
+                    key={r.id}
+                    row={r}
+                    index={i}
+                    aufschlaege={aufschlaege}
+                    canDelete={rows.length > 1}
+                    onChange={(patch) => updateRow(r.id, patch)}
+                    onDelete={() => deleteRow(r.id)}
+                  />
+                ))}
               </tbody>
             </table>
+
+            {hasNu && (
+              <p className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 inline-flex items-center gap-2 print:hidden">
+                <Users className="w-3.5 h-3.5" />
+                NU-Aufschlag {fmt(aufschlaege.nuZuschlag)} % wird auf gelb markierte Positionen angewendet. Anpassbar
+                im Aufschlag-Panel.
+              </p>
+            )}
 
             {/* Totals breakdown */}
             <div className="mt-6 grid sm:grid-cols-4 gap-3">
@@ -492,9 +450,25 @@ export default function Kalkulator() {
               </div>
               <div className="bg-primary-700 text-white rounded-lg p-4">
                 <p className="text-[11px] uppercase tracking-wider font-bold text-primary-200 mb-1">SUMME netto</p>
-                <p className="text-2xl font-extrabold tabular-nums">{fmtCurrency(totals.total)}</p>
+                <p className="text-2xl font-extrabold tabular-nums">{fmtCurrency(totals.netto)}</p>
               </div>
             </div>
+
+            {/* Aufschlag-Panel */}
+            <AufschlagPanel
+              value={aufschlaege}
+              onChange={setAufschlaege}
+              totals={totals}
+              open={showAufschlaege}
+              onToggle={() => setShowAufschlaege((s) => !s)}
+            />
+
+            {/* Excel error */}
+            {excelError && (
+              <p className="mt-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                {excelError}
+              </p>
+            )}
 
             {/* Action bar */}
             <div className="flex flex-wrap gap-2 mt-6 pt-5 border-t border-gray-100 print:hidden">
@@ -504,7 +478,7 @@ export default function Kalkulator() {
               <button type="button" onClick={pasteFromClipboard} className="btn btn-outline btn-sm" title="Strg+V aus Excel/Calc">
                 <Clipboard className="w-4 h-4" /> Aus Excel einfügen
               </button>
-              <button type="button" onClick={exportExcel} disabled={exportingExcel} className="btn btn-success btn-sm">
+              <button type="button" onClick={handleExcel} disabled={exportingExcel} className="btn btn-success btn-sm">
                 <FileSpreadsheet className="w-4 h-4" />
                 {exportingExcel ? 'Excel-Datei wird erstellt …' : 'Excel exportieren (.xlsx)'}
               </button>
@@ -512,11 +486,22 @@ export default function Kalkulator() {
                 <Download className="w-4 h-4" /> CSV
               </button>
               <button type="button" onClick={() => window.print()} className="btn btn-outline btn-sm">
-                <Printer className="w-4 h-4" /> Drucken
+                <Printer className="w-4 h-4" /> Drucken / PDF
+              </button>
+              <button type="button" onClick={openShare} className="btn btn-outline btn-sm">
+                <Share2 className="w-4 h-4" /> Teilen
               </button>
               <button type="button" onClick={reset} className="btn btn-ghost btn-sm ml-auto">
                 <RotateCcw className="w-4 h-4" /> Zurücksetzen
               </button>
+            </div>
+
+            {/* Print footer */}
+            <div className="hidden print:block print:mt-8 print:pt-4 print:border-t print:border-gray-200">
+              <div className="flex items-end justify-between text-xs text-gray-500">
+                <p>KALKU Baukalkulationen · kalku.de · Online-Kalkulator</p>
+                <p>{new Date().toLocaleDateString('de-DE')}</p>
+              </div>
             </div>
           </div>
 
@@ -561,6 +546,8 @@ export default function Kalkulator() {
                 <input
                   id={formId}
                   type="email"
+                  inputMode="email"
+                  autoComplete="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -601,50 +588,16 @@ export default function Kalkulator() {
           </div>
         </div>
       </section>
+
+      <ShareDialog open={shareOpen} url={shareUrl} onClose={() => setShareOpen(false)} />
     </>
   );
 }
 
-/** Parse "12,50" or "12.50" or "1.234,56" -> 12.50 / 1234.56. */
-function parseGermanNumber(s: string | undefined): number {
-  if (!s) return NaN;
-  const cleaned = s.replace(/\s/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.');
-  const n = parseFloat(cleaned);
-  return isNaN(n) ? NaN : n;
-}
-
 function Th({ className, children }: { className?: string; children?: React.ReactNode }) {
   return (
-    <th className={cn('px-2 py-2.5 text-[11px] font-bold uppercase tracking-wider text-gray-500', className)}>
+    <th className={'px-2 py-2.5 text-[11px] font-bold uppercase tracking-wider text-gray-500 ' + (className ?? '')}>
       {children}
     </th>
-  );
-}
-
-function NumCell({
-  value,
-  onChange,
-  step = 0.01,
-  width = 'w-20',
-}: {
-  value: number;
-  onChange: (v: number) => void;
-  step?: number;
-  width?: string;
-}) {
-  return (
-    <td className="px-2 py-2">
-      <input
-        type="number"
-        value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-        step={step}
-        min="0"
-        className={cn(
-          width,
-          'px-2 py-1.5 text-right tabular-nums border border-transparent rounded-md hover:border-gray-200 focus:border-primary-500 focus:ring-0',
-        )}
-      />
-    </td>
   );
 }
