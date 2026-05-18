@@ -35,11 +35,14 @@ const TRADE_TILE_CLASSES: Record<string, string> = {
   orange: 'bg-orange-50 hover:bg-orange-100 text-orange-800 hover:border-orange-200',
   blue: 'bg-blue-50 hover:bg-blue-100 text-blue-800 hover:border-blue-200',
   red: 'bg-red-50 hover:bg-red-100 text-red-800 hover:border-red-200',
+  slate: 'bg-slate-50 hover:bg-slate-100 text-slate-800 hover:border-slate-200',
+  amber: 'bg-amber-50 hover:bg-amber-100 text-amber-800 hover:border-amber-200',
+  rose: 'bg-rose-50 hover:bg-rose-100 text-rose-800 hover:border-rose-200',
 };
 
 const TITLE = 'KALKU Baukalkulationen — Wir kalkulieren Ihre Ausschreibung. Sie unterschreiben.';
 const DESCRIPTION =
-  'Outsourced Baukalkulation für GU und Bauunternehmen. Spezialisiert auf öffentliche Ausschreibungen (VOB/A, VgV) in 7 Gewerken. LV in 48 h bepreist. Festpreis ab 200 €. Saarbrücken.';
+  'Outsourced Baukalkulation für GU und Bauunternehmen. Spezialisiert auf öffentliche Ausschreibungen (VOB/A, VgV) in 10 Gewerken. LV in 48 h bepreist. Festpreis ab 200 €. Saarbrücken.';
 
 export default function Home() {
   return (
@@ -86,7 +89,7 @@ export default function Home() {
                   <Clock className="w-4 h-4 text-primary-600" /> LV in 48 h bepreist
                 </span>
                 <span className="inline-flex items-center gap-1.5">
-                  <Layers3 className="w-4 h-4 text-primary-600" /> 7 Gewerke
+                  <Layers3 className="w-4 h-4 text-primary-600" /> 10 Gewerke
                 </span>
                 <span className="inline-flex items-center gap-1.5">
                   <Award className="w-4 h-4 text-primary-600" /> Festpreis ab 200 €
@@ -114,10 +117,13 @@ export default function Home() {
                 Gewerke
               </p>
               <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-gray-900">
-                Sieben Gewerke. Ein Kalkulationsteam.
+                Zehn Gewerke. Ein Kalkulationsteam.
               </h2>
+              <p className="mt-3 text-sm text-gray-600">
+                Hochbau, Tiefbau, Straßenbau, GaLaBau, HLS, Innenausbau, Erd-/Abbruch, Elektro, Fenster, Schadstoff — alle Gewerke aus einer Hand.
+              </p>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
               {TRADES.map((t) => (
                 <Link
                   key={t.slug}
