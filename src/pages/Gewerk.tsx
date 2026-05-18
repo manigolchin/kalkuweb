@@ -16,6 +16,9 @@ const PILL_CLASSES: Record<string, string> = {
   orange: 'bg-orange-100 text-orange-700',
   blue: 'bg-blue-100 text-blue-700',
   red: 'bg-red-100 text-red-700',
+  slate: 'bg-slate-100 text-slate-700',
+  amber: 'bg-amber-100 text-amber-700',
+  rose: 'bg-rose-100 text-rose-700',
 };
 
 const HERO_BG: Record<string, string> = {
@@ -26,6 +29,9 @@ const HERO_BG: Record<string, string> = {
   orange: 'from-orange-50/50 to-white',
   blue: 'from-blue-50/50 to-white',
   red: 'from-red-50/50 to-white',
+  slate: 'from-slate-50/50 to-white',
+  amber: 'from-amber-50/50 to-white',
+  rose: 'from-rose-50/50 to-white',
 };
 
 const LEISTUNGEN = [

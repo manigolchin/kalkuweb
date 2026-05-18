@@ -19,8 +19,8 @@ const STATS: Stat[] = [
   },
   {
     icon: Layers3,
-    to: 7,
-    label: 'Gewerke aus einer Hand — von GaLaBau bis Schadstoff',
+    to: 10,
+    label: 'Gewerke aus einer Hand — von Hochbau bis Schadstoff',
   },
   {
     icon: ShieldCheck,

@@ -23,7 +23,7 @@ const QUESTIONS = [
   },
   {
     id: 'gewerk',
-    text: 'Arbeiten Sie in einem unserer 7 Gewerke (GaLaBau, Tiefbau, Hochbau, Elektro, Haustechnik, Fenster, Schadstoff)?',
+    text: 'Arbeiten Sie in einem unserer 10 Gewerke (Hochbau, Tiefbau, Straßenbau, GaLaBau, HLS, Innenausbau, Erd-/Abbrucharbeiten, Elektro, Fenster, Schadstoff)?',
     why: 'Wir haben pro Gewerk dedizierte Kalkulatoren.',
   },
 ] as const;

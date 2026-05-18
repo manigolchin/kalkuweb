@@ -7,7 +7,7 @@ import CaseStudies from '@/components/sections/CaseStudies';
 
 const TITLE = 'Referenzen — Anonymisierte Case-Studies | KALKU';
 const DESC =
-  'Echte Fälle, harte Zahlen, anonymisiert. Vorher / Nachher pro Bauunternehmen aus 7 Gewerken — Tiefbau, GaLaBau, Hochbau, Elektro u.a.';
+  'Echte Fälle, harte Zahlen, anonymisiert. Vorher / Nachher pro Bauunternehmen aus 10 Gewerken — Hochbau, Tiefbau, Straßenbau, GaLaBau, HLS, Innenausbau, Erd-/Abbruch, Elektro u.a.';
 
 export default function ReferenzenIndex() {
   return (
