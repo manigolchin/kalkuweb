@@ -31,18 +31,21 @@ const TRADE_TILE_CLASSES: Record<string, string> = {
   orange:  'bg-orange-50 hover:bg-orange-100 text-orange-800 ring-orange-100 hover:ring-orange-200',
   blue:    'bg-blue-50 hover:bg-blue-100 text-blue-800 ring-blue-100 hover:ring-blue-200',
   red:     'bg-red-50 hover:bg-red-100 text-red-800 ring-red-100 hover:ring-red-200',
+  slate:   'bg-slate-50 hover:bg-slate-100 text-slate-800 ring-slate-100 hover:ring-slate-200',
+  amber:   'bg-amber-50 hover:bg-amber-100 text-amber-800 ring-amber-100 hover:ring-amber-200',
+  rose:    'bg-rose-50 hover:bg-rose-100 text-rose-800 ring-rose-100 hover:ring-rose-200',
 };
 
 const TITLE = 'KALKU Baukalkulationen — Wir kalkulieren Ihre Ausschreibung. Sie unterschreiben.';
 const DESCRIPTION =
-  'Outsourced Baukalkulation für mittelständische Bauunternehmen. Spezialisiert auf öffentliche Ausschreibungen (VOB/A, VgV) in 7 Gewerken. LV in 48 h bepreist. Festpreis ab 200 €. Saarbrücken.';
+  'Outsourced Baukalkulation für mittelständische Bauunternehmen. Spezialisiert auf öffentliche Ausschreibungen (VOB/A, VgV) in 10 Gewerken. LV in 48 h bepreist. Festpreis ab 200 €. Saarbrücken.';
 
 /**
  * The Home page is a single argument:
  *
  *   1. HERO        — pattern-3 anti-marketing headline + availability bar + product mockup
  *   2. STATS       — 4 hard numbers
- *   3. TRADES      — 7 colored tiles, signals scope in 1 second
+ *   3. TRADES      — 10 colored tiles, signals scope in 1 second
  *   4. TRIAGE      — interactive submission-date checker (the radical move)
  *   5. MANIFESTO   — founder letter (named voice, signed)
  *   6. DELIVERABLES — what you actually get (3 deliverables)
@@ -82,14 +85,14 @@ export default function Home() {
             <div className="text-center mb-10">
               <p className="eyebrow mb-3">Gewerke</p>
               <h2 className="display-h2">
-                Sieben Gewerke. Ein Kalkulationsteam.
+                Zehn Gewerke. Ein Kalkulationsteam.
               </h2>
               <p className="prose-body mx-auto mt-4 text-base">
                 Anders als reine Hochbau-Outsourcer decken wir das volle Spektrum mittelständischer Bauunternehmen ab —
                 von GaLaBau bis Schadstoffsanierung.
               </p>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 max-w-6xl mx-auto">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 max-w-6xl mx-auto">
               {TRADES.map((t) => (
                 <Link
                   key={t.slug}

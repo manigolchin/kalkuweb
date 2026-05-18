@@ -20,9 +20,9 @@ const STATS: Stat[] = [
   },
   {
     icon: Layers3,
-    to: 7,
+    to: 10,
     label: 'Gewerke aus einer Hand',
-    hint: 'GaLaBau · Tiefbau · Hochbau · Elektro · TGA · Fenster · Schadstoff',
+    hint: 'GaLaBau · Tiefbau · Hochbau · Straßenbau · Elektro · TGA · Fenster · Schadstoff · Innenausbau · Abbruch',
   },
   {
     icon: ShieldCheck,

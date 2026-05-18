@@ -1,5 +1,17 @@
 /** @type {import('tailwindcss').Config} */
-const TRADE_COLORS = ['emerald', 'sky', 'stone', 'yellow', 'orange', 'blue', 'red', 'teal'];
+const TRADE_COLORS = [
+  'emerald',
+  'sky',
+  'stone',
+  'yellow',
+  'orange',
+  'blue',
+  'red',
+  'teal',
+  'slate',
+  'amber',
+  'rose',
+];
 
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
