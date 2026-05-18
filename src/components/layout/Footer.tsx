@@ -39,8 +39,14 @@ const COL_RECHTLICH = [
 export default function Footer() {
   const year = new Date().getFullYear();
   return (
-    <footer className="bg-gray-900 text-gray-300 mt-auto">
-      <div className="container-page py-16">
+    <footer className="relative isolate overflow-hidden bg-editorial-dark text-gray-300 mt-auto">
+      {/* Atmospheric depth — subtle, doesn't compete with content */}
+      <span aria-hidden className="aurora-orb aurora-petrol w-[40rem] h-[40rem] -top-64 -left-24 opacity-30" />
+      <span aria-hidden className="aurora-orb aurora-emerald w-[32rem] h-[32rem] -bottom-56 -right-24 opacity-20" />
+      <div aria-hidden className="absolute inset-0 bg-grid-fade opacity-60" />
+      <span aria-hidden className="absolute inset-x-0 top-0 edge-glow-top" />
+
+      <div className="relative container-page py-16">
         <div className="grid gap-10 md:grid-cols-2 lg:grid-cols-5">
           <div className="lg:col-span-2">
             <Link to="/" className="flex items-center gap-2.5 mb-4">
@@ -88,7 +94,7 @@ export default function Footer() {
           </div>
         </div>
 
-        <div className="border-t border-gray-800 mt-12 pt-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="border-t border-white/10 mt-12 pt-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <p className="text-xs text-gray-500">
             © {year} {NAP.legalName}. USt-ID {NAP.vatId}.
           </p>

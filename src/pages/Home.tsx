@@ -59,8 +59,18 @@ export default function Home() {
       </Helmet>
 
       {/* HERO */}
-      <section className="bg-gradient-to-b from-gray-50 via-gray-50 to-white border-b border-gray-200">
-        <div className="container-page py-16 sm:py-20 lg:py-24">
+      <section className="relative overflow-hidden bg-paper-editorial border-b border-gray-200">
+        {/* Editorial atmosphere — petrol halo + emerald accent + dot grid */}
+        <div className="absolute inset-0 bg-dot-grid opacity-50" aria-hidden />
+        <span
+          aria-hidden
+          className="aurora-orb aurora-petrol w-[44rem] h-[44rem] -top-72 -right-32 opacity-25"
+        />
+        <span
+          aria-hidden
+          className="aurora-orb aurora-emerald w-[36rem] h-[36rem] -bottom-64 -left-32 opacity-20"
+        />
+        <div className="relative container-page py-16 sm:py-20 lg:py-24">
           <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
             <div className="max-w-xl">
               <p className="text-xs uppercase tracking-[0.18em] text-primary-700 font-bold mb-5">
