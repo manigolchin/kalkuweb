@@ -148,8 +148,32 @@ export const SERVICES = {
   // Live production tools (separate apps under kalku.de):
   gaebKonverterUrl: 'https://gaeb.kalku.de',
   kalkulatorUrl: 'https://kalkulat.kalku.de',
+  // Social media (verified Mai 2026)
   facebookUrl: 'https://www.facebook.com/kalku.de/?locale=de_DE',
   instagramUrl: 'https://www.instagram.com/kalku_de/',
+  tiktokUrl: 'https://www.tiktok.com/@kalku.de',
+  linkedinCompanyUrl: 'https://de.linkedin.com/company/kalku',
+  linkedinAlaatdinUrl: 'https://de.linkedin.com/in/alaatdin-coksari-3881b8275',
+  linkedinBuelentUrl: 'https://de.linkedin.com/in/coksari',
+  // Analytics
   plausibleDomain: 'kalku.de',
   pipedriveWebhookPath: '/api/forms/submit',
+} as const;
+
+// Co-Owners / Team-Leads
+export const TEAM = {
+  inhaber: {
+    initials: 'AC',
+    name: 'Alaatdin Coksari',
+    role: 'Inhaber & Geschäftsführer',
+    bio: 'Gründet 2019 KALKU als spezialisiertes Kalkulationsbüro für öffentliche Vergaben. 14+ Jahre Erfahrung in Submission, Vergaberecht und VOB/A. Persönlicher Ansprechpartner für jeden Stammkunden.',
+    linkedin: 'https://de.linkedin.com/in/alaatdin-coksari-3881b8275',
+  },
+  kalkulator: {
+    initials: 'BC',
+    name: 'Bülent Coksari',
+    role: 'Leitender Kalkulator',
+    bio: 'Bruder des Inhabers. GaLaBau-Hintergrund (eigene GaLaBau-Praxis), Studium Bauingenieurwesen, parallel Geschäftsführer der ui medien UG (Filmproduktion) — bringt Praxis-Wissen und Tech-Affinität in die Kalkulation.',
+    linkedin: 'https://de.linkedin.com/in/coksari',
+  },
 } as const;
