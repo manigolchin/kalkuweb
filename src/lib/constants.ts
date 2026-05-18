@@ -67,19 +67,29 @@ export type Trade = {
   slug: string;
   name: string;
   short: string;
-  color: 'emerald' | 'sky' | 'stone' | 'yellow' | 'orange' | 'blue' | 'red';
+  color:
+    | 'emerald'
+    | 'sky'
+    | 'stone'
+    | 'yellow'
+    | 'orange'
+    | 'blue'
+    | 'red'
+    | 'slate'
+    | 'amber'
+    | 'rose';
   icon: string;
   tagline: string;
 };
 
 export const TRADES: readonly Trade[] = [
   {
-    slug: 'galabau',
-    name: 'GaLaBau',
-    short: 'GaLaBau',
-    color: 'emerald',
-    icon: 'Trees',
-    tagline: 'Garten- und Landschaftsbau — von der Pflasterfläche bis zur Außenanlage Schule.',
+    slug: 'hochbau',
+    name: 'Hochbau',
+    short: 'Hochbau',
+    color: 'stone',
+    icon: 'Building2',
+    tagline: 'Stahlbeton, Mauerwerk, Schalung — Rohbau- und Fertigbau-Kalkulation nach VOB.',
   },
   {
     slug: 'tiefbau',
@@ -90,12 +100,44 @@ export const TRADES: readonly Trade[] = [
     tagline: 'Erdbewegung, Pfahlgründung, Kanal — komplette Tiefbau-LVs in 48 h bepreist.',
   },
   {
-    slug: 'hochbau',
-    name: 'Hochbau',
-    short: 'Hochbau',
-    color: 'stone',
-    icon: 'Building2',
-    tagline: 'Stahlbeton, Mauerwerk, Schalung — Rohbau- und Fertigbau-Kalkulation nach VOB.',
+    slug: 'strassenbau',
+    name: 'Straßenbau',
+    short: 'Straßenbau',
+    color: 'slate',
+    icon: 'Route',
+    tagline: 'Asphalt, Pflaster, Markierung — Straßen-, Wege- und Platzbau nach ZTV Asphalt.',
+  },
+  {
+    slug: 'galabau',
+    name: 'GaLaBau',
+    short: 'GaLaBau',
+    color: 'emerald',
+    icon: 'Trees',
+    tagline: 'Garten- und Landschaftsbau — von der Pflasterfläche bis zur Außenanlage Schule.',
+  },
+  {
+    slug: 'haustechnik',
+    name: 'HLS / Haustechnik',
+    short: 'HLS',
+    color: 'orange',
+    icon: 'Wrench',
+    tagline: 'Sanitär, Heizung, Lüftung, Klima, Kälte — TGA-Pakete sauber zugeordnet.',
+  },
+  {
+    slug: 'innenausbau',
+    name: 'Innenausbau',
+    short: 'Innenausbau',
+    color: 'amber',
+    icon: 'Hammer',
+    tagline: 'Trockenbau, Bodenbelag, Maler, Fliesen — Innenausbau-LVs schlüsselfertig bepreist.',
+  },
+  {
+    slug: 'erdbau-abbruch',
+    name: 'Erd- / Abbrucharbeiten',
+    short: 'Erd- / Abbruch',
+    color: 'rose',
+    icon: 'Construction',
+    tagline: 'Erdaushub, Rückbau, Entsorgung — Abbruch und Erdbau inkl. AVV-konformer Entsorgung.',
   },
   {
     slug: 'elektro',
@@ -104,14 +146,6 @@ export const TRADES: readonly Trade[] = [
     color: 'yellow',
     icon: 'Zap',
     tagline: 'Installation, BMA, EMA, KNX/DALI — komplexe Gewerke korrekt bepreist.',
-  },
-  {
-    slug: 'haustechnik',
-    name: 'Haustechnik',
-    short: 'TGA / HLS',
-    color: 'orange',
-    icon: 'Wrench',
-    tagline: 'Sanitär, Heizung, Lüftung, Klima, Kälte — TGA-Pakete sauber zugeordnet.',
   },
   {
     slug: 'fenster',

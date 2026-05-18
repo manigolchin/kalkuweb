@@ -4,11 +4,14 @@ import { NAP, SERVICES } from '@/lib/constants';
 import { telHref, whatsappHref } from '@/lib/utils';
 
 const COL_LEISTUNGEN = [
-  { to: '/leistungen/galabau/', label: 'GaLaBau' },
-  { to: '/leistungen/tiefbau/', label: 'Tiefbau' },
   { to: '/leistungen/hochbau/', label: 'Hochbau' },
+  { to: '/leistungen/tiefbau/', label: 'Tiefbau' },
+  { to: '/leistungen/strassenbau/', label: 'Straßenbau' },
+  { to: '/leistungen/galabau/', label: 'GaLaBau' },
+  { to: '/leistungen/haustechnik/', label: 'HLS / Haustechnik' },
+  { to: '/leistungen/innenausbau/', label: 'Innenausbau' },
+  { to: '/leistungen/erdbau-abbruch/', label: 'Erd- / Abbrucharbeiten' },
   { to: '/leistungen/elektro/', label: 'Elektro' },
-  { to: '/leistungen/haustechnik/', label: 'Haustechnik' },
   { to: '/leistungen/fenster/', label: 'Fenster' },
   { to: '/leistungen/schadstoff/', label: 'Schadstoff' },
 ];
@@ -51,7 +54,7 @@ export default function Footer() {
             </Link>
             <p className="text-sm text-gray-400 mb-5 max-w-xs">
               Outsourced Baukalkulation für GU und Bauunternehmen. Spezialisiert auf öffentliche Ausschreibungen
-              (VOB/A, VgV) in 7 Gewerken.
+              (VOB/A, VgV) in 10 Gewerken — alle Gewerke aus einer Hand.
             </p>
             <ul className="space-y-2 text-sm">
               <li className="flex items-start gap-2">

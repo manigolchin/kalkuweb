@@ -61,7 +61,7 @@ export default function LeadMagnet() {
             </h2>
             <p className="text-lg text-gray-600 mb-7 leading-relaxed">
               Was Sie vor jeder VOB-Submission abklopfen sollten. Aus 14 Jahren Praxis und
-              tausenden bepreisten LVs in 7 Gewerken zusammengestellt.
+              tausenden bepreisten LVs in 10 Gewerken zusammengestellt.
             </p>
 
             {sent ? (

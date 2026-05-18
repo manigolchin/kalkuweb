@@ -4,9 +4,9 @@ import { ArrowRight } from 'lucide-react';
 import { canonical } from '@/lib/seo';
 import { TRADES } from '@/lib/constants';
 
-const TITLE = 'Leistungen — Baukalkulation für 7 Gewerke | KALKU';
+const TITLE = 'Leistungen — Baukalkulation für 10 Gewerke | KALKU';
 const DESC =
-  'Übersicht aller KALKU-Leistungen pro Gewerk: GaLaBau, Tiefbau, Hochbau, Elektro, Haustechnik, Fenster, Schadstoff. Outsourced Kalkulation für VOB/A-Ausschreibungen.';
+  'Übersicht aller KALKU-Leistungen pro Gewerk: Hochbau, Tiefbau, Straßenbau, GaLaBau, HLS, Innenausbau, Erd-/Abbrucharbeiten, Elektro, Fenster, Schadstoff. Outsourced Kalkulation für VOB/A-Ausschreibungen — alle Gewerke aus einer Hand.';
 
 export default function LeistungenIndex() {
   return (
@@ -24,11 +24,11 @@ export default function LeistungenIndex() {
           <div className="text-center max-w-3xl mx-auto mb-12">
             <p className="eyebrow mb-3">Leistungen</p>
             <h1 className="text-4xl sm:text-5xl font-bold tracking-tight text-gray-900 mb-5">
-              Sieben Gewerke. Ein Kalkulationsteam.
+              Zehn Gewerke. Ein Kalkulationsteam.
             </h1>
             <p className="text-lg text-gray-600">
-              Egal ob GaLaBau-LV mit 80 Positionen oder Elektro-Submission mit 600 Positionen — wir bepreisen,
-              füllen Formblätter und reichen ein.
+              Hochbau, Tiefbau, Straßenbau, GaLaBau, HLS, Innenausbau, Erd-/Abbrucharbeiten, Elektro, Fenster,
+              Schadstoff — alle Gewerke aus einer Hand. Wir bepreisen, füllen Formblätter und reichen ein.
             </p>
           </div>
 
