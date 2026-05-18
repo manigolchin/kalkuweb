@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Send, Mail, Phone, MapPin, Facebook, Instagram, MessageCircle, Linkedin, Music2 } from 'lucide-react';
+import { Mail, Phone, MapPin, Facebook, Instagram, MessageCircle, Linkedin, Music2 } from 'lucide-react';
 import { NAP, SERVICES } from '@/lib/constants';
 import { telHref, whatsappHref } from '@/lib/utils';
 
@@ -49,10 +49,19 @@ export default function Footer() {
       <div className="relative container-page py-16">
         <div className="grid gap-10 md:grid-cols-2 lg:grid-cols-5">
           <div className="lg:col-span-2">
-            <Link to="/" className="flex items-center gap-2.5 mb-4">
-              <div className="w-9 h-9 rounded-lg bg-primary-500 flex items-center justify-center">
-                <Send className="w-5 h-5 text-white" />
-              </div>
+            <Link
+              to="/"
+              className="flex items-center gap-2.5 mb-4"
+              aria-label="KALKU — zur Startseite"
+            >
+              <img
+                src="/logo.png"
+                alt=""
+                width="36"
+                height="36"
+                className="w-9 h-9 rounded-lg bg-white p-0.5"
+                loading="lazy"
+              />
               <div className="flex flex-col leading-none">
                 <span className="font-bold text-white">KALKU</span>
                 <span className="text-xs text-gray-400">Baukalkulationen</span>
