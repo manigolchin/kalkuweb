@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
 import {
@@ -132,6 +132,8 @@ export default function GaebKonverter() {
 
   const [lastExport, setLastExport] = useState<TargetFormat | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const lvArtIdBase = useId();
+  const emailId = useId();
 
   function reset() {
     setParsed(null);
@@ -515,31 +517,36 @@ export default function GaebKonverter() {
                     <p className="text-xs uppercase tracking-wider font-bold text-gray-500 mb-3">
                       LV-Art
                     </p>
-                    <div className="flex flex-wrap gap-2">
-                      {LV_ART.map((o) => (
-                        <label
-                          key={o.value}
-                          className={cn(
-                            'flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-sm transition-colors',
-                            textMode === o.value
-                              ? 'border-primary-500 bg-primary-50 text-primary-900'
-                              : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300',
-                          )}
-                        >
-                          <input
-                            type="radio"
-                            name="lv-art"
-                            value={o.value}
-                            checked={textMode === o.value}
-                            onChange={() => setTextMode(o.value)}
-                            className="sr-only"
-                          />
-                          <span className="w-3 h-3 rounded-full border-2 border-current flex items-center justify-center">
-                            {textMode === o.value && <span className="w-1.5 h-1.5 rounded-full bg-current" />}
-                          </span>
-                          {o.label}
-                        </label>
-                      ))}
+                    <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="LV-Art">
+                      {LV_ART.map((o) => {
+                        const id = `${lvArtIdBase}-${o.value}`;
+                        return (
+                          <label
+                            key={o.value}
+                            htmlFor={id}
+                            className={cn(
+                              'flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-sm transition-colors',
+                              textMode === o.value
+                                ? 'border-primary-500 bg-primary-50 text-primary-900'
+                                : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300',
+                            )}
+                          >
+                            <input
+                              id={id}
+                              type="radio"
+                              name="lv-art"
+                              value={o.value}
+                              checked={textMode === o.value}
+                              onChange={() => setTextMode(o.value)}
+                              className="sr-only"
+                            />
+                            <span aria-hidden="true" className="w-3 h-3 rounded-full border-2 border-current flex items-center justify-center">
+                              {textMode === o.value && <span className="w-1.5 h-1.5 rounded-full bg-current" />}
+                            </span>
+                            {o.label}
+                          </label>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -644,12 +651,13 @@ export default function GaebKonverter() {
                       {parsed.hasLongtext && <span className="ml-2 badge badge-primary">mit Langtext</span>}
                     </p>
                     <div className="relative w-full sm:w-72">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <Search aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                       <input
                         type="search"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         placeholder="OZ, Kurz- oder Langtext suchen…"
+                        aria-label="Nach Position suchen"
                         className="input pl-9 text-sm"
                       />
                     </div>
@@ -721,8 +729,12 @@ export default function GaebKonverter() {
                       Bearbeitung in 1–2 Werktagen.
                     </p>
                     {submitted ? (
-                      <div className="inline-flex items-start gap-2 px-4 py-3 rounded-xl bg-emerald-50 text-emerald-800 text-sm text-left">
-                        <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                      <div
+                        role="status"
+                        aria-live="polite"
+                        className="inline-flex items-start gap-2 px-4 py-3 rounded-xl bg-emerald-50 text-emerald-800 text-sm text-left"
+                      >
+                        <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" aria-hidden="true" />
                         <span>
                           Ihr E-Mail-Programm sollte sich mit einer vorausgefüllten Nachricht
                           geöffnet haben. <strong>Bitte hängen Sie Ihre GAEB-Datei an</strong> und
@@ -740,16 +752,19 @@ export default function GaebKonverter() {
                       </div>
                     ) : (
                       <form onSubmit={submitEmail} className="flex flex-col sm:flex-row gap-3">
+                        <label htmlFor={emailId} className="sr-only">E-Mail-Adresse</label>
                         <input
+                          id={emailId}
                           type="email"
                           required
+                          aria-required="true"
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
                           placeholder="ihre@firma.de"
                           className="input flex-1"
                         />
                         <button type="submit" className="btn btn-success">
-                          <Download className="w-4 h-4" /> Anfordern
+                          <Download className="w-4 h-4" aria-hidden="true" /> Anfordern
                         </button>
                       </form>
                     )}

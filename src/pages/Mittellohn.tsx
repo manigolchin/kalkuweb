@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useId } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
 import {
@@ -86,6 +86,8 @@ export default function Mittellohn() {
   const [bnkBg, setBnkBg] = useState(5); // Berufsgenossenschaft Bau (Risikoklasse)
   const [bnkMonats13, setBnkMonats13] = useState(11); // 13.ME, Urlaubsgeld
   const [bnkSonst, setBnkSonst] = useState(8); // Lohnfortzahlung Krank/Feiertag, Sonstiges
+  const lnkId = useId();
+  const zulagenId = useId();
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -273,13 +275,14 @@ export default function Mittellohn() {
                     </tr>
                   </thead>
                   <tbody>
-                    {team.map((p) => (
+                    {team.map((p, i) => (
                       <tr key={p.id} className="border-b border-gray-100 hover:bg-gray-50/50">
                         <td className="px-2 py-2">
                           <input
                             type="text"
                             value={p.rolle}
                             onChange={(e) => update(p.id, { rolle: e.target.value })}
+                            aria-label={`Zeile ${i + 1}: Rolle`}
                             className="w-full px-2 py-1.5 border border-transparent rounded-md hover:border-gray-200 focus:border-amber-500 focus:ring-0"
                           />
                         </td>
@@ -290,6 +293,7 @@ export default function Mittellohn() {
                             onChange={(e) => update(p.id, { stundensatz: parseFloat(e.target.value) || 0 })}
                             step={0.5}
                             min={0}
+                            aria-label={`Zeile ${i + 1}: Stundensatz`}
                             className="w-full px-2 py-1.5 text-right tabular-nums border border-transparent rounded-md hover:border-gray-200 focus:border-amber-500 focus:ring-0"
                           />
                         </td>
@@ -300,6 +304,7 @@ export default function Mittellohn() {
                             onChange={(e) => update(p.id, { anzahl: parseInt(e.target.value) || 0 })}
                             step={1}
                             min={0}
+                            aria-label={`Zeile ${i + 1}: Anzahl Personen`}
                             className="w-full px-2 py-1.5 text-right tabular-nums border border-transparent rounded-md hover:border-gray-200 focus:border-amber-500 focus:ring-0"
                           />
                         </td>
@@ -369,12 +374,13 @@ export default function Mittellohn() {
 
               <div className="card-flat">
                 <div className="flex items-center justify-between mb-1">
-                  <label className="label flex items-center gap-1.5 mb-0">
+                  <label htmlFor={lnkId} className="label flex items-center gap-1.5 mb-0">
                     Lohnnebenkosten
                   </label>
                   <button
                     type="button"
                     onClick={() => setBreakdownOpen((o) => !o)}
+                    aria-expanded={breakdownOpen}
                     className="text-xs font-semibold text-amber-700 hover:text-amber-900"
                   >
                     {breakdownOpen ? 'Einfach' : 'Detailansicht'}
@@ -385,12 +391,14 @@ export default function Mittellohn() {
                   <>
                     <div className="flex items-center gap-3">
                       <input
+                        id={lnkId}
                         type="range"
                         value={lohnnebenkosten}
                         onChange={(e) => setLohnnebenkosten(parseFloat(e.target.value))}
                         min={0}
                         max={120}
                         step={1}
+                        aria-valuetext={`${lohnnebenkosten} Prozent`}
                         className="flex-1 accent-amber-600"
                       />
                       <span className="font-bold text-amber-700 tabular-nums w-14 text-right">{lohnnebenkosten} %</span>
@@ -435,8 +443,9 @@ export default function Mittellohn() {
               </div>
 
               <div className="card-flat">
-                <label className="label">Zulagen €/h</label>
+                <label htmlFor={zulagenId} className="label">Zulagen €/h</label>
                 <input
+                  id={zulagenId}
                   type="number"
                   value={zulagen}
                   onChange={(e) => setZulagen(parseFloat(e.target.value) || 0)}
@@ -491,21 +500,24 @@ function BreakdownRow({
   onChange: (v: number) => void;
   hint?: string;
 }) {
+  const id = useId();
   return (
     <div>
       <div className="flex items-center justify-between text-xs">
-        <span className="font-semibold text-gray-700">{label}</span>
+        <label htmlFor={id} className="font-semibold text-gray-700">{label}</label>
         <div className="inline-flex items-center gap-1">
           <input
+            id={id}
             type="number"
             value={value}
             onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
             min={0}
             max={50}
             step={0.1}
+            aria-label={`${label} in Prozent`}
             className="w-16 px-2 py-1 text-right text-xs tabular-nums border border-gray-200 rounded focus:border-amber-500 focus:ring-0"
           />
-          <span className="text-gray-400 w-3">%</span>
+          <span aria-hidden="true" className="text-gray-400 w-3">%</span>
         </div>
       </div>
       {hint && <p className="text-[11px] text-gray-400 mt-0.5">{hint}</p>}

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useId } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { ShieldCheck, Info, FileText, Shield, Banknote, BarChart3 } from 'lucide-react';
 import { canonical } from '@/lib/seo';
@@ -66,6 +66,9 @@ export default function Buergschaft() {
   const [avalProvProzPa, setAvalProvProzPa] = useState(1.5);
   const [erfuellungsLaufzeitMonate, setErfuellungsLaufzeitMonate] = useState(18);
   const [gewaehrleistungsLaufzeitJahre, setGewaehrleistungsLaufzeitJahre] = useState(5);
+  const vertragId = useId();
+  const erfMonId = useId();
+  const gewJahreId = useId();
 
   const result = useMemo(() => {
     const erfBetrag = vertragssumme * (erfuellungsProz / 100);
@@ -132,9 +135,10 @@ export default function Buergschaft() {
 
               <div className="space-y-5">
                 <div>
-                  <label className="label">Vertragssumme netto</label>
+                  <label htmlFor={vertragId} className="label">Vertragssumme netto</label>
                   <div className="relative">
                     <input
+                      id={vertragId}
                       type="number"
                       value={vertragssumme}
                       onChange={(e) => setVertragssumme(parseFloat(e.target.value) || 0)}
@@ -181,9 +185,10 @@ export default function Buergschaft() {
 
                 <div className="grid grid-cols-2 gap-3 pt-3 border-t border-gray-100">
                   <div>
-                    <label className="label text-xs">Erfüllung Laufzeit</label>
+                    <label htmlFor={erfMonId} className="label text-xs">Erfüllung Laufzeit</label>
                     <div className="relative">
                       <input
+                        id={erfMonId}
                         type="number"
                         value={erfuellungsLaufzeitMonate}
                         onChange={(e) => setErfuellungsLaufzeitMonate(parseFloat(e.target.value) || 0)}
@@ -196,9 +201,10 @@ export default function Buergschaft() {
                     </div>
                   </div>
                   <div>
-                    <label className="label text-xs">Gewährleist. Laufzeit</label>
+                    <label htmlFor={gewJahreId} className="label text-xs">Gewährleist. Laufzeit</label>
                     <div className="relative">
                       <input
+                        id={gewJahreId}
                         type="number"
                         value={gewaehrleistungsLaufzeitJahre}
                         onChange={(e) => setGewaehrleistungsLaufzeitJahre(parseFloat(e.target.value) || 0)}
@@ -353,17 +359,20 @@ function Slider({
   suffix: string;
   hint?: string;
 }) {
+  const id = useId();
   return (
     <div>
-      <label className="label">{label}</label>
+      <label htmlFor={id} className="label">{label}</label>
       <div className="flex items-center gap-3">
         <input
+          id={id}
           type="range"
           value={value}
           onChange={(e) => onChange(parseFloat(e.target.value))}
           min={min}
           max={max}
           step={step}
+          aria-valuetext={`${value} ${suffix}`}
           className="flex-1 accent-indigo-600"
         />
         <span className="font-bold text-indigo-700 tabular-nums w-16 text-right">
