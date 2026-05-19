@@ -25,6 +25,7 @@ import {
   CareerBanner,
   OperationalFaq,
   Testimonials,
+  RoiBlock,
 } from '@/components/sections';
 
 const TRADE_TILE_CLASSES: Record<string, string> = {
@@ -157,6 +158,7 @@ export default function Home() {
       <FadeIn><Differentiator /></FadeIn>
       <FadeIn><Eligibility /></FadeIn>
       <FadeIn><TrustBadges /></FadeIn>
+      <FadeIn><RoiBlock /></FadeIn>
       <FadeIn><PricingTiles /></FadeIn>
       <FadeIn><CaseStudies /></FadeIn>
       <FadeIn><Testimonials /></FadeIn>
