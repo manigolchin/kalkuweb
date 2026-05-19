@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-05-19 21:30 — Reconcile state with 5 human commits, mark resolved items
+- Source: continuing the loop re-entry after research commit; noticed via `git log 7444a67..HEAD` that the human committed 5 fixes between my prior shift end and this iteration (6658d16, 37fd03d, 77a271c, 5cc13ed, 28daee5).
+- Branch: claude-auto/2026-05-19-feature-audit-phase1 (continued)
+- Result: docs-only commit; FEATURES.md and WORK_QUEUE.md updated to mark resolved items with their SHAs.
+- Notes: Human fixed (1) Buergschaft div-by-zero, (2) Mittellohn export-drift, (3) GAEB-Konverter email no-op via new `src/lib/lead.ts` (mailto + localStorage backup), (4) Kalkulator email no-op via the same lead.ts, (5) dead useEffect + unused width + void workaround in GaebKonverter/export.ts. Three of the original 5 critical no-op lead forms remain: MultiStepForm (main contact, Phase 3.4 TODO), LeadMagnet (checklist, Phase 5 TODO), ExitIntent (whitepaper, Phase 5 TODO). All other tooling-blocker-gated items still gated. **Stopping the loop** — Phase 1 + 2 complete, Phase 3 still blocked on node/npm, and the queue's remaining items are either gated on tooling or are larger product decisions for the human (build the backend, route remaining 3 forms through lead.ts, kill the Phase-5 disclaimer in Impressum, etc.). No PushNotification — user is here.
+
 ## 2026-05-19 21:28 — Maintenance research: form-backend architecture (loop re-entry)
 - Source: /loop re-entered with same prompt; Phase 1 + Phase 2 already complete, Phase 3 blocked on tooling. Switched to a Research maintenance task.
 - Branch: claude-auto/2026-05-19-feature-audit-phase1 (continued)
