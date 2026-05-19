@@ -186,9 +186,10 @@ export default function Buergschaft() {
                       <input
                         type="number"
                         value={erfuellungsLaufzeitMonate}
-                        onChange={(e) => setErfuellungsLaufzeitMonate(parseInt(e.target.value) || 0)}
+                        onChange={(e) => setErfuellungsLaufzeitMonate(parseFloat(e.target.value) || 0)}
                         min={0}
                         max={36}
+                        step={0.5}
                         className="input pr-14 text-right tabular-nums"
                       />
                       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">Mon</span>
@@ -200,9 +201,10 @@ export default function Buergschaft() {
                       <input
                         type="number"
                         value={gewaehrleistungsLaufzeitJahre}
-                        onChange={(e) => setGewaehrleistungsLaufzeitJahre(parseInt(e.target.value) || 0)}
+                        onChange={(e) => setGewaehrleistungsLaufzeitJahre(parseFloat(e.target.value) || 0)}
                         min={0}
                         max={10}
+                        step={0.5}
                         className="input pr-14 text-right tabular-nums"
                       />
                       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">Jahre</span>
