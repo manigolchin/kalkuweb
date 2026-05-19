@@ -41,10 +41,10 @@ Status legend:
 | Page | Behavior | Status |
 |------|----------|--------|
 | FristRechner.tsx | Date/period calculator with inputs | audited — flagged (2026-05-19, static-only; see WORK_QUEUE) |
-| Buergschaft.tsx | Bond/surety calculator | audited — flagged (2026-05-19, static-only; see WORK_QUEUE) |
-| GaebKonverter.tsx | GAEB file parser/converter (uses src/lib/gaeb/*) | audited — flagged (2026-05-19, static-only; 1 critical + many issues in WORK_QUEUE) |
-| Kalkulator.tsx | Cost calculator with inputs | audited — flagged (2026-05-19, static-only; 1 critical + 5 items in WORK_QUEUE) |
-| Mittellohn.tsx | Average wage calculator | audited — flagged (2026-05-19, static-only; 1 export-drift bug + 6 items in WORK_QUEUE) |
+| Buergschaft.tsx | Bond/surety calculator | audited — fixed (div-by-zero patched in 6658d16; a11y still flagged) |
+| GaebKonverter.tsx | GAEB file parser/converter (uses src/lib/gaeb/*) | audited — fixed (email no-op patched via src/lib/lead.ts in 77a271c; dead code cleaned in 28daee5; parser NaN propagation + a11y still flagged) |
+| Kalkulator.tsx | Cost calculator with inputs | audited — fixed (email no-op patched via src/lib/lead.ts in 5cc13ed; a11y + localStorage validation + CSV \r\n still flagged) |
+| Mittellohn.tsx | Average wage calculator | audited — fixed (export drift patched in 37fd03d; a11y + reset-state still flagged) |
 
 ## Layout components
 

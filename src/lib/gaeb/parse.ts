@@ -152,7 +152,12 @@ function emptyResult() {
 
 async function readFileAsText(file: File): Promise<string> {
   const utf8 = await readWithEncoding(file, 'utf-8');
-  if ((utf8.match(/�/g) || []).length > 5) {
+  // Mojibake heuristic: ratio-based instead of absolute threshold.
+  // Pure UTF-8 has 0 replacement chars; cp1252 read as UTF-8 produces ~1 per 50–200 bytes.
+  // Threshold: >= 1 replacement per 500 chars (or any presence in very short files).
+  const replacements = (utf8.match(/�/g) || []).length;
+  const triggersFallback = utf8.length < 200 ? replacements >= 1 : replacements / utf8.length >= 1 / 500;
+  if (triggersFallback) {
     return readWithEncoding(file, 'windows-1252');
   }
   return utf8;
@@ -162,7 +167,8 @@ function readWithEncoding(file: File, encoding: string): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result ?? ''));
-    reader.onerror = () => reject(reader.error);
+    reader.onerror = () =>
+      reject(new Error(reader.error?.message ?? 'FileReader fehlgeschlagen'));
     reader.readAsText(file, encoding);
   });
 }

@@ -154,7 +154,7 @@ export function parseGaebAscii(text: string): AsciiParseResult {
         currentPos = parsePositionRecord(rest);
         if (currentPos) {
           positions.push(currentPos);
-          if (currentPos.gp != null) totalSum += currentPos.gp;
+          if (Number.isFinite(currentPos.gp)) totalSum += currentPos.gp as number;
         }
         break;
       }
@@ -169,9 +169,9 @@ export function parseGaebAscii(text: string): AsciiParseResult {
           if (!ozOnLine || ozOnLine === currentPos.oz) {
             const ep = parseEpField(rest.slice(9, 20));
             const gp = parseEpField(rest.slice(21, 33));
-            if (ep != null && !Number.isNaN(ep)) currentPos.ep = ep;
-            if (gp != null && !Number.isNaN(gp)) {
-              const oldGp = currentPos.gp ?? 0;
+            if (ep != null && Number.isFinite(ep)) currentPos.ep = ep;
+            if (gp != null && Number.isFinite(gp)) {
+              const oldGp = Number.isFinite(currentPos.gp) ? (currentPos.gp as number) : 0;
               currentPos.gp = gp;
               totalSum += gp - oldGp;
             }
@@ -223,7 +223,7 @@ export function parseGaebAscii(text: string): AsciiParseResult {
     currency,
     positions,
     groups,
-    estimatedValue: totalSum > 0 ? totalSum : undefined,
+    estimatedValue: Number.isFinite(totalSum) && totalSum > 0 ? totalSum : undefined,
     date,
   };
 }

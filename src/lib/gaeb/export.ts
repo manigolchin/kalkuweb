@@ -144,7 +144,9 @@ export function exportCsv(
   if (cols.ep) headers.push('EP');
   if (cols.gp) headers.push('GP');
 
-  const esc = (s: string) => `"${s.replace(/"/g, '""').replace(/\n/g, ' ')}"`;
+  // RFC 4180 CSV: literal newlines are allowed inside quoted fields.
+  // Keep them so multi-paragraph Langtext survives the export.
+  const esc = (s: string) => `"${s.replace(/"/g, '""')}"`;
   const out: string[] = [headers.join(';')];
 
   for (const p of parsed.positions) {
@@ -164,8 +166,8 @@ export function exportCsv(
     out.push(`SUMME netto;${fmtNum(parsed.estimatedValue)}`);
   }
 
-  // BOM so Excel opens UTF-8 cleanly
-  const blob = new Blob(['﻿' + out.join('\n')], { type: 'text/csv;charset=utf-8' });
+  // BOM so Excel opens UTF-8 cleanly. CRLF for Excel-on-Windows compatibility.
+  const blob = new Blob(['﻿' + out.join('\r\n')], { type: 'text/csv;charset=utf-8' });
   downloadBlob(blob, `${safeFilename(parsed.projectName ?? 'gaeb')}-LV.csv`);
 }
 
@@ -496,8 +498,11 @@ export function exportGaeb90(parsed: ParsedGaeb): void {
     lines.push(tag('03' + parsed.awardingAuthority.slice(0, 70).padEnd(70, ' ')));
   }
 
+  let truncatedOzCount = 0;
   for (const p of parsed.positions) {
-    const oz = p.pos.replace(/\./g, '').slice(0, 9).padEnd(9, ' ');
+    const ozDigits = p.pos.replace(/\./g, '');
+    if (ozDigits.length > 9) truncatedOzCount++;
+    const oz = ozDigits.slice(0, 9).padEnd(9, ' ');
     const flags = 'NNN';
     const mengeStr = p.menge != null
       ? Math.round(p.menge * 1000).toString().padStart(14, '0')
@@ -522,6 +527,12 @@ export function exportGaeb90(parsed: ParsedGaeb): void {
     }
   }
   lines.push(tag('99'));
+
+  if (truncatedOzCount > 0 && typeof console !== 'undefined') {
+    console.warn(
+      `GAEB-90 export: ${truncatedOzCount} position(s) had OZ longer than 9 digits and were truncated. GAEB-90 spec limits the OZ field to 9 characters.`,
+    );
+  }
 
   const blob = new Blob([lines.join('\r\n')], { type: 'text/plain;charset=windows-1252' });
   downloadBlob(blob, `${safeFilename(parsed.projectName ?? 'gaeb')}.d83`);

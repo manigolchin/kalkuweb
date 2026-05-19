@@ -32,19 +32,19 @@ Phase 2 (static audit) — one feature per iteration, priority order:
 - [ ] FristRechner.tsx — clean up dead `tomorrow.setHours(11,0,0,0)` at line 174 (value is consumed via `.toISOString().slice(0,10)` which discards time). Rename `tomorrow` → `defaultSubmission` (it's +14 days, not +1).
 - [ ] FristRechner.tsx — replace `new Date(date).toISOString().slice(0,10)` initial state with a local-time date string builder to avoid the near-midnight DST edge that can produce yesterday's date.
 - [ ] Refactor: extract `CrossCta` from `src/pages/Mittellohn.tsx:476` into `src/components/sections/CrossCta.tsx`. Currently imported page-to-page by `FristRechner.tsx`. Touches every page that imports it.
-- [~] Phase 2: audit Buergschaft.tsx
-- [ ] Buergschaft.tsx — **bug**: division-by-zero on `gesamtAvalProz` (line 76) when `vertragssumme === 0`. Guard with `vertragssumme > 0 ? (gesamtAvalKosten / vertragssumme) * 100 : 0`, OR raise `min={0}` to `min={1}` on the input (line 142). Gated on tooling blocker.
+- [x] Phase 2: audit Buergschaft.tsx
+- [x] 6658d16 — Buergschaft.tsx division-by-zero on `gesamtAvalProz`. **Resolved by human between iterations.**
 - [ ] Buergschaft.tsx — a11y: add `id`/`htmlFor` pairs on Vertragssumme/Mon/Jahre inputs and inside the `Slider` and `ResultCard` helpers. Each `Slider` instance needs a unique id (consider a `useId` hook). Gated on tooling blocker.
 - [ ] Buergschaft.tsx — change `parseInt(e.target.value) || 0` to `parseFloat` for `erfuellungsLaufzeitMonate` and `gewaehrleistungsLaufzeitJahre` (lines 189, 203) so half-month/half-year laufzeit inputs aren't silently truncated, OR add `step={1}` so the browser blocks decimals.
 - [~] Phase 2: audit GaebKonverter.tsx (+ src/lib/gaeb/*)
 
 ### GaebKonverter — CRITICAL (customer-promise mismatch)
 
-- [!] **GaebKonverter.tsx:248-252 — `submitEmail` is a no-op but UI promises an email.** The form's success state (line 711) tells the user "wir senden Ihnen die Auswertung an {email} innerhalb von 1–2 Werktagen" and the small print at line 729 claims "Datei wird nach 30 Tagen automatisch gelöscht" (implying upload). The code only does `setSubmitted(true)`. There is no fetch/upload/email send anywhere. **Every lead since this shipped has been silently dropped.** Either wire it to a real endpoint (per CLAUDE.md I won't pick one autonomously — needs human direction on which form backend / Calendly / Notion / custom API), or change the success copy to match reality (e.g. "wir melden uns" → only works if the email is stored client-side somewhere and used later; right now it isn't even logged).
+- [x] 77a271c — GaebKonverter.tsx:248-252 silent-drop email form. **Resolved by human between iterations** by wiring through `src/lib/lead.ts` (new file: mailto + localStorage backup, designed so swapping to a real backend touches only that file). Same approach applied to Kalkulator (5cc13ed).
 
 ### GaebKonverter — confirmed via direct read
 
-- [ ] GaebKonverter.tsx:136-140 — dead `useEffect` with a no-op body (only a `// No-op` comment). Remove it. Trivial fix; gated on tooling blocker only because of the "verify before commit" rule.
+- [x] 28daee5 — GaebKonverter.tsx:136-140 dead `useEffect`. **Resolved.** Same commit also removed `void w` workaround in export.ts.
 - [ ] src/lib/gaeb/parse.ts:155 — encoding detection threshold (`> 5` replacement characters) is a magic number; small files with 1–5 mojibake characters silently stay UTF-8. Switch to ratio-based detection (e.g. ≥1 replacement character per 200 bytes, or try both encodings and pick the one with fewer `�`).
 - [ ] src/lib/gaeb/parse.ts:165 — `reader.onerror = () => reject(reader.error)` — `reader.error` can be null per spec. Reject with `new Error(reader.error?.message ?? 'FileReader fehlgeschlagen')` so the page's `e.message` fallback shows something useful.
 
@@ -71,7 +71,7 @@ Phase 2 (static audit) — one feature per iteration, priority order:
 
 ### Kalkulator — CRITICAL (sister of GaebKonverter email-form bug)
 
-- [!] **Kalkulator.tsx:324-328 — `submitEmail` is a no-op but UI promises a reply.** Success state at line 554 says "Sie erhalten unsere Einschätzung innerhalb von 1–2 Werktagen." The function only does `setEmailSent(true)`. **Second silent-drop lead form on the site** (GAEB Konverter has the same bug). Fix together: one shared form-submit utility wired to the same backend.
+- [x] 5cc13ed — Kalkulator.tsx:324-328 silent-drop email form. **Resolved by human** by wiring through `src/lib/lead.ts` (same utility used for GAEB).
 
 ### Kalkulator — confirmed via direct read
 
@@ -84,7 +84,7 @@ Phase 2 (static audit) — one feature per iteration, priority order:
 
 ### Mittellohn — confirmed via direct read
 
-- [ ] **Mittellohn.tsx:145 + 169 — export/display drift bug.** `exportCsv` and `exportExcel` use the raw `lohnnebenkosten` slider value, but the on-screen "Mittellohn ASL" uses `effectiveLnk = breakdownOpen ? breakdownTotal : lohnnebenkosten` (line 103). Effect: user in detail-view (breakdown total 82%) sees ASL based on 82% but the CSV/Excel record 78% (the stale slider value). Fix: replace both `lohnnebenkosten` references in the exports with `effectiveLnk`, and add an explicit row for the breakdown components when `breakdownOpen`.
+- [x] 37fd03d — Mittellohn.tsx:145+169 export/display drift bug. **Resolved by human** — exports now use `effectiveLnk` consistently with the tooltip.
 - [ ] Mittellohn.tsx:64-70 — same localStorage rehydration without schema validation as Kalkulator. Use shared validator or version the key.
 - [ ] Mittellohn.tsx:244-272 — a11y on team-table inputs (Rolle/Stundensatz/Anzahl); add `aria-label` per cell.
 - [ ] Mittellohn.tsx:332, 398 + BreakdownRow (lines 459-467) — `<label className="label">` blocks lack `htmlFor`; inputs lack `id`. Use `useId` per input.
