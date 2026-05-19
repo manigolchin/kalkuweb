@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useId } from 'react';
 import { Helmet } from 'react-helmet-async';
 import {
   Calendar,
@@ -250,6 +250,10 @@ export default function FristRechner() {
   const [time, setTime] = useState('11:00');
   const [versandTage, setVersandTage] = useState(2);
   const [land, setLand] = useState<LandCode>('SL');
+  const dateId = useId();
+  const timeId = useId();
+  const landId = useId();
+  const versandId = useId();
   const [verfahrensart, setVerfahrensart] = useState<string>(''); // empty = nicht prüfen
   const [bekanntmachungsDatum, setBekanntmachungsDatum] = useState<string>('');
   const [bindefristTage, setBindefristTage] = useState<number>(30);
@@ -436,20 +440,21 @@ export default function FristRechner() {
               </h2>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="label">Datum</label>
-                  <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="input" />
+                  <label htmlFor={dateId} className="label">Datum</label>
+                  <input id={dateId} type="date" value={date} onChange={(e) => setDate(e.target.value)} className="input" />
                 </div>
                 <div>
-                  <label className="label">Uhrzeit</label>
-                  <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="input" />
+                  <label htmlFor={timeId} className="label">Uhrzeit</label>
+                  <input id={timeId} type="time" value={time} onChange={(e) => setTime(e.target.value)} className="input" />
                 </div>
               </div>
 
               <div className="mt-4">
-                <label className="label inline-flex items-center gap-1.5">
-                  <MapPin className="w-3.5 h-3.5" /> Bundesland (für korrekte Feiertage)
+                <label htmlFor={landId} className="label inline-flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5" aria-hidden="true" /> Bundesland (für korrekte Feiertage)
                 </label>
                 <select
+                  id={landId}
                   value={land}
                   onChange={(e) => setLand(e.target.value as LandCode)}
                   className="input"
@@ -465,15 +470,17 @@ export default function FristRechner() {
               </div>
 
               <div className="mt-6 pt-6 border-t border-gray-100">
-                <label className="label">Versand-Vorlauf in Werktagen</label>
+                <label htmlFor={versandId} className="label">Versand-Vorlauf in Werktagen</label>
                 <div className="flex items-center gap-3">
                   <input
+                    id={versandId}
                     type="range"
                     value={versandTage}
                     onChange={(e) => setVersandTage(parseInt(e.target.value))}
                     min={1}
                     max={5}
                     step={1}
+                    aria-valuetext={`${versandTage} Werktage`}
                     className="flex-1 accent-rose-600"
                   />
                   <span className="font-bold text-rose-700 tabular-nums w-12 text-right">{versandTage} Wt</span>

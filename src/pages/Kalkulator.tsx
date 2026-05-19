@@ -666,6 +666,7 @@ export default function Kalkulator() {
                           value={r.pos || ''}
                           onChange={(e) => updateRow(r.id, { pos: e.target.value })}
                           placeholder={`${i + 1}`}
+                          aria-label={`Position ${i + 1}: Positionsnummer`}
                           className="w-full px-2 py-1.5 font-mono text-xs text-gray-500 border border-transparent rounded-md hover:border-gray-200 focus:border-primary-500 focus:ring-0"
                         />
                       </td>
@@ -674,6 +675,7 @@ export default function Kalkulator() {
                           type="text"
                           value={r.text}
                           onChange={(e) => updateRow(r.id, { text: e.target.value })}
+                          aria-label={`Position ${i + 1}: Beschreibung`}
                           className="w-full px-2 py-1.5 border border-transparent rounded-md hover:border-gray-200 focus:border-primary-500 focus:ring-0"
                           placeholder="z.B. Asphalt fräsen, t = 4 cm"
                         />
@@ -683,14 +685,15 @@ export default function Kalkulator() {
                           type="text"
                           value={r.einheit}
                           onChange={(e) => updateRow(r.id, { einheit: e.target.value })}
+                          aria-label={`Position ${i + 1}: Einheit`}
                           className="w-12 px-2 py-1.5 text-center text-xs border border-transparent rounded-md hover:border-gray-200 focus:border-primary-500 focus:ring-0"
                         />
                       </td>
-                      <NumCell value={r.lohn} onChange={(v) => updateRow(r.id, { lohn: v })} step={0.5} />
-                      <NumCell value={r.zeit} onChange={(v) => updateRow(r.id, { zeit: v })} step={0.05} />
-                      <NumCell value={r.material} onChange={(v) => updateRow(r.id, { material: v })} step={0.5} />
-                      <NumCell value={r.zuschlag} onChange={(v) => updateRow(r.id, { zuschlag: v })} step={1} width="w-14" />
-                      <NumCell value={r.menge} onChange={(v) => updateRow(r.id, { menge: v })} step={1} />
+                      <NumCell value={r.lohn} onChange={(v) => updateRow(r.id, { lohn: v })} step={0.5} ariaLabel={`Position ${i + 1}: Lohn pro Stunde`} />
+                      <NumCell value={r.zeit} onChange={(v) => updateRow(r.id, { zeit: v })} step={0.05} ariaLabel={`Position ${i + 1}: Zeit in Stunden`} />
+                      <NumCell value={r.material} onChange={(v) => updateRow(r.id, { material: v })} step={0.5} ariaLabel={`Position ${i + 1}: Materialkosten`} />
+                      <NumCell value={r.zuschlag} onChange={(v) => updateRow(r.id, { zuschlag: v })} step={1} width="w-14" ariaLabel={`Position ${i + 1}: Zuschlag in Prozent`} />
+                      <NumCell value={r.menge} onChange={(v) => updateRow(r.id, { menge: v })} step={1} ariaLabel={`Position ${i + 1}: Menge`} />
                       <td className="px-2 py-2 text-right tabular-nums text-primary-700 font-medium">{fmt(ep)}</td>
                       <td className="px-2 py-2 text-right tabular-nums font-bold text-primary-700">{fmt(gp)}</td>
                       <td className="px-1 py-2 print:hidden">
@@ -1047,11 +1050,13 @@ function NumCell({
   onChange,
   step = 0.01,
   width = 'w-20',
+  ariaLabel,
 }: {
   value: number;
   onChange: (v: number) => void;
   step?: number;
   width?: string;
+  ariaLabel?: string;
 }) {
   return (
     <td className="px-2 py-2">
@@ -1062,6 +1067,7 @@ function NumCell({
         onChange={(e) => onChange(Math.max(0, parseFloat(e.target.value) || 0))}
         step={step}
         min="0"
+        aria-label={ariaLabel}
         className={cn(
           width,
           'px-2 py-1.5 text-right tabular-nums border border-transparent rounded-md hover:border-gray-200 focus:border-primary-500 focus:ring-0',
