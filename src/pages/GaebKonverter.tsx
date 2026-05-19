@@ -35,6 +35,7 @@ import {
   exportGaeb90,
   DEFAULT_COLUMNS,
 } from '@/lib/gaeb';
+import { submitLead, LEAD_FALLBACK_EMAIL } from '@/lib/lead';
 import type {
   ParsedGaeb,
   SourceFormatHint,
@@ -94,7 +95,7 @@ const FAQ = [
   },
   {
     q: 'Werden meine Daten auf einen Server hochgeladen?',
-    a: 'Nein. Die Konvertierung — auch der PDF- und Excel-Export — läuft vollständig in Ihrem Browser. Ihre Datei verlässt Ihren Computer nicht. Erst wenn Sie aktiv die optionale Premium-Auswertung per E-Mail anfordern, übertragen wir die Datei verschlüsselt an unseren Server.',
+    a: 'Nein. Die Konvertierung — auch der PDF- und Excel-Export — läuft vollständig in Ihrem Browser. Ihre Datei verlässt Ihren Computer nicht. Auch die optionale Premium-Auswertung per E-Mail erfolgt ohne automatischen Upload: wir bereiten eine vorausgefüllte E-Mail vor, die Sie selbst aus Ihrem E-Mail-Programm absenden — und die GAEB-Datei hängen Sie nur dann an, wenn Sie das aktiv möchten.',
   },
   {
     q: 'Kurztext vs. Langtext — was ist der Unterschied?',
@@ -248,6 +249,27 @@ export default function GaebKonverter() {
   function submitEmail(e: React.FormEvent) {
     e.preventDefault();
     if (!email.includes('@') || !parsed) return;
+    const sumLabel = parsed.estimatedValue
+      ? `~${parsed.estimatedValue.toLocaleString('de-DE', { style: 'currency', currency: parsed.currency || 'EUR' })}`
+      : 'n/v';
+    submitLead({
+      type: 'gaeb-premium',
+      email,
+      subject: `GAEB Premium-Auswertung — ${parsed.filename}`,
+      bodyLines: [
+        `Anfrage Premium-Auswertung (kostenlos)`,
+        ``,
+        `Antwort an: ${email}`,
+        `Datei: ${parsed.filename} (${parsed.formatLabel})`,
+        `Positionen: ${parsed.positionCount}`,
+        `Schätzwert: ${sumLabel}`,
+        parsed.projectName ? `Projekt: ${parsed.projectName}` : '',
+        parsed.awardingAuthority ? `Vergabestelle: ${parsed.awardingAuthority}` : '',
+        ``,
+        `Bitte hängen Sie Ihre GAEB-Datei an diese E-Mail an, bevor Sie sie senden.`,
+        `Die Datei bleibt lokal in Ihrem Browser — wir erhalten sie nur, wenn Sie sie selbst anhängen.`,
+      ].filter(Boolean),
+    });
     setSubmitted(true);
   }
 
@@ -706,9 +728,22 @@ export default function GaebKonverter() {
                       Bearbeitung in 1–2 Werktagen.
                     </p>
                     {submitted ? (
-                      <div className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-emerald-50 text-emerald-700 text-sm">
-                        <CheckCircle2 className="w-5 h-5" />
-                        Vielen Dank — wir senden Ihnen die Auswertung an {email} innerhalb von 1–2 Werktagen.
+                      <div className="inline-flex items-start gap-2 px-4 py-3 rounded-xl bg-emerald-50 text-emerald-800 text-sm text-left">
+                        <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                        <span>
+                          Ihr E-Mail-Programm sollte sich mit einer vorausgefüllten Nachricht
+                          geöffnet haben. <strong>Bitte hängen Sie Ihre GAEB-Datei an</strong> und
+                          senden Sie die E-Mail ab — wir antworten innerhalb von 1–2 Werktagen mit
+                          der Auswertung.<br />
+                          Falls sich nichts geöffnet hat, schreiben Sie bitte an{' '}
+                          <a
+                            href={`mailto:${LEAD_FALLBACK_EMAIL}`}
+                            className="font-semibold underline"
+                          >
+                            {LEAD_FALLBACK_EMAIL}
+                          </a>
+                          .
+                        </span>
                       </div>
                     ) : (
                       <form onSubmit={submitEmail} className="flex flex-col sm:flex-row gap-3">
@@ -726,7 +761,8 @@ export default function GaebKonverter() {
                       </form>
                     )}
                     <p className="text-xs text-gray-400 mt-3">
-                      DSGVO-konform. Verschlüsselte Übertragung. Datei wird nach 30 Tagen automatisch gelöscht. Kein Newsletter.
+                      DSGVO-konform. Sie senden die Datei selbst als E-Mail-Anhang — sie wird nicht
+                      automatisch hochgeladen. Wir löschen Anhänge nach Abschluss der Auswertung. Kein Newsletter.
                     </p>
                   </div>
                 </div>
