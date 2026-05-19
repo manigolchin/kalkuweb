@@ -1,7 +1,7 @@
 import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
 import { Shield, Lock, ArrowRight } from 'lucide-react';
-import { canonical } from '@/lib/seo';
+import { canonical, faqPageSchema } from '@/lib/seo';
 import SectionHeader from '@/components/ui/SectionHeader';
 import FaqItem from '@/components/ui/FaqItem';
 import PricingTiles from '@/components/sections/PricingTiles';
@@ -46,6 +46,7 @@ export default function Konditionen() {
         <title>{TITLE}</title>
         <meta name="description" content={DESC} />
         <link rel="canonical" href={canonical('/konditionen/')} />
+        <script type="application/ld+json">{JSON.stringify(faqPageSchema(FAQ))}</script>
       </Helmet>
 
       {/* HERO */}
