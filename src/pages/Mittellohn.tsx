@@ -131,14 +131,27 @@ function eur(n: number): string {
   return n.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
 }
 
+function isValidPerson(p: unknown): p is Person {
+  if (!p || typeof p !== 'object') return false;
+  const x = p as Partial<Person>;
+  return (
+    typeof x.id === 'string' &&
+    typeof x.rolle === 'string' &&
+    typeof x.stundensatz === 'number' && Number.isFinite(x.stundensatz) &&
+    typeof x.anzahl === 'number' && Number.isFinite(x.anzahl)
+  );
+}
+
 export default function Mittellohn() {
   const [team, setTeam] = useState<Person[]>(() => {
     if (typeof window === 'undefined') return DEFAULT_TEAM.map((p) => newRow(p));
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        const parsed: unknown = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed.every(isValidPerson)) {
+          return parsed as Person[];
+        }
       }
     } catch {
       /* ignore */

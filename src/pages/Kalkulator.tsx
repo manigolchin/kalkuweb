@@ -137,14 +137,32 @@ function fmtCurrency(n: number): string {
   });
 }
 
+function isValidRow(r: unknown): r is Row {
+  if (!r || typeof r !== 'object') return false;
+  const x = r as Partial<Row>;
+  return (
+    typeof x.id === 'string' &&
+    typeof x.pos === 'string' &&
+    typeof x.text === 'string' &&
+    typeof x.einheit === 'string' &&
+    typeof x.lohn === 'number' && Number.isFinite(x.lohn) &&
+    typeof x.zeit === 'number' && Number.isFinite(x.zeit) &&
+    typeof x.material === 'number' && Number.isFinite(x.material) &&
+    typeof x.zuschlag === 'number' && Number.isFinite(x.zuschlag) &&
+    typeof x.menge === 'number' && Number.isFinite(x.menge)
+  );
+}
+
 export default function Kalkulator() {
   const [rows, setRows] = useState<Row[]>(() => {
     if (typeof window === 'undefined') return PRESETS[0].rows.map((r) => newRow(r));
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
-        const parsed: Row[] = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        const parsed: unknown = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed.every(isValidRow)) {
+          return parsed as Row[];
+        }
       }
     } catch {
       /* ignore */
