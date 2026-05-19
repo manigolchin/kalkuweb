@@ -148,6 +148,7 @@ export default function Kalkulator() {
   const [email, setEmail] = useState('');
   const [emailSent, setEmailSent] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const formId = useId();
 
@@ -275,7 +276,7 @@ export default function Kalkulator() {
     });
     lines.push('');
     lines.push(['', 'SUMME', '', '', '', '', '', '', '', fmt(totals.total)].join(';'));
-    const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -286,6 +287,7 @@ export default function Kalkulator() {
 
   async function exportExcel() {
     setExportingExcel(true);
+    setExportError(null);
     try {
       const XLSX = await import('xlsx');
       const data: (string | number)[][] = [
@@ -317,6 +319,10 @@ export default function Kalkulator() {
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Kalkulation');
       XLSX.writeFile(wb, `kalku-positionen-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (e) {
+      setExportError(
+        e instanceof Error ? `Excel-Export fehlgeschlagen: ${e.message}` : 'Excel-Export fehlgeschlagen.',
+      );
     } finally {
       setExportingExcel(false);
     }
@@ -544,6 +550,14 @@ export default function Kalkulator() {
                 <RotateCcw className="w-4 h-4" /> Zurücksetzen
               </button>
             </div>
+            {exportError && (
+              <div
+                role="alert"
+                className="mt-3 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-800 print:hidden"
+              >
+                {exportError}
+              </div>
+            )}
           </div>
 
           <p className="text-xs text-gray-400 text-center mt-3 print:hidden">

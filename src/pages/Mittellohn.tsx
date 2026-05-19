@@ -76,6 +76,7 @@ export default function Mittellohn() {
   const [zulagen, setZulagen] = useState(0); // EUR/h zusätzlich
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [exportingExcel, setExportingExcel] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [tarifgebiet, setTarifgebiet] = useState<'west' | 'ost'>('west');
 
@@ -133,6 +134,13 @@ export default function Mittellohn() {
     setTeam(DEFAULT_TEAM.map((p) => newRow(p)));
     setLohnnebenkosten(78);
     setZulagen(0);
+    setBreakdownOpen(false);
+    setBnkSv(20.85);
+    setBnkSoka(18.5);
+    setBnkBg(5);
+    setBnkMonats13(11);
+    setBnkSonst(8);
+    setTarifgebiet('west');
   }
 
   function exportCsv() {
@@ -164,6 +172,7 @@ export default function Mittellohn() {
 
   async function exportExcel() {
     setExportingExcel(true);
+    setExportError(null);
     try {
       const XLSX = await import('xlsx');
       const breakdownRows: (string | number)[][] = breakdownOpen
@@ -194,6 +203,10 @@ export default function Mittellohn() {
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Mittellohn');
       XLSX.writeFile(wb, `kalku-mittellohn-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (e) {
+      setExportError(
+        e instanceof Error ? `Excel-Export fehlgeschlagen: ${e.message}` : 'Excel-Export fehlgeschlagen.',
+      );
     } finally {
       setExportingExcel(false);
     }
@@ -328,6 +341,14 @@ export default function Mittellohn() {
                   <RotateCcw className="w-4 h-4" /> Zurücksetzen
                 </button>
               </div>
+              {exportError && (
+                <div
+                  role="alert"
+                  className="mt-3 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-800 print:hidden"
+                >
+                  {exportError}
+                </div>
+              )}
             </div>
 
             {/* Result + adjustments */}
