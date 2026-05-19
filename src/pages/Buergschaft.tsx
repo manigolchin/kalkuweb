@@ -73,7 +73,7 @@ export default function Buergschaft() {
     const erfAvalKosten = (erfBetrag * (avalProvProzPa / 100) * erfuellungsLaufzeitMonate) / 12;
     const gewAvalKosten = gewBetrag * (avalProvProzPa / 100) * gewaehrleistungsLaufzeitJahre;
     const gesamtAvalKosten = erfAvalKosten + gewAvalKosten;
-    const gesamtAvalProz = (gesamtAvalKosten / vertragssumme) * 100;
+    const gesamtAvalProz = vertragssumme > 0 ? (gesamtAvalKosten / vertragssumme) * 100 : 0;
     return { erfBetrag, gewBetrag, erfAvalKosten, gewAvalKosten, gesamtAvalKosten, gesamtAvalProz };
   }, [vertragssumme, erfuellungsProz, gewaehrleistungsProz, avalProvProzPa, erfuellungsLaufzeitMonate, gewaehrleistungsLaufzeitJahre]);
 
@@ -303,7 +303,7 @@ export default function Buergschaft() {
                     <div className="pt-4 border-t border-gray-100">
                       <p className="text-[11px] uppercase tracking-wider font-bold text-gray-500 mb-1">Σ Aval-Kosten</p>
                       <p className={`text-2xl font-extrabold tabular-nums ${totalClass}`}>{eur(total, 0)}</p>
-                      <p className="text-[11px] text-gray-400 mt-0.5">{fmt((total / vertragssumme) * 100)} % der Vertragssumme</p>
+                      <p className="text-[11px] text-gray-400 mt-0.5">{fmt(vertragssumme > 0 ? (total / vertragssumme) * 100 : 0)} % der Vertragssumme</p>
                     </div>
                   </div>
                 );
