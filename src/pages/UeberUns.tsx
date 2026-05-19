@@ -1,12 +1,13 @@
 import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
-import { Quote, MapPin, Phone, Mail, ArrowRight, Heart, Shield, Clock, Users, Linkedin } from 'lucide-react';
+import { Quote, MapPin, Phone, Mail, ArrowRight, Heart, Shield, Clock, Users, Linkedin, Target, Compass, Milestone } from 'lucide-react';
 import { canonical } from '@/lib/seo';
 import { NAP, SERVICES } from '@/lib/constants';
 import { telHref } from '@/lib/utils';
 import SectionHeader from '@/components/ui/SectionHeader';
 import VierTeams from '@/components/sections/VierTeams';
 import TechStack from '@/components/sections/TechStack';
+import StatsBand from '@/components/sections/StatsBand';
 import TeamPhoto from '@/components/ui/TeamPhoto';
 
 const TITLE = 'Über uns — KALKU Baukalkulationen Saarbrücken';
@@ -36,6 +37,35 @@ const WERTE = [
   },
 ];
 
+// Firmengeschichte — wichtige Stationen. Daten ergänzen / korrigieren nach Bedarf.
+const MILESTONES = [
+  {
+    year: '2019',
+    title: 'Gründung in Saarbrücken',
+    desc: 'Alaatdin Coksari startet KALKU als spezialisiertes Kalkulationsbüro für öffentliche Vergaben — nach 14 Jahren in Submission und Vergaberecht für Bauunternehmen im Saarland.',
+  },
+  {
+    year: '2021',
+    title: 'Zweiter Bruder im Team',
+    desc: 'Bülent Coksari steigt als leitender Kalkulator ein. GaLaBau-Praxis und Bauingenieur-Studium ergänzen das Submission-Know-how des Inhabers.',
+  },
+  {
+    year: '2023',
+    title: 'Online-Tools für Bauunternehmer',
+    desc: 'GAEB-Konverter, Mittellohn-Rechner und Bürgschafts-Rechner gehen live — kostenlos, browser-only, ohne Datenupload. Werkzeuge, die wir intern täglich nutzen.',
+  },
+  {
+    year: '2024',
+    title: 'Monatspakete + Gebietsschutz',
+    desc: 'PAKET M und PAKET L eingeführt — feste Monatspauschale plus Loyalitätsversprechen pro Gewerk + Einzugsgebiet. Mandanten erhalten exklusive Kalkulationskapazität.',
+  },
+  {
+    year: '2026',
+    title: 'Bundesweit · 10 Gewerke · API-Backend',
+    desc: 'Aktive Mandate in 7 Bundesländern, Abdeckung aller 10 relevanten Bau-Gewerke. Eigene Formular-API mit Pipedrive-Integration, prüfbare Nachträge nach VOB/B § 2 und Schlussrechnungs-Support nach § 14.',
+  },
+];
+
 export default function UeberUns() {
   return (
     <>
@@ -59,6 +89,59 @@ export default function UeberUns() {
               Zwei Brüder, ein Kalkulationsbüro. Kein GmbH-Konstrukt mit Gesellschafter-Statut,
               sondern persönliche Verantwortung — Sie sprechen direkt mit den Inhabern.
             </p>
+          </div>
+
+          {/* Origin story / Warum KALKU? */}
+          <div className="max-w-3xl mx-auto mb-12 space-y-5 text-gray-700 leading-relaxed">
+            <p className="text-xs uppercase tracking-[0.18em] font-bold text-primary-700 text-center mb-1">
+              Warum KALKU?
+            </p>
+            <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 text-center mb-7">
+              Weil gute Bauunternehmer Aufträge verlieren — nicht wegen schlechter Arbeit, sondern wegen fehlender Zeit.
+            </h2>
+            <p>
+              Geschäftsführer mittelständischer Bauunternehmen verbringen 30–40 Stunden mit jeder
+              Submission. Oder sie verpassen die Frist. Festangestellte Kalkulatoren kosten
+              vollkostengerechnet ~92.000 € im Jahr — und sind in Urlaub, Krankheit oder Elternzeit
+              nicht verfügbar. Freelancer sind teuer, oft monatelang ausgebucht, und stehen nicht
+              in der Loyalitätsstruktur Ihres Hauses.
+            </p>
+            <p>
+              <strong>Alaatdin Coksari</strong> hat 14 Jahre lang Submissionen für Bauunternehmen
+              im Saarland und in Rheinland-Pfalz bearbeitet — und immer wieder dasselbe Muster
+              gesehen: solide mittelständische Bauunternehmer verlieren Aufträge, weil ihre
+              Kalkulation den Preis verfehlt oder die Frist verpasst wird.
+            </p>
+            <p>
+              2019 hat er <strong>KALKU</strong> gegründet, um diese Lücke systematisch zu schließen:
+              eine externe Kalkulationsabteilung mit der Diskretion eines Inhouse-Teams, der
+              Geschwindigkeit eines spezialisierten Dienstleisters und der Kosten-Flexibilität
+              eines Auftragsmodells statt Festanstellung.
+            </p>
+          </div>
+
+          {/* MISSION + VISION — bold pull cards */}
+          <div className="grid md:grid-cols-2 gap-5 max-w-4xl mx-auto mb-14">
+            <div className="card border-l-4 border-l-primary-500">
+              <div className="flex items-center gap-2 mb-3 text-primary-700">
+                <Target className="w-5 h-5" aria-hidden="true" />
+                <p className="text-xs uppercase tracking-[0.18em] font-bold">Mission</p>
+              </div>
+              <p className="text-lg font-semibold text-gray-900 leading-snug">
+                Kein mittelständischer Bauunternehmer verliert eine Submission,
+                weil ihm Zeit oder Kalkulationskapazität fehlt.
+              </p>
+            </div>
+            <div className="card border-l-4 border-l-emerald-500">
+              <div className="flex items-center gap-2 mb-3 text-emerald-700">
+                <Compass className="w-5 h-5" aria-hidden="true" />
+                <p className="text-xs uppercase tracking-[0.18em] font-bold">Vision</p>
+              </div>
+              <p className="text-lg font-semibold text-gray-900 leading-snug">
+                Das diskreteste Kalkulationsbüro für mittelständische Bauunternehmer
+                in der DACH-Region — Verlängerung Ihrer Abteilung, nicht anonymer Anbieter.
+              </p>
+            </div>
           </div>
 
           {/* Inhaber */}
@@ -176,8 +259,36 @@ export default function UeberUns() {
         </div>
       </section>
 
+      {/* STATS — credibility band */}
+      <StatsBand />
+
       {/* VIER TEAMS — reused from Home */}
       <VierTeams />
+
+      {/* FIRMENGESCHICHTE / Timeline */}
+      <section className="section bg-gray-50">
+        <div className="container-page">
+          <SectionHeader
+            eyebrow="Firmengeschichte"
+            title="Sieben Jahre KALKU — die wichtigsten Stationen."
+            subtitle="Vom Einzel-Submissionsbüro im Saarland zur bundesweiten Kalkulationsabteilung für mittelständische Bauunternehmer."
+          />
+          <ol className="relative max-w-3xl mx-auto pl-8 sm:pl-12 border-l-2 border-primary-200">
+            {MILESTONES.map((m, i) => (
+              <li key={m.year} className={i === MILESTONES.length - 1 ? '' : 'mb-10'}>
+                <span className="absolute -left-[11px] flex w-5 h-5 items-center justify-center rounded-full bg-primary-600 ring-4 ring-gray-50">
+                  <Milestone className="w-2.5 h-2.5 text-white" aria-hidden="true" />
+                </span>
+                <p className="text-xs uppercase tracking-[0.18em] font-bold text-primary-700 mb-1 tabular-nums">
+                  {m.year}
+                </p>
+                <h3 className="text-lg sm:text-xl font-bold text-gray-900 mb-1.5">{m.title}</h3>
+                <p className="text-sm text-gray-600 leading-relaxed">{m.desc}</p>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
 
       {/* WERTE */}
       <section className="section bg-gray-50">
