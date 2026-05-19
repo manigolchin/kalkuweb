@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-05-19 21:00 — Phase 2: static audit GaebKonverter.tsx + src/lib/gaeb/* (CRITICAL find)
+- Source: WORK_QUEUE Phase 2 next item; user typed "continue"
+- Branch: claude-auto/2026-05-19-feature-audit-phase1 (continued)
+- Result: docs-only commit; GaebKonverter marked "audited — flagged"
+- Notes: Delegated initial scan to an Explore agent (2.5k LoC across page + lib), then verified the top 4 claims via direct read. **Critical: submitEmail (page line 248-252) is a no-op while the UI promises 1-2-day email delivery (line 711) and "Datei nach 30 Tagen gelöscht" (line 729). Every lead since this shipped has been silently dropped.** Filed prominently in WORK_QUEUE under "CRITICAL". Other confirmed issues: dead useEffect at 136-140, magic-number encoding threshold in parse.ts:155, FileReader null-error reject at parse.ts:165. Agent also flagged ~10 more items (NaN propagation in parsers, CSV newline stripping, GAEB-90 OZ truncation, ÖNorm groups not populated, a11y on radios/search/email) — line refs filed verbatim for next-pass verification. Tooling blocker still gates all fixes.
+
 ## 2026-05-19 20:57 — Phase 2: static audit Buergschaft.tsx (BLOCKED on tooling for fixes)
 - Source: WORK_QUEUE Phase 2 next item; user typed "claude --auto --remote-control" which I treated as "keep going" (not a recognized CLI invocation; already in auto mode)
 - Branch: claude-auto/2026-05-19-feature-audit-phase1 (continued)
