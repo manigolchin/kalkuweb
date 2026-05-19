@@ -19,6 +19,7 @@ import { canonical } from '@/lib/seo';
 import { cn } from '@/lib/utils';
 import { softwareApplicationSchema } from '@/lib/toolSchema';
 import AndereTools from '@/components/sections/AndereTools';
+import { submitLead, LEAD_FALLBACK_EMAIL } from '@/lib/lead';
 
 type Row = {
   id: string;
@@ -324,6 +325,31 @@ export default function Kalkulator() {
   function submitEmail(e: React.FormEvent) {
     e.preventDefault();
     if (!email.includes('@')) return;
+    const sample = rows.slice(0, 5).map((r, i) => {
+      const ep = computeEp(r);
+      return `  ${i + 1}. ${(r.pos || '—').padEnd(10)} ${(r.text || '').slice(0, 60)} | ${r.einheit} | Menge ${fmt(r.menge)} | EP ${fmt(ep)} €`;
+    });
+    submitLead({
+      type: 'kalkulator-review',
+      email,
+      subject: `Kalku Position-Kalkulator — Einschätzung erbeten (${rows.length} Positionen, ${fmtCurrency(totals.total)})`,
+      bodyLines: [
+        `Anfrage Premium-Einschätzung (kostenlos)`,
+        ``,
+        `Antwort an: ${email}`,
+        `Positionen: ${rows.length}`,
+        `Summe netto: ${fmtCurrency(totals.total)}`,
+        `Lohnanteil: ${fmtCurrency(totals.lohnTotal)}`,
+        `Materialanteil: ${fmtCurrency(totals.materialTotal)}`,
+        `Stunden gesamt: ${fmt(totals.stundenTotal)} h`,
+        ``,
+        `Auszug erste ${Math.min(5, rows.length)} Positionen:`,
+        ...sample,
+        rows.length > 5 ? `  … und ${rows.length - 5} weitere` : '',
+        ``,
+        `Für eine genaue Einschätzung: bitte die CSV- oder Excel-Export-Datei aus dem Kalkulator als Anhang beilegen, bevor Sie diese E-Mail senden.`,
+      ].filter(Boolean),
+    });
     setEmailSent(true);
   }
 
@@ -549,9 +575,23 @@ export default function Kalkulator() {
               würden. Kostenlos, einmalig, kein Abo.
             </p>
             {emailSent ? (
-              <div className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-emerald-50 text-emerald-700">
-                <CheckCircle2 className="w-5 h-5" />
-                <span>Vielen Dank! Sie erhalten unsere Einschätzung innerhalb von 1–2 Werktagen.</span>
+              <div className="inline-flex items-start gap-2 px-4 py-3 rounded-xl bg-emerald-50 text-emerald-800 text-left max-w-lg mx-auto">
+                <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <span className="text-sm">
+                  Ihr E-Mail-Programm sollte sich mit einer vorausgefüllten Nachricht geöffnet
+                  haben. <strong>Hängen Sie idealerweise Ihren CSV- oder Excel-Export an</strong>
+                  {' '}— dann können wir konkrete Positionen kommentieren. Wir antworten innerhalb
+                  von 1–2 Werktagen.
+                  <br />
+                  Falls sich nichts geöffnet hat:{' '}
+                  <a
+                    href={`mailto:${LEAD_FALLBACK_EMAIL}`}
+                    className="font-semibold underline"
+                  >
+                    {LEAD_FALLBACK_EMAIL}
+                  </a>
+                  .
+                </span>
               </div>
             ) : (
               <form onSubmit={submitEmail} className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto">
