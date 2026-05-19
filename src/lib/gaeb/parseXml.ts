@@ -243,6 +243,32 @@ function parseOnorm(doc: Document): XmlParseResult {
   const groups: { oz: string; label: string; level: number }[] = [];
   let totalSum = 0;
 
+  // Group hierarchy: KGGL (level 0) > LG (1) > ULG (2) > GL (3).
+  // Older Lggr/Lg variants are tried as fallback names. Each group node
+  // typically carries its identifier as a PosNr/LbNr attribute (or child)
+  // and its label as Stichwort/BezKurz/Bezeichnung.
+  const GROUP_LEVELS: Array<{ names: string[]; level: number }> = [
+    { names: ['KGGL', 'Lggr'], level: 0 },
+    { names: ['LG', 'Lg'], level: 1 },
+    { names: ['ULG'], level: 2 },
+    { names: ['GL'], level: 3 },
+  ];
+  for (const { names, level } of GROUP_LEVELS) {
+    const elements = Array.from(doc.getElementsByTagName('*')).filter((el) =>
+      names.includes(el.localName || el.tagName),
+    );
+    for (const g of elements) {
+      const oz =
+        g.getAttribute('PosNr') ||
+        g.getAttribute('LbNr') ||
+        ql(g, 'PosNr', 'LbNr')?.textContent?.trim() ||
+        '';
+      const label =
+        ql(g, 'Stichwort', 'BezKurz', 'Bezeichnung', 'BezLang')?.textContent?.trim() || '';
+      if (oz || label) groups.push({ oz, label, level });
+    }
+  }
+
   // ÖNorm uses <Position> elements
   const posElements = Array.from(doc.getElementsByTagName('*')).filter(
     (el) => (el.localName || el.tagName) === 'Position',
