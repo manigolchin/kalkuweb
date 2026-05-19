@@ -19,10 +19,19 @@ Add tasks here for Claude to work on autonomously. One task per line.
 
 - [ ] (add your first task here)
 
+## BLOCKER — autonomous shift cannot run verification
+
+- [!] **node/npm not on PATH in autonomous shell** — `npm run lint`, `npm run build`, and `npx tsc --noEmit` all fail with "command not found". Phase 2 cannot commit code fixes because nothing can be verified. **Action needed (human):** install Node via Homebrew (`brew install node`) or nvm and confirm `npm --version` works in the same shell that launches `claude`. Until then, audit iterations stay docs-only and mark features as "audited — flagged" rather than "fixed".
+
 ## Active — Feature audit (auto-generated)
 
 Phase 2 (static audit) — one feature per iteration, priority order:
-- [ ] Phase 2: audit FristRechner.tsx
+- [~] Phase 2: audit FristRechner.tsx
+- [ ] FristRechner.tsx — a11y: add `id` on each input and `htmlFor` on each `<label>` (date, time, Bundesland select, Versand-Tage range). Pure JSX wiring change. Needs lint+build verification (gated on node/npm blocker).
+- [ ] FristRechner.tsx — ICS UID stability: derive `UID` from event title + ISO date (e.g. `submission-20260519T110000@kalku.de`) so calendar apps deduplicate re-imports. Verify ICS still validates.
+- [ ] FristRechner.tsx — clean up dead `tomorrow.setHours(11,0,0,0)` at line 174 (value is consumed via `.toISOString().slice(0,10)` which discards time). Rename `tomorrow` → `defaultSubmission` (it's +14 days, not +1).
+- [ ] FristRechner.tsx — replace `new Date(date).toISOString().slice(0,10)` initial state with a local-time date string builder to avoid the near-midnight DST edge that can produce yesterday's date.
+- [ ] Refactor: extract `CrossCta` from `src/pages/Mittellohn.tsx:476` into `src/components/sections/CrossCta.tsx`. Currently imported page-to-page by `FristRechner.tsx`. Touches every page that imports it.
 - [ ] Phase 2: audit Buergschaft.tsx
 - [ ] Phase 2: audit GaebKonverter.tsx (+ src/lib/gaeb/*)
 - [ ] Phase 2: audit Kalkulator.tsx
