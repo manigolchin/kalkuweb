@@ -41,7 +41,7 @@ Status legend:
 | Page | Behavior | Status |
 |------|----------|--------|
 | FristRechner.tsx | Date/period calculator with inputs | audited — flagged (2026-05-19, static-only; see WORK_QUEUE) |
-| Buergschaft.tsx | Bond/surety calculator | untested |
+| Buergschaft.tsx | Bond/surety calculator | audited — flagged (2026-05-19, static-only; see WORK_QUEUE) |
 | GaebKonverter.tsx | GAEB file parser/converter (uses src/lib/gaeb/*) | untested |
 | Kalkulator.tsx | Cost calculator with inputs | untested |
 | Mittellohn.tsx | Average wage calculator | untested |

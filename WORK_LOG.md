@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-05-19 20:57 — Phase 2: static audit Buergschaft.tsx (BLOCKED on tooling for fixes)
+- Source: WORK_QUEUE Phase 2 next item; user typed "claude --auto --remote-control" which I treated as "keep going" (not a recognized CLI invocation; already in auto mode)
+- Branch: claude-auto/2026-05-19-feature-audit-phase1 (continued)
+- Result: docs-only commit; Buergschaft marked "audited — flagged"
+- Notes: Math is correct (bond face × annual avalrate × months/12 or × years). Found 3 issues: division-by-zero on gesamtAvalProz when vertragssumme=0 (real bug — affects 3 render sites); same a11y label/id pattern as FristRechner; integer truncation on Mon/Jahre inputs. CrossCta cross-import already queued. Tooling blocker still in force.
+
 ## 2026-05-19 20:58 — Phase 2: static audit FristRechner.tsx (BLOCKED on tooling for fixes)
 - Source: WORK_QUEUE Phase 2 top item
 - Branch: claude-auto/2026-05-19-feature-audit-phase1 (continued)

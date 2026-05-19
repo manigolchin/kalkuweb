@@ -32,7 +32,10 @@ Phase 2 (static audit) — one feature per iteration, priority order:
 - [ ] FristRechner.tsx — clean up dead `tomorrow.setHours(11,0,0,0)` at line 174 (value is consumed via `.toISOString().slice(0,10)` which discards time). Rename `tomorrow` → `defaultSubmission` (it's +14 days, not +1).
 - [ ] FristRechner.tsx — replace `new Date(date).toISOString().slice(0,10)` initial state with a local-time date string builder to avoid the near-midnight DST edge that can produce yesterday's date.
 - [ ] Refactor: extract `CrossCta` from `src/pages/Mittellohn.tsx:476` into `src/components/sections/CrossCta.tsx`. Currently imported page-to-page by `FristRechner.tsx`. Touches every page that imports it.
-- [ ] Phase 2: audit Buergschaft.tsx
+- [~] Phase 2: audit Buergschaft.tsx
+- [ ] Buergschaft.tsx — **bug**: division-by-zero on `gesamtAvalProz` (line 76) when `vertragssumme === 0`. Guard with `vertragssumme > 0 ? (gesamtAvalKosten / vertragssumme) * 100 : 0`, OR raise `min={0}` to `min={1}` on the input (line 142). Gated on tooling blocker.
+- [ ] Buergschaft.tsx — a11y: add `id`/`htmlFor` pairs on Vertragssumme/Mon/Jahre inputs and inside the `Slider` and `ResultCard` helpers. Each `Slider` instance needs a unique id (consider a `useId` hook). Gated on tooling blocker.
+- [ ] Buergschaft.tsx — change `parseInt(e.target.value) || 0` to `parseFloat` for `erfuellungsLaufzeitMonate` and `gewaehrleistungsLaufzeitJahre` (lines 189, 203) so half-month/half-year laufzeit inputs aren't silently truncated, OR add `step={1}` so the browser blocks decimals.
 - [ ] Phase 2: audit GaebKonverter.tsx (+ src/lib/gaeb/*)
 - [ ] Phase 2: audit Kalkulator.tsx
 - [ ] Phase 2: audit Mittellohn.tsx
