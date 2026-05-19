@@ -23,6 +23,13 @@ export default defineConfig({
     // -> nicht oeffentlich auslieferbar (kein //# sourceMappingURL), intern fuer Sentry/Debug nutzbar
     sourcemap: 'hidden',
     chunkSizeWarningLimit: 600,
+    // Heavy chunks (pdf ~650 kB, xlsx ~430 kB) are dynamic-imported only when
+    // the user clicks an Export button. Strip them from the entry's <link rel="modulepreload">
+    // list so they aren't fetched on every page load.
+    modulePreload: {
+      resolveDependencies: (_filename, deps) =>
+        deps.filter((d) => !/\/(pdf|xlsx)-[A-Za-z0-9_-]+\.js$/.test(d)),
+    },
     rollupOptions: {
       output: {
         manualChunks: (id) => {
