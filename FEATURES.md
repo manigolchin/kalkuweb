@@ -44,7 +44,7 @@ Status legend:
 | Buergschaft.tsx | Bond/surety calculator | audited — flagged (2026-05-19, static-only; see WORK_QUEUE) |
 | GaebKonverter.tsx | GAEB file parser/converter (uses src/lib/gaeb/*) | audited — flagged (2026-05-19, static-only; 1 critical + many issues in WORK_QUEUE) |
 | Kalkulator.tsx | Cost calculator with inputs | audited — flagged (2026-05-19, static-only; 1 critical + 5 items in WORK_QUEUE) |
-| Mittellohn.tsx | Average wage calculator | untested |
+| Mittellohn.tsx | Average wage calculator | audited — flagged (2026-05-19, static-only; 1 export-drift bug + 6 items in WORK_QUEUE) |
 
 ## Layout components
 

@@ -80,7 +80,17 @@ Phase 2 (static audit) — one feature per iteration, priority order:
 - [ ] Kalkulator.tsx:277 — CSV export joins lines with `\n`. Excel on Windows expects `\r\n`. Change to `lines.join('\r\n')` for cross-platform consistency.
 - [ ] Kalkulator.tsx:286-322 — `exportExcel` has no `catch` for the `await import('xlsx')` chunk load or the subsequent `XLSX.writeFile` call. If the dynamic chunk fails or the browser blocks the download, the user sees no feedback (try/finally only resets the loading state). Wrap with try/catch and surface an inline error.
 - [ ] Kalkulator.tsx:237-240 — `pasteFromClipboard` header detection: `headerLikely = firstLohn === 48 && (text.includes('beschr') || text.includes('lohn'))`. If a real first row genuinely has `lohn=48` AND description contains "lohn" (e.g. "Lohnstundennachweis Pflasterer"), it's silently dropped as a header. Either check for *all* numeric cells being NaN (strong header signal) or always prompt the user.
-- [ ] Phase 2: audit Mittellohn.tsx
+- [~] Phase 2: audit Mittellohn.tsx
+
+### Mittellohn — confirmed via direct read
+
+- [ ] **Mittellohn.tsx:145 + 169 — export/display drift bug.** `exportCsv` and `exportExcel` use the raw `lohnnebenkosten` slider value, but the on-screen "Mittellohn ASL" uses `effectiveLnk = breakdownOpen ? breakdownTotal : lohnnebenkosten` (line 103). Effect: user in detail-view (breakdown total 82%) sees ASL based on 82% but the CSV/Excel record 78% (the stale slider value). Fix: replace both `lohnnebenkosten` references in the exports with `effectiveLnk`, and add an explicit row for the breakdown components when `breakdownOpen`.
+- [ ] Mittellohn.tsx:64-70 — same localStorage rehydration without schema validation as Kalkulator. Use shared validator or version the key.
+- [ ] Mittellohn.tsx:244-272 — a11y on team-table inputs (Rolle/Stundensatz/Anzahl); add `aria-label` per cell.
+- [ ] Mittellohn.tsx:332, 398 + BreakdownRow (lines 459-467) — `<label className="label">` blocks lack `htmlFor`; inputs lack `id`. Use `useId` per input.
+- [ ] Mittellohn.tsx:148 — CSV joins lines with `\n`; should be `\r\n`. Same as Kalkulator (shared CSV helper would be cleaner).
+- [ ] Mittellohn.tsx:157-181 — `exportExcel` has no `catch` for the `await import('xlsx')` chunk failure. Same as Kalkulator.
+- [ ] Mittellohn.tsx:131-136 — `reset()` clears team/lohnnebenkosten/zulagen but leaves `breakdownOpen` and all `bnk*` values. If user reset while in detail-view, they see default team with their old breakdown still applied. Reset all of `breakdownOpen`, `bnkSv/Soka/Bg/Monats13/Sonst`, and `tarifgebiet`.
 - [ ] Phase 2: audit MultiStepForm.tsx
 - [ ] Phase 2: audit Nav.tsx
 - [ ] Phase 2: audit ExitIntent.tsx

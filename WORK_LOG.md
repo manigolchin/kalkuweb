@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-05-19 21:10 — Phase 2: static audit Mittellohn.tsx (export-drift bug)
+- Source: WORK_QUEUE Phase 2 next item; user typed "continue till end"
+- Branch: claude-auto/2026-05-19-feature-audit-phase1 (continued)
+- Result: docs-only commit; Mittellohn marked "audited — flagged"
+- Notes: Math correct (div-by-zero guarded with `|| 1`). No email-form no-op here. Real bug: exportCsv/Excel always use raw `lohnnebenkosten`, ignoring breakdown mode — display 82% but CSV/Excel record 78%. Same a11y / localStorage / CSV `\n` / exportExcel-no-catch pattern as Kalkulator. Reset doesn't clear breakdown state. Phase 2 push continuing — next: parallel-delegated batch scan of remaining forms + overlays + sections.
+
 ## 2026-05-19 21:04 — Phase 2: static audit Kalkulator.tsx (sister CRITICAL find)
 - Source: WORK_QUEUE Phase 2 next item; user typed "continue"
 - Branch: claude-auto/2026-05-19-feature-audit-phase1 (continued)
