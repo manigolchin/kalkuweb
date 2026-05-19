@@ -142,10 +142,18 @@ export default function Mittellohn() {
     });
     lines.push('');
     lines.push(`Mittellohn AS;${fmt(totals.mittellohnAS)};EUR/h;`);
-    lines.push(`Lohnnebenkosten;${lohnnebenkosten};%;`);
+    if (breakdownOpen) {
+      lines.push(`Tarifgebiet;${tarifgebiet === 'west' ? 'West' : 'Ost'};;`);
+      lines.push(`  Sozialvers. AG;${fmt(bnkSv, 2)};%;`);
+      lines.push(`  SOKA-BAU;${fmt(bnkSoka, 2)};%;`);
+      lines.push(`  Berufsgen. Bau;${fmt(bnkBg, 2)};%;`);
+      lines.push(`  13. ME / Urlaub;${fmt(bnkMonats13, 2)};%;`);
+      lines.push(`  Sonstiges;${fmt(bnkSonst, 2)};%;`);
+    }
+    lines.push(`Lohnnebenkosten;${fmt(effectiveLnk, 2)};%;`);
     lines.push(`Zulagen;${fmt(zulagen)};EUR/h;`);
     lines.push(`Mittellohn ASL;${fmt(totals.mittellohnASL)};EUR/h;`);
-    const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -158,6 +166,16 @@ export default function Mittellohn() {
     setExportingExcel(true);
     try {
       const XLSX = await import('xlsx');
+      const breakdownRows: (string | number)[][] = breakdownOpen
+        ? [
+            ['Tarifgebiet', tarifgebiet === 'west' ? 'West' : 'Ost', '', ''],
+            ['  Sozialvers. AG %', Number(bnkSv.toFixed(2)), '', ''],
+            ['  SOKA-BAU %', Number(bnkSoka.toFixed(2)), '', ''],
+            ['  Berufsgen. Bau %', Number(bnkBg.toFixed(2)), '', ''],
+            ['  13. ME / Urlaub %', Number(bnkMonats13.toFixed(2)), '', ''],
+            ['  Sonstiges %', Number(bnkSonst.toFixed(2)), '', ''],
+          ]
+        : [];
       const data: (string | number)[][] = [
         ['Rolle', 'Stundensatz €/h', 'Anzahl', 'Lohnsumme €/h'],
         ...team.map((p) => [p.rolle, p.stundensatz, p.anzahl, Number((p.stundensatz * p.anzahl).toFixed(2))]),
@@ -166,7 +184,8 @@ export default function Mittellohn() {
         ['Σ Lohnsumme €/h', '', '', Number(totals.lohnSumme.toFixed(2))],
         [],
         ['Mittellohn AS €/h', Number(totals.mittellohnAS.toFixed(2)), '', ''],
-        ['Lohnnebenkosten %', lohnnebenkosten, '', ''],
+        ...breakdownRows,
+        ['Lohnnebenkosten %', Number(effectiveLnk.toFixed(2)), '', ''],
         ['Zulagen €/h', zulagen, '', ''],
         ['Mittellohn ASL €/h', Number(totals.mittellohnASL.toFixed(2)), '', ''],
       ];
@@ -323,7 +342,7 @@ export default function Mittellohn() {
                 <p className="text-[11px] uppercase tracking-wider font-bold text-amber-100 mb-2">Mittellohn ASL</p>
                 <p className="text-3xl font-extrabold tabular-nums">{eur(totals.mittellohnASL)}</p>
                 <p className="text-xs text-amber-100 mt-1">
-                  inkl. {lohnnebenkosten} % Nebenkosten {zulagen > 0 ? `+ ${eur(zulagen)} Zulagen` : ''}
+                  inkl. {fmt(effectiveLnk, 1)} % Nebenkosten {zulagen > 0 ? `+ ${eur(zulagen)} Zulagen` : ''}
                 </p>
               </div>
 
