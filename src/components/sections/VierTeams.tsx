@@ -1,4 +1,4 @@
-import { Calculator, ShoppingCart, FileSignature, Search } from 'lucide-react';
+import { Calculator, ShoppingCart, FileSignature, Search, Ruler, FilePlus2, BarChart3, Receipt } from 'lucide-react';
 import SectionHeader from '@/components/ui/SectionHeader';
 
 const TEAMS = [
@@ -32,10 +32,32 @@ const TEAMS = [
   },
 ] as const;
 
-const ZUSATZ_LEISTUNG = {
-  title: 'Zusätzlich: Mengenermittlung & Aufmaß',
-  desc: 'Auf Wunsch übernehmen wir auch die digitale Mengenermittlung aus Plänen oder das Aufmaß vor Ort — direkt verzahnt mit der Kalkulation, ohne Übergabeverlust zwischen externen Dienstleistern.',
-};
+const ZUSATZ_LEISTUNGEN = [
+  {
+    icon: Ruler,
+    title: 'Mengenermittlung & Aufmaß',
+    desc:
+      'Digitale Mengenermittlung aus Plänen oder Aufmaß vor Ort — direkt verzahnt mit der Kalkulation, ohne Übergabeverlust zwischen externen Dienstleistern.',
+  },
+  {
+    icon: FilePlus2,
+    title: 'Nachtragsmanagement (Bauphase)',
+    desc:
+      'Wenn auf der Baustelle Mehrleistungen entstehen — Bodenklassen-Wechsel, Schadstoff-Funde, geänderte Massen — kalkulieren wir Nachträge nach VOB/B § 2 und bereiten sie prüfbar zur Vorlage auf.',
+  },
+  {
+    icon: BarChart3,
+    title: 'Submissionsergebnis-Analyse',
+    desc:
+      'Nach Eröffnung spiegeln wir Ihren Preis gegen die Wettbewerber, arbeiten Erfolgsmuster und Verlustursachen heraus — strukturierte Lessons Learned für die nächste Vergabe.',
+  },
+  {
+    icon: Receipt,
+    title: 'Schlussrechnung-Support',
+    desc:
+      'Bei Auftragsabschluss begleiten wir die prüfbare Schlussrechnung nach VOB/B § 14 — vom Aufmaß über Stundenlohnabrechnung bis zur Position-für-Position-Argumentation gegenüber dem Auftraggeber.',
+  },
+] as const;
 
 export default function VierTeams() {
   return (
@@ -65,13 +87,27 @@ export default function VierTeams() {
           })}
         </div>
 
-        <div className="max-w-3xl mx-auto mt-8 bg-primary-50/50 border border-primary-100 rounded-lg p-5 sm:p-6 flex items-start gap-4">
-          <div className="w-9 h-9 rounded-md bg-primary-100 flex items-center justify-center flex-shrink-0">
-            <span className="text-primary-700 font-extrabold text-sm">+</span>
+        <div className="max-w-5xl mx-auto mt-10">
+          <div className="text-center mb-6">
+            <p className="text-xs uppercase tracking-[0.18em] font-bold text-gray-500 inline-flex items-center gap-2">
+              <span className="inline-flex w-5 h-5 rounded-md bg-primary-100 items-center justify-center text-primary-700 font-extrabold text-xs">+</span>
+              Erweiterte Leistungen — über die Submission hinaus
+            </p>
           </div>
-          <div>
-            <h3 className="font-bold text-gray-900 mb-1">{ZUSATZ_LEISTUNG.title}</h3>
-            <p className="text-sm text-gray-700 leading-relaxed">{ZUSATZ_LEISTUNG.desc}</p>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {ZUSATZ_LEISTUNGEN.map((z) => {
+              const Icon = z.icon;
+              return (
+                <div
+                  key={z.title}
+                  className="bg-primary-50/40 border border-primary-100 rounded-lg p-5 hover:bg-primary-50/70 transition-colors"
+                >
+                  <Icon className="w-5 h-5 text-primary-700 mb-3" strokeWidth={1.8} aria-hidden="true" />
+                  <h3 className="font-bold text-gray-900 mb-2 text-sm leading-snug">{z.title}</h3>
+                  <p className="text-xs text-gray-700 leading-relaxed">{z.desc}</p>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
