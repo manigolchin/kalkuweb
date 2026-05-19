@@ -46,7 +46,7 @@ const MILESTONES = [
   },
   {
     year: '2021',
-    title: 'Zweiter Bruder im Team',
+    title: 'Leitender Kalkulator dazu',
     desc: 'Bülent Coksari steigt als leitender Kalkulator ein. GaLaBau-Praxis und Bauingenieur-Studium ergänzen das Submission-Know-how des Inhabers.',
   },
   {
@@ -75,7 +75,7 @@ export default function UeberUns() {
         <link rel="canonical" href={canonical('/ueber-uns/')} />
       </Helmet>
 
-      {/* HERO — Familie Coksari */}
+      {/* HERO */}
       <section className="section">
         <div className="container-page">
           <div className="text-center max-w-3xl mx-auto mb-12">
@@ -83,11 +83,11 @@ export default function UeberUns() {
               Inhabergeführt seit 2019
             </p>
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-gray-900 mb-5 leading-tight">
-              Familienunternehmen Coksari.
+              Inhabergeführtes Kalkulationsbüro.
             </h1>
             <p className="text-lg text-gray-600">
-              Zwei Brüder, ein Kalkulationsbüro. Kein GmbH-Konstrukt mit Gesellschafter-Statut,
-              sondern persönliche Verantwortung — Sie sprechen direkt mit den Inhabern.
+              Kein GmbH-Konstrukt mit Gesellschafter-Statut, sondern persönliche Verantwortung —
+              Sie sprechen direkt mit den Inhabern.
             </p>
           </div>
 
@@ -209,15 +209,15 @@ export default function UeberUns() {
                 Bülent Coksari
               </h2>
               <p className="text-base text-gray-600 mb-6">
-                Bruder des Inhabers. GaLaBau-Hintergrund (eigene Praxis), Bauingenieur-Studium,
-                parallel Geschäftsführer der ui medien UG (Filmproduktion). Bringt Praxis-Wissen
+                GaLaBau-Hintergrund mit eigener Praxis, Bauingenieur-Studium, parallel
+                Geschäftsführer der ui medien UG (Filmproduktion). Bringt Praxis-Wissen
                 von der Baustelle und Tech-Affinität in die Kalkulation.
               </p>
               <Quote className="w-7 h-7 text-emerald-200 mb-2" />
               <blockquote className="text-base text-gray-700 italic leading-relaxed mb-6">
-                „Wer als Kind im GaLaBau-Betrieb der Familie Pflastersteine geschleppt hat, weiß
-                später am Schreibtisch, wie lange ein Quadratmeter Pflasterfläche realistisch
-                dauert — das ist nicht Theorie."
+                „Wer im GaLaBau selbst Pflastersteine geschleppt hat, weiß später am Schreibtisch,
+                wie lange ein Quadratmeter Pflasterfläche realistisch dauert — das ist nicht
+                Theorie."
               </blockquote>
               <div className="flex flex-wrap gap-2 text-sm">
                 <a
@@ -248,7 +248,7 @@ export default function UeberUns() {
             </div>
           </div>
 
-          {/* Familienunternehmen-Banner */}
+          {/* Inhabergeführt-Banner */}
           <div className="max-w-3xl mx-auto mt-12 bg-primary-50/60 border border-primary-100 rounded-lg p-5 sm:p-6 text-center">
             <p className="text-sm text-primary-900 leading-relaxed">
               <strong>Inhabergeführtes Einzelunternehmen seit 2019.</strong> Kein Konzern, kein
