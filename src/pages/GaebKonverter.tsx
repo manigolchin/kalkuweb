@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
 import {
@@ -132,13 +132,6 @@ export default function GaebKonverter() {
 
   const [lastExport, setLastExport] = useState<TargetFormat | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-
-  // When parsed file changes, auto-set the source-format display
-  useEffect(() => {
-    if (parsed && sourceHint === 'auto') {
-      // No-op; we keep "auto" so user can still override
-    }
-  }, [parsed, sourceHint]);
 
   function reset() {
     setParsed(null);

@@ -356,7 +356,6 @@ function drawToc(doc: import('jspdf').jsPDF, parsed: ParsedGaeb) {
 }
 
 function drawCover(doc: import('jspdf').jsPDF, parsed: ParsedGaeb, opts: PdfOptions) {
-  const w = doc.internal.pageSize.getWidth();
   const margin = 60;
 
   doc.setFont('helvetica', 'bold');
@@ -402,7 +401,6 @@ function drawCover(doc: import('jspdf').jsPDF, parsed: ParsedGaeb, opts: PdfOpti
     doc.internal.pageSize.getHeight() - 50,
   );
   doc.setTextColor(0);
-  void w;
 }
 
 // ── Re-export back to GAEB DA XML 3.2 ────────────────────────────────────────
