@@ -17,7 +17,7 @@ import HeroLvCard from './HeroLvCard';
  *   │                                                    │
  *   │  [ Erstgespräch vereinbaren ]  [ tel: ]            │
  *   │                                                    │
- *   │  trust strip — 4h · 7 Gewerke · ab 200 €           │
+ *   │  trust strip — 48h · 10 Gewerke · ab 200 €         │
  *   └───────────────────────────────────────────────────┘
  *
  * Right column is the refined LV-card mockup (HeroLvCard.tsx).
