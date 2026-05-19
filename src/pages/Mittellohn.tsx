@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useId } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { Link } from 'react-router-dom';
 import {
@@ -149,6 +149,7 @@ export default function Mittellohn() {
   const [zulagen, setZulagen] = useState(0); // EUR/h zusätzlich
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [exportingExcel, setExportingExcel] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [tarifgebiet, setTarifgebiet] = useState<'west' | 'ost'>('west');
 
@@ -158,6 +159,8 @@ export default function Mittellohn() {
   const [bnkBg, setBnkBg] = useState(5); // Berufsgenossenschaft Bau (Risikoklasse)
   const [bnkMonats13, setBnkMonats13] = useState(11); // 13.ME, Urlaubsgeld
   const [bnkSonst, setBnkSonst] = useState(8); // Lohnfortzahlung Krank/Feiertag, Sonstiges
+  const lnkId = useId();
+  const zulagenId = useId();
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -206,6 +209,13 @@ export default function Mittellohn() {
     setTeam(DEFAULT_TEAM.map((p) => newRow(p)));
     setLohnnebenkosten(78);
     setZulagen(0);
+    setBreakdownOpen(false);
+    setBnkSv(20.85);
+    setBnkSoka(18.5);
+    setBnkBg(5);
+    setBnkMonats13(11);
+    setBnkSonst(8);
+    setTarifgebiet('west');
   }
 
   function loadTeamPreset(preset: TeamPreset) {
@@ -242,10 +252,18 @@ export default function Mittellohn() {
     });
     lines.push('');
     lines.push(`Mittellohn AS;${fmt(totals.mittellohnAS)};EUR/h;`);
-    lines.push(`Lohnnebenkosten;${lohnnebenkosten};%;`);
+    if (breakdownOpen) {
+      lines.push(`Tarifgebiet;${tarifgebiet === 'west' ? 'West' : 'Ost'};;`);
+      lines.push(`  Sozialvers. AG;${fmt(bnkSv, 2)};%;`);
+      lines.push(`  SOKA-BAU;${fmt(bnkSoka, 2)};%;`);
+      lines.push(`  Berufsgen. Bau;${fmt(bnkBg, 2)};%;`);
+      lines.push(`  13. ME / Urlaub;${fmt(bnkMonats13, 2)};%;`);
+      lines.push(`  Sonstiges;${fmt(bnkSonst, 2)};%;`);
+    }
+    lines.push(`Lohnnebenkosten;${fmt(effectiveLnk, 2)};%;`);
     lines.push(`Zulagen;${fmt(zulagen)};EUR/h;`);
     lines.push(`Mittellohn ASL;${fmt(totals.mittellohnASL)};EUR/h;`);
-    const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -256,8 +274,19 @@ export default function Mittellohn() {
 
   async function exportExcel() {
     setExportingExcel(true);
+    setExportError(null);
     try {
       const XLSX = await import('xlsx');
+      const breakdownRows: (string | number)[][] = breakdownOpen
+        ? [
+            ['Tarifgebiet', tarifgebiet === 'west' ? 'West' : 'Ost', '', ''],
+            ['  Sozialvers. AG %', Number(bnkSv.toFixed(2)), '', ''],
+            ['  SOKA-BAU %', Number(bnkSoka.toFixed(2)), '', ''],
+            ['  Berufsgen. Bau %', Number(bnkBg.toFixed(2)), '', ''],
+            ['  13. ME / Urlaub %', Number(bnkMonats13.toFixed(2)), '', ''],
+            ['  Sonstiges %', Number(bnkSonst.toFixed(2)), '', ''],
+          ]
+        : [];
       const data: (string | number)[][] = [
         ['Rolle', 'Stundensatz €/h', 'Anzahl', 'Lohnsumme €/h'],
         ...team.map((p) => [p.rolle, p.stundensatz, p.anzahl, Number((p.stundensatz * p.anzahl).toFixed(2))]),
@@ -266,7 +295,8 @@ export default function Mittellohn() {
         ['Σ Lohnsumme €/h', '', '', Number(totals.lohnSumme.toFixed(2))],
         [],
         ['Mittellohn AS €/h', Number(totals.mittellohnAS.toFixed(2)), '', ''],
-        ['Lohnnebenkosten %', lohnnebenkosten, '', ''],
+        ...breakdownRows,
+        ['Lohnnebenkosten %', Number(effectiveLnk.toFixed(2)), '', ''],
         ['Zulagen €/h', zulagen, '', ''],
         ['Mittellohn ASL €/h', Number(totals.mittellohnASL.toFixed(2)), '', ''],
       ];
@@ -275,6 +305,10 @@ export default function Mittellohn() {
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Mittellohn');
       XLSX.writeFile(wb, `kalku-mittellohn-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (e) {
+      setExportError(
+        e instanceof Error ? `Excel-Export fehlgeschlagen: ${e.message}` : 'Excel-Export fehlgeschlagen.',
+      );
     } finally {
       setExportingExcel(false);
     }
@@ -407,13 +441,14 @@ export default function Mittellohn() {
                     </tr>
                   </thead>
                   <tbody>
-                    {team.map((p) => (
+                    {team.map((p, i) => (
                       <tr key={p.id} className="border-b border-gray-100 hover:bg-gray-50/50">
                         <td className="px-2 py-2">
                           <input
                             type="text"
                             value={p.rolle}
                             onChange={(e) => update(p.id, { rolle: e.target.value })}
+                            aria-label={`Zeile ${i + 1}: Rolle`}
                             className="w-full px-2 py-1.5 border border-transparent rounded-md hover:border-gray-200 focus:border-amber-500 focus:ring-0"
                           />
                         </td>
@@ -424,6 +459,7 @@ export default function Mittellohn() {
                             onChange={(e) => update(p.id, { stundensatz: parseFloat(e.target.value) || 0 })}
                             step={0.5}
                             min={0}
+                            aria-label={`Zeile ${i + 1}: Stundensatz`}
                             className="w-full px-2 py-1.5 text-right tabular-nums border border-transparent rounded-md hover:border-gray-200 focus:border-amber-500 focus:ring-0"
                           />
                         </td>
@@ -434,6 +470,7 @@ export default function Mittellohn() {
                             onChange={(e) => update(p.id, { anzahl: parseInt(e.target.value) || 0 })}
                             step={1}
                             min={0}
+                            aria-label={`Zeile ${i + 1}: Anzahl Personen`}
                             className="w-full px-2 py-1.5 text-right tabular-nums border border-transparent rounded-md hover:border-gray-200 focus:border-amber-500 focus:ring-0"
                           />
                         </td>
@@ -475,6 +512,14 @@ export default function Mittellohn() {
                   <RotateCcw className="w-4 h-4" /> Zurücksetzen
                 </button>
               </div>
+              {exportError && (
+                <div
+                  role="alert"
+                  className="mt-3 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-800 print:hidden"
+                >
+                  {exportError}
+                </div>
+              )}
             </div>
 
             {/* Result + adjustments */}
@@ -489,18 +534,19 @@ export default function Mittellohn() {
                 <p className="text-[11px] uppercase tracking-wider font-bold text-amber-100 mb-2">Mittellohn ASL</p>
                 <p className="text-3xl font-extrabold tabular-nums">{eur(totals.mittellohnASL)}</p>
                 <p className="text-xs text-amber-100 mt-1">
-                  inkl. {lohnnebenkosten} % Nebenkosten {zulagen > 0 ? `+ ${eur(zulagen)} Zulagen` : ''}
+                  inkl. {fmt(effectiveLnk, 1)} % Nebenkosten {zulagen > 0 ? `+ ${eur(zulagen)} Zulagen` : ''}
                 </p>
               </div>
 
               <div className="card-flat">
                 <div className="flex items-center justify-between mb-1">
-                  <label className="label flex items-center gap-1.5 mb-0">
+                  <label htmlFor={lnkId} className="label flex items-center gap-1.5 mb-0">
                     Lohnnebenkosten
                   </label>
                   <button
                     type="button"
                     onClick={() => setBreakdownOpen((o) => !o)}
+                    aria-expanded={breakdownOpen}
                     className="text-xs font-semibold text-amber-700 hover:text-amber-900"
                   >
                     {breakdownOpen ? 'Einfach' : 'Detailansicht'}
@@ -511,12 +557,14 @@ export default function Mittellohn() {
                   <>
                     <div className="flex items-center gap-3">
                       <input
+                        id={lnkId}
                         type="range"
                         value={lohnnebenkosten}
                         onChange={(e) => setLohnnebenkosten(parseFloat(e.target.value))}
                         min={0}
                         max={120}
                         step={1}
+                        aria-valuetext={`${lohnnebenkosten} Prozent`}
                         className="flex-1 accent-amber-600"
                       />
                       <span className="font-bold text-amber-700 tabular-nums w-14 text-right">{lohnnebenkosten} %</span>
@@ -561,8 +609,9 @@ export default function Mittellohn() {
               </div>
 
               <div className="card-flat">
-                <label className="label">Zulagen €/h</label>
+                <label htmlFor={zulagenId} className="label">Zulagen €/h</label>
                 <input
+                  id={zulagenId}
                   type="number"
                   value={zulagen}
                   onChange={(e) => setZulagen(parseFloat(e.target.value) || 0)}
@@ -617,21 +666,24 @@ function BreakdownRow({
   onChange: (v: number) => void;
   hint?: string;
 }) {
+  const id = useId();
   return (
     <div>
       <div className="flex items-center justify-between text-xs">
-        <span className="font-semibold text-gray-700">{label}</span>
+        <label htmlFor={id} className="font-semibold text-gray-700">{label}</label>
         <div className="inline-flex items-center gap-1">
           <input
+            id={id}
             type="number"
             value={value}
             onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
             min={0}
             max={50}
             step={0.1}
+            aria-label={`${label} in Prozent`}
             className="w-16 px-2 py-1 text-right text-xs tabular-nums border border-gray-200 rounded focus:border-amber-500 focus:ring-0"
           />
-          <span className="text-gray-400 w-3">%</span>
+          <span aria-hidden="true" className="text-gray-400 w-3">%</span>
         </div>
       </div>
       {hint && <p className="text-[11px] text-gray-400 mt-0.5">{hint}</p>}

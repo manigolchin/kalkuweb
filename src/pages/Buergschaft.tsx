@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useId } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { ShieldCheck, Info, FileText, Shield, Banknote, BarChart3, Scale, AlertTriangle, Wallet, FileSpreadsheet, Printer } from 'lucide-react';
 import { canonical } from '@/lib/seo';
@@ -73,6 +73,9 @@ export default function Buergschaft() {
   const [bareinbehaltProz, setBareinbehaltProz] = useState(3); // VOB/B § 17 Abs. 6
   const [eigenkapitalKosten, setEigenkapitalKosten] = useState(8); // % p.a. Opportunitätskosten
   const [exportingExcel, setExportingExcel] = useState(false);
+  const vertragId = useId();
+  const erfMonId = useId();
+  const gewJahreId = useId();
 
   const result = useMemo(() => {
     const erfBetrag = vertragssumme * (erfuellungsProz / 100);
@@ -232,9 +235,10 @@ export default function Buergschaft() {
 
               <div className="space-y-5">
                 <div>
-                  <label className="label">Vertragssumme netto</label>
+                  <label htmlFor={vertragId} className="label">Vertragssumme netto</label>
                   <div className="relative">
                     <input
+                      id={vertragId}
                       type="number"
                       inputMode="decimal"
                       value={vertragssumme}
@@ -243,7 +247,7 @@ export default function Buergschaft() {
                       min={0}
                       className="input pr-12 text-right tabular-nums"
                     />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">€</span>
+                    <span aria-hidden="true" className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">€</span>
                   </div>
                 </div>
 
@@ -282,33 +286,37 @@ export default function Buergschaft() {
 
                 <div className="grid grid-cols-2 gap-3 pt-3 border-t border-gray-100">
                   <div>
-                    <label className="label text-xs">Erfüllung Laufzeit</label>
+                    <label htmlFor={erfMonId} className="label text-xs">Erfüllung Laufzeit</label>
                     <div className="relative">
                       <input
+                        id={erfMonId}
                         type="number"
                         inputMode="decimal"
                         value={erfuellungsLaufzeitMonate}
-                        onChange={(e) => setErfuellungsLaufzeitMonate(Math.max(0, parseInt(e.target.value) || 0))}
+                        onChange={(e) => setErfuellungsLaufzeitMonate(Math.max(0, parseFloat(e.target.value) || 0))}
                         min={0}
                         max={36}
+                        step={0.5}
                         className="input pr-14 text-right tabular-nums"
                       />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">Mon</span>
+                      <span aria-hidden="true" className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">Mon</span>
                     </div>
                   </div>
                   <div>
-                    <label className="label text-xs">Gewährleist. Laufzeit</label>
+                    <label htmlFor={gewJahreId} className="label text-xs">Gewährleist. Laufzeit</label>
                     <div className="relative">
                       <input
+                        id={gewJahreId}
                         type="number"
                         inputMode="decimal"
                         value={gewaehrleistungsLaufzeitJahre}
-                        onChange={(e) => setGewaehrleistungsLaufzeitJahre(Math.max(0, parseInt(e.target.value) || 0))}
+                        onChange={(e) => setGewaehrleistungsLaufzeitJahre(Math.max(0, parseFloat(e.target.value) || 0))}
                         min={0}
                         max={10}
+                        step={0.5}
                         className="input pr-14 text-right tabular-nums"
                       />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">Jahre</span>
+                      <span aria-hidden="true" className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">Jahre</span>
                     </div>
                   </div>
                 </div>
@@ -654,17 +662,20 @@ function Slider({
   suffix: string;
   hint?: string;
 }) {
+  const id = useId();
   return (
     <div>
-      <label className="label">{label}</label>
+      <label htmlFor={id} className="label">{label}</label>
       <div className="flex items-center gap-3">
         <input
+          id={id}
           type="range"
           value={value}
           onChange={(e) => onChange(parseFloat(e.target.value))}
           min={min}
           max={max}
           step={step}
+          aria-valuetext={`${value} ${suffix}`}
           className="flex-1 accent-indigo-600"
         />
         <span className="font-bold text-indigo-700 tabular-nums w-16 text-right">

@@ -52,7 +52,10 @@ export function parseGaebP(text: string): PParseResult {
 
   walk(tokens, [], { positions, groups }, 0);
 
-  const estimatedValue = positions.reduce((sum, p) => sum + (p.gp ?? 0), 0);
+  const estimatedValue = positions.reduce(
+    (sum, p) => sum + (Number.isFinite(p.gp) ? (p.gp as number) : 0),
+    0,
+  );
 
   return {
     projectName,
@@ -179,7 +182,7 @@ function walk(
             currentPos.pos = t.value.trim();
             break;
           case 'Menge':
-            currentPos.menge = parseGermanNumber(t.value);
+            currentPos.menge = finiteOrUndef(parseGermanNumber(t.value));
             break;
           case 'FrMenge':
             if (t.value.trim().toUpperCase() === 'J') {
@@ -190,11 +193,11 @@ function walk(
             currentPos.einheit = t.value.trim();
             break;
           case 'EP':
-            currentPos.ep = parseGermanNumber(t.value);
+            currentPos.ep = finiteOrUndef(parseGermanNumber(t.value));
             break;
           case 'GB':
           case 'GP':
-            currentPos.gp = parseGermanNumber(t.value);
+            currentPos.gp = finiteOrUndef(parseGermanNumber(t.value));
             break;
           case 'Kurztext':
             if (inBeschreibung) {
@@ -252,4 +255,8 @@ function parseGermanNumber(text: string): number {
   if (!cleaned) return NaN;
   if (/[\d.]+,\d/.test(cleaned)) return parseFloat(cleaned.replace(/\./g, '').replace(',', '.'));
   return parseFloat(cleaned.replace(/\s/g, '').replace(/,/g, '.'));
+}
+
+function finiteOrUndef(n: number): number | undefined {
+  return Number.isFinite(n) ? n : undefined;
 }

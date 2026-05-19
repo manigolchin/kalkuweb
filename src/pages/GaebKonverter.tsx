@@ -44,6 +44,7 @@ import type {
   PdfOptions,
 } from '@/lib/gaeb';
 import { writeKalkulatorHandoff } from '@/lib/toolHandoff';
+import { submitLead, LEAD_FALLBACK_EMAIL } from '@/lib/lead';
 
 const TITLE = 'GAEB-Konverter (kostenlos, im Browser) | KALKU';
 const DESC =
@@ -114,6 +115,8 @@ export default function GaebKonverter() {
   const [dragOver, setDragOver] = useState(false);
   const [email, setEmail] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [parsing, setParsing] = useState(false);
   const [converting, setConverting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -248,10 +251,29 @@ export default function GaebKonverter() {
     }
   }
 
-  function submitEmail(e: React.FormEvent) {
+  async function submitEmail(e: React.FormEvent) {
     e.preventDefault();
     if (!email.includes('@') || !parsed) return;
-    setSubmitted(true);
+    setSubmitError(null);
+    setSubmitting(true);
+    const result = await submitLead({
+      type: 'gaeb-premium',
+      email,
+      filename: parsed.filename,
+      formatLabel: parsed.formatLabel,
+      positionCount: parsed.positionCount,
+      estimatedValue: parsed.estimatedValue,
+      projectName: parsed.projectName,
+      awardingAuthority: parsed.awardingAuthority,
+    });
+    setSubmitting(false);
+    if (result.ok) {
+      setSubmitted(true);
+    } else {
+      setSubmitError(
+        `Anfrage konnte nicht gesendet werden (${result.error}). Bitte schreiben Sie uns direkt an ${LEAD_FALLBACK_EMAIL}.`,
+      );
+    }
   }
 
   function handoffToKalkulator() {
@@ -740,8 +762,12 @@ export default function GaebKonverter() {
                       Bearbeitung in 1–2 Werktagen.
                     </p>
                     {submitted ? (
-                      <div className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-emerald-50 text-emerald-700 text-sm">
-                        <CheckCircle2 className="w-5 h-5" />
+                      <div
+                        role="status"
+                        aria-live="polite"
+                        className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-emerald-50 text-emerald-700 text-sm"
+                      >
+                        <CheckCircle2 className="w-5 h-5" aria-hidden="true" />
                         Vielen Dank — wir senden Ihnen die Auswertung an {email} innerhalb von 1–2 Werktagen.
                       </div>
                     ) : (
@@ -749,15 +775,31 @@ export default function GaebKonverter() {
                         <input
                           type="email"
                           required
+                          aria-required="true"
+                          aria-label="E-Mail-Adresse"
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
                           placeholder="ihre@firma.de"
+                          disabled={submitting}
                           className="input flex-1"
                         />
-                        <button type="submit" className="btn btn-success">
-                          <Download className="w-4 h-4" /> Anfordern
+                        <button type="submit" disabled={submitting} className="btn btn-success">
+                          {submitting ? (
+                            <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+                          ) : (
+                            <Download className="w-4 h-4" aria-hidden="true" />
+                          )}
+                          {submitting ? 'wird gesendet …' : 'Anfordern'}
                         </button>
                       </form>
+                    )}
+                    {submitError && (
+                      <div
+                        role="alert"
+                        className="mt-3 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-800"
+                      >
+                        {submitError}
+                      </div>
                     )}
                     <p className="text-xs text-gray-400 mt-3">
                       DSGVO-konform. Verschlüsselte Übertragung. Datei wird nach 30 Tagen automatisch gelöscht. Kein Newsletter.

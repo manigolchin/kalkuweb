@@ -23,6 +23,7 @@ import { canonical } from '@/lib/seo';
 import { cn } from '@/lib/utils';
 import { softwareApplicationSchema } from '@/lib/toolSchema';
 import AndereTools from '@/components/sections/AndereTools';
+import { submitLead, LEAD_FALLBACK_EMAIL } from '@/lib/lead';
 import { readKalkulatorHandoff, clearKalkulatorHandoff } from '@/lib/toolHandoff';
 
 type Row = {
@@ -152,6 +153,8 @@ export default function Kalkulator() {
   });
   const [email, setEmail] = useState('');
   const [emailSent, setEmailSent] = useState(false);
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
   const [exportingExcel, setExportingExcel] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [banner, setBanner] = useState<{ text: string; kind: 'info' | 'warn' | 'error' } | null>(null);
@@ -474,10 +477,32 @@ export default function Kalkulator() {
     }
   }
 
-  function submitEmail(e: React.FormEvent) {
+  async function submitEmail(e: React.FormEvent) {
     e.preventDefault();
     if (!email.includes('@')) return;
-    setEmailSent(true);
+    setEmailError(null);
+    setEmailSending(true);
+    const result = await submitLead({
+      type: 'kalkulator-review',
+      email,
+      positionCount: rows.length,
+      zwischensumme: Number(totals.zwischensumme.toFixed(2)),
+      angebotssumme: Number(totals.angebotssumme.toFixed(2)),
+      lohnTotal: Number(totals.lohnTotal.toFixed(2)),
+      materialTotal: Number(totals.materialTotal.toFixed(2)),
+      stundenTotal: Number(totals.stundenTotal.toFixed(2)),
+      nachlassPct,
+      skontoPct,
+      wagnisGewinnPct,
+    });
+    setEmailSending(false);
+    if (result.ok) {
+      setEmailSent(true);
+    } else {
+      setEmailError(
+        `Anfrage konnte nicht gesendet werden (${result.error}). Bitte schreiben Sie uns direkt an ${LEAD_FALLBACK_EMAIL}.`,
+      );
+    }
   }
 
   return (
@@ -852,28 +877,46 @@ export default function Kalkulator() {
               würden. Kostenlos, einmalig, kein Abo.
             </p>
             {emailSent ? (
-              <div className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-emerald-50 text-emerald-700">
-                <CheckCircle2 className="w-5 h-5" />
+              <div
+                role="status"
+                aria-live="polite"
+                className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-emerald-50 text-emerald-700"
+              >
+                <CheckCircle2 className="w-5 h-5" aria-hidden="true" />
                 <span>Vielen Dank! Sie erhalten unsere Einschätzung innerhalb von 1–2 Werktagen.</span>
               </div>
             ) : (
-              <form onSubmit={submitEmail} className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto">
-                <label htmlFor={formId} className="sr-only">
-                  E-Mail
-                </label>
-                <input
-                  id={formId}
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="ihre@firma.de"
-                  className="input flex-1"
-                />
-                <button type="submit" className="btn btn-success">
-                  Anfordern <ArrowRight className="w-4 h-4" />
-                </button>
-              </form>
+              <>
+                <form onSubmit={submitEmail} className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto">
+                  <label htmlFor={formId} className="sr-only">
+                    E-Mail
+                  </label>
+                  <input
+                    id={formId}
+                    type="email"
+                    required
+                    aria-required="true"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="ihre@firma.de"
+                    disabled={emailSending}
+                    className="input flex-1"
+                  />
+                  <button type="submit" disabled={emailSending} className="btn btn-success">
+                    {emailSending ? 'wird gesendet …' : (
+                      <>Anfordern <ArrowRight className="w-4 h-4" aria-hidden="true" /></>
+                    )}
+                  </button>
+                </form>
+                {emailError && (
+                  <div
+                    role="alert"
+                    className="mt-3 max-w-md mx-auto px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-800 text-left"
+                  >
+                    {emailError}
+                  </div>
+                )}
+              </>
             )}
             <p className="text-xs text-gray-400 mt-4">
               DSGVO-konform. Daten werden ausschließlich für die Lieferung der Einschätzung verwendet.

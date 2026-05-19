@@ -208,6 +208,13 @@ function fmtTime(d: Date): string {
   return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 }
 
+function localDateString(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function downloadIcs(events: { title: string; date: Date; description: string; type: string }[]) {
   const lines = [
     'BEGIN:VCALENDAR',
@@ -238,9 +245,8 @@ function downloadIcs(events: { title: string; date: Date; description: string; t
 
 export default function FristRechner() {
   const initialToday = useMemo(() => new Date(), []);
-  const tomorrow = addDays(initialToday, 14);
-  tomorrow.setHours(11, 0, 0, 0);
-  const [date, setDate] = useState(tomorrow.toISOString().slice(0, 10));
+  const defaultSubmission = addDays(initialToday, 14);
+  const [date, setDate] = useState(localDateString(defaultSubmission));
   const [time, setTime] = useState('11:00');
   const [versandTage, setVersandTage] = useState(2);
   const [land, setLand] = useState<LandCode>('SL');
