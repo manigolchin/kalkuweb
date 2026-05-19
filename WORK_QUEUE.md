@@ -67,7 +67,19 @@ Phase 2 (static audit) — one feature per iteration, priority order:
 
 - [ ] GaebKonverter.tsx:654 — position preview is capped at `.slice(0, 200)` with no UI message. Add a banner "Vorschau auf 200 Positionen begrenzt — Export enthält alle {N} Positionen" when total > 200.
 - [ ] GaebKonverter.tsx:568-586 — column picker keeps kurztext/langtext checkboxes rendered with the note that they're controlled elsewhere; either disable them or remove them entirely to avoid confusion.
-- [ ] Phase 2: audit Kalkulator.tsx
+- [~] Phase 2: audit Kalkulator.tsx
+
+### Kalkulator — CRITICAL (sister of GaebKonverter email-form bug)
+
+- [!] **Kalkulator.tsx:324-328 — `submitEmail` is a no-op but UI promises a reply.** Success state at line 554 says "Sie erhalten unsere Einschätzung innerhalb von 1–2 Werktagen." The function only does `setEmailSent(true)`. **Second silent-drop lead form on the site** (GAEB Konverter has the same bug). Fix together: one shared form-submit utility wired to the same backend.
+
+### Kalkulator — confirmed via direct read
+
+- [ ] Kalkulator.tsx:137-141 — localStorage rehydration accepts any `Array.isArray` + non-empty JSON. No validation that rows have the right shape. Future schema change or hand-edited storage → undefined fields → `computeEp` returns NaN. Either validate each row's keys + types before accepting, or version the storage key (`kalku.kalkulator.rows.v2`) so old data is dropped cleanly.
+- [ ] Kalkulator.tsx:428-457 — a11y: table input cells (Pos./Beschreibung/Einheit + 5 NumCell inputs per row) lack `aria-label`. Column `<th>` headers help SR table navigation but cells themselves are unlabeled. Add `aria-label={`Position ${i+1}: Lohn`}` etc. per cell, or wrap in visually-hidden `<label>`.
+- [ ] Kalkulator.tsx:277 — CSV export joins lines with `\n`. Excel on Windows expects `\r\n`. Change to `lines.join('\r\n')` for cross-platform consistency.
+- [ ] Kalkulator.tsx:286-322 — `exportExcel` has no `catch` for the `await import('xlsx')` chunk load or the subsequent `XLSX.writeFile` call. If the dynamic chunk fails or the browser blocks the download, the user sees no feedback (try/finally only resets the loading state). Wrap with try/catch and surface an inline error.
+- [ ] Kalkulator.tsx:237-240 — `pasteFromClipboard` header detection: `headerLikely = firstLohn === 48 && (text.includes('beschr') || text.includes('lohn'))`. If a real first row genuinely has `lohn=48` AND description contains "lohn" (e.g. "Lohnstundennachweis Pflasterer"), it's silently dropped as a header. Either check for *all* numeric cells being NaN (strong header signal) or always prompt the user.
 - [ ] Phase 2: audit Mittellohn.tsx
 - [ ] Phase 2: audit MultiStepForm.tsx
 - [ ] Phase 2: audit Nav.tsx

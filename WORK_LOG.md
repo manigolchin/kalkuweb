@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-05-19 21:04 — Phase 2: static audit Kalkulator.tsx (sister CRITICAL find)
+- Source: WORK_QUEUE Phase 2 next item; user typed "continue"
+- Branch: claude-auto/2026-05-19-feature-audit-phase1 (continued)
+- Result: docs-only commit; Kalkulator marked "audited — flagged"
+- Notes: EP/GP math is verified correct (lohnTotal + materialTotal = total because both carry zuschlag uplift). Email input on this page DOES have proper htmlFor/useId (better than FristRechner). But the same critical no-op submitEmail pattern exists — second silent-drop lead form on the site. Other items: localStorage rehydration accepts any JSON shape; table input cells lack aria-label; CSV uses \n instead of \r\n (Excel/Win compatibility); exportExcel has no catch for dynamic-import failure; pasteFromClipboard header heuristic is brittle.
+
 ## 2026-05-19 21:00 — Phase 2: static audit GaebKonverter.tsx + src/lib/gaeb/* (CRITICAL find)
 - Source: WORK_QUEUE Phase 2 next item; user typed "continue"
 - Branch: claude-auto/2026-05-19-feature-audit-phase1 (continued)
