@@ -75,11 +75,34 @@ export default function Kontakt() {
       {/* STANDORT */}
       <section className="section">
         <div className="container-page">
-          <div className="card-flat max-w-2xl mx-auto text-center">
-            <p className="eyebrow mb-3">Standort</p>
-            <p className="flex items-center justify-center gap-2 text-gray-700">
-              <MapPin className="w-4 h-4 text-primary-500" />
-              {NAP.street}, {NAP.postalCode} {NAP.city}
+          <div className="max-w-3xl mx-auto">
+            <div className="text-center mb-6">
+              <p className="eyebrow mb-3">Standort</p>
+              <p className="flex items-center justify-center gap-2 text-gray-700">
+                <MapPin className="w-4 h-4 text-primary-500" aria-hidden="true" />
+                {NAP.street}, {NAP.postalCode} {NAP.city}
+              </p>
+            </div>
+            <div className="aspect-[16/9] sm:aspect-[2/1] rounded-2xl overflow-hidden border border-gray-200 bg-white shadow-sm">
+              <iframe
+                title={`KALKU Standort ${NAP.city} — ${NAP.street}`}
+                width="100%"
+                height="100%"
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
+                src={`https://www.openstreetmap.org/export/embed.html?bbox=${NAP.geo.lng - 0.005}%2C${NAP.geo.lat - 0.003}%2C${NAP.geo.lng + 0.005}%2C${NAP.geo.lat + 0.003}&layer=mapnik&marker=${NAP.geo.lat}%2C${NAP.geo.lng}`}
+                className="w-full h-full block"
+              />
+            </div>
+            <p className="text-center text-xs text-gray-500 mt-3">
+              <a
+                href={`https://www.openstreetmap.org/?mlat=${NAP.geo.lat}&mlon=${NAP.geo.lng}&zoom=17`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-primary-600 hover:underline"
+              >
+                Größere Karte auf OpenStreetMap öffnen ↗
+              </a>
             </p>
           </div>
         </div>
