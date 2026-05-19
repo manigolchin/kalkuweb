@@ -7,6 +7,7 @@ import { telHref } from '@/lib/utils';
 import SectionHeader from '@/components/ui/SectionHeader';
 import VierTeams from '@/components/sections/VierTeams';
 import TechStack from '@/components/sections/TechStack';
+import TeamPhoto from '@/components/ui/TeamPhoto';
 
 const TITLE = 'Über uns — KALKU Baukalkulationen Saarbrücken';
 const DESC =
@@ -63,11 +64,13 @@ export default function UeberUns() {
           {/* Inhaber */}
           <div className="grid lg:grid-cols-5 gap-10 lg:gap-14 items-center max-w-6xl mx-auto mb-16">
             <div className="lg:col-span-2">
-              <div className="relative aspect-[4/5] rounded-3xl bg-gradient-to-br from-primary-100 via-primary-50 to-emerald-50 overflow-hidden flex items-center justify-center max-w-sm mx-auto lg:mx-0">
-                <div className="w-36 h-36 rounded-full bg-primary-500/15 backdrop-blur-sm flex items-center justify-center">
-                  <span className="text-6xl font-bold text-primary-700 tracking-tight">AC</span>
-                </div>
-              </div>
+              {/* Drop a portrait at public/team/alaatdin-coksari.webp and uncomment src below. */}
+              <TeamPhoto
+                /* src="/team/alaatdin-coksari.webp" */
+                alt="Alaatdin Coksari, Inhaber und Geschäftsführer"
+                initials="AC"
+                accent="primary"
+              />
             </div>
             <div className="lg:col-span-3">
               <p className="text-xs uppercase tracking-wider font-bold text-gray-500 mb-2">Inhaber & Geschäftsführer</p>
@@ -152,11 +155,13 @@ export default function UeberUns() {
               </div>
             </div>
             <div className="lg:col-span-2 lg:order-2 order-1">
-              <div className="relative aspect-[4/5] rounded-3xl bg-gradient-to-br from-emerald-100 via-emerald-50 to-primary-50 overflow-hidden flex items-center justify-center max-w-sm mx-auto lg:mx-0">
-                <div className="w-36 h-36 rounded-full bg-emerald-600/15 backdrop-blur-sm flex items-center justify-center">
-                  <span className="text-6xl font-bold text-emerald-700 tracking-tight">BC</span>
-                </div>
-              </div>
+              {/* Drop a portrait at public/team/buelent-coksari.webp and uncomment src below. */}
+              <TeamPhoto
+                /* src="/team/buelent-coksari.webp" */
+                alt="Bülent Coksari, leitender Kalkulator"
+                initials="BC"
+                accent="emerald"
+              />
             </div>
           </div>
 
