@@ -112,6 +112,15 @@ Phase 2 (static audit) — one feature per iteration, priority order:
 - [!] **LeadMagnet.tsx:12 — "Checkliste per Mail" form is stubbed.** TODO names `POST /api/forms/submit type=lead-magnet-checklist`. Success copy at line 71 promises "Wir senden die Checkliste binnen weniger Minuten" but no fetch exists.
 - [!] **ExitIntent.tsx:74 — Exit-intent whitepaper form is stubbed.** TODO names `POST /api/forms/submit type=whitepaper`. Success copy at line 109 promises "Wir senden Ihnen das Whitepaper an {email} innerhalb der nächsten Minuten" but no fetch exists.
 - [ ] **Aggregate: build the `POST /api/forms/submit` endpoint once with a `type` discriminator** (`contact`, `lead-magnet-checklist`, `whitepaper`, plus 2 from the tool pages). Wire all 5 forms to it. Until the endpoint exists, hide the success-state copy that promises delivery, or fall back to a `mailto:` so leads aren't lost.
+
+  **Architecture context (research, 2026-05-19):** The backend endpoint **does not exist anywhere in this repo.**
+  - `package.json` has no server framework (no express/fastify/hono/koa/next). It's a pure Vite/React SPA.
+  - There is no `api/` or `server/` directory; `direkt/` is an unrelated sibling SPA.
+  - `Dockerfile` + [docker-compose.prod.yml](docker-compose.prod.yml) build the static bundle and serve it via nginx behind Traefik — no Node runtime present in the container, so even adding `/api/*` routes here wouldn't be served.
+  - The intended architecture IS documented in detail: **[docs/06c-conversion-pipedrive.md:234-256](docs/06c-conversion-pipedrive.md)** specifies async-with-retry-queue (Browser → POST → own DB as source of truth → Worker pushes to Pipedrive with exponential backoff). Own DB table `form_submissions` is mandatory for DSGVO. This is a multi-day backend project, not a frontend tweak.
+  - **Path naming is inconsistent across the codebase:** the design doc says `POST /api/forms/erstgespraech` (line 248), but `src/lib/constants.ts:194` exports `pipedriveWebhookPath: '/api/forms/submit'`, and the 5 TODOs in code also use `/api/forms/submit`. Pick one before implementing.
+  - **Phase labels in TODOs match the planning structure**: MultiStepForm says "Phase 3.4", LeadMagnet + ExitIntent say "Phase 5" — these correspond to phases in [docs/06-phase2-plan.md](docs/06-phase2-plan.md). So the stubs are deliberate, not oversights.
+  - **Practical short-term mitigation while the real backend is being built:** route the 3 highest-value forms (MultiStepForm, GaebKonverter, Kalkulator) to a third-party form forwarder (Formspree / Getform / Resend.com) so leads are at least collected. Cost is ~10 EUR/month; the alternative is silent loss.
 - [ ] ExitIntent.tsx:83 — `role="dialog"` set but no focus trap; tab order can leak to background page. Add focus-trap + `inert` body, restore focus to trigger on close.
 - [ ] ExitIntent.tsx:93-99 — close button missing `aria-controls` pointing to the dialog id.
 - [ ] MultiStepForm.tsx:160, 195, 260… — inputs are wrapped in a `Field` component that owns labels but doesn't propagate `htmlFor`. Threading `useId` through the Field wrapper fixes every input in one change.

@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-05-19 21:28 — Maintenance research: form-backend architecture (loop re-entry)
+- Source: /loop re-entered with same prompt; Phase 1 + Phase 2 already complete, Phase 3 blocked on tooling. Switched to a Research maintenance task.
+- Branch: claude-auto/2026-05-19-feature-audit-phase1 (continued)
+- Result: docs-only commit; expanded the "Aggregate: build the endpoint" queue item with architecture findings.
+- Notes: Investigated whether the missing `/api/forms/submit` backend exists anywhere. Findings: it doesn't — this repo is a pure Vite/React SPA, no server framework in package.json, no api/ or server/ directory, Dockerfile + docker-compose.prod.yml build a static bundle served via nginx behind Traefik (no Node runtime). However, the architecture IS specified in detail in [docs/06c-conversion-pipedrive.md](docs/06c-conversion-pipedrive.md): async-with-retry-queue, own DB `form_submissions` as source of truth, worker pushes to Pipedrive with backoff. Path naming is inconsistent: design says `/api/forms/erstgespraech`, code constant + TODOs say `/api/forms/submit`. Phase labels in TODOs (3.4, 5) match [docs/06-phase2-plan.md](docs/06-phase2-plan.md) so the stubs are deliberate. Practical mitigation queued: route highest-value forms to a 3rd-party forwarder while the real backend is built. Tooling blocker (node/npm) still active — stopping the loop after this iteration since nothing else moves without it.
+
 ## 2026-05-19 21:16 — Phase 2 sweep: remaining 50+ files (3 more critical no-op forms found)
 - Source: user typed "continue till end"; batched the remaining queue
 - Branch: claude-auto/2026-05-19-feature-audit-phase1 (continued)
