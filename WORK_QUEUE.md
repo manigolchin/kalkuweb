@@ -91,20 +91,45 @@ Phase 2 (static audit) — one feature per iteration, priority order:
 - [ ] Mittellohn.tsx:148 — CSV joins lines with `\n`; should be `\r\n`. Same as Kalkulator (shared CSV helper would be cleaner).
 - [ ] Mittellohn.tsx:157-181 — `exportExcel` has no `catch` for the `await import('xlsx')` chunk failure. Same as Kalkulator.
 - [ ] Mittellohn.tsx:131-136 — `reset()` clears team/lohnnebenkosten/zulagen but leaves `breakdownOpen` and all `bnk*` values. If user reset while in detail-view, they see default team with their old breakdown still applied. Reset all of `breakdownOpen`, `bnkSv/Soka/Bg/Monats13/Sonst`, and `tarifgebiet`.
-- [ ] Phase 2: audit MultiStepForm.tsx
-- [ ] Phase 2: audit Nav.tsx
-- [ ] Phase 2: audit ExitIntent.tsx
-- [ ] Phase 2: audit StickyMobileCta.tsx
-- [ ] Phase 2: audit SelfCheck.tsx
-- [ ] Phase 2: audit WhatsAppFab.tsx
-- [ ] Phase 2: audit CalendlyEmbed.tsx
-- [ ] Phase 2: audit LeadMagnet.tsx
-- [ ] Phase 2: audit RoiBlock.tsx
-- [ ] Phase 2: audit SubmissionTriage.tsx
-- [ ] Phase 2: audit FaqItem.tsx
-- [ ] Phase 2: audit remaining static pages (Home, NeuLanding, LeistungenIndex, Gewerk, Ablauf, Konditionen, UeberUns, ReferenzenIndex, Referenz, ToolsIndex, BlogIndex, BlogPost, Kontakt, Impressum, Datenschutz, AGB, NotFound) — one per iteration
-- [ ] Phase 2: audit remaining section components (sweep — group several per iteration if trivial)
-- [ ] Phase 3: runtime audit per FEATURES.md after Phase 2 completes
+- [x] Phase 2: audit MultiStepForm.tsx — sweep, see findings below
+- [x] Phase 2: audit Nav.tsx — sweep
+- [x] Phase 2: audit ExitIntent.tsx — sweep
+- [x] Phase 2: audit StickyMobileCta.tsx — sweep
+- [x] Phase 2: audit SelfCheck.tsx — sweep, clean
+- [x] Phase 2: audit WhatsAppFab.tsx — sweep, mostly clean
+- [x] Phase 2: audit CalendlyEmbed.tsx — sweep
+- [x] Phase 2: audit LeadMagnet.tsx — sweep
+- [x] Phase 2: audit RoiBlock.tsx — sweep, math clean
+- [x] Phase 2: audit SubmissionTriage.tsx — sweep, clean (intentional local-only)
+- [x] Phase 2: audit FaqItem.tsx — sweep
+- [x] Phase 2: audit remaining static pages — sweep (95% clean per agent; 4 flagged: Gewerk, Referenz, BlogPost, BlogIndex, Impressum)
+- [x] Phase 2: audit remaining section components — sweep (all clean per agent)
+- [ ] Phase 3: runtime audit per FEATURES.md after Phase 2 completes — **gated on `node`/`npm` tooling blocker** (see top of file)
+
+### Forms & overlays — sweep findings (delegated scan, verified MultiStepForm + Impressum)
+
+- [!] **MultiStepForm.tsx:114-116 — main contact form is intentionally stubbed.** The submit handler is `await new Promise((r) => setTimeout(r, 600))` followed by `setSent(true)`. The success screen (line 130) tells the customer "Wir haben deine Anfrage erhalten und melden uns innerhalb eines Werktags telefonisch unter {data.telefon}." The TODO at line 114 names the intended destination: `// TODO Phase 3.4 backend: POST /api/forms/submit (Pipedrive async push + retry queue)`. **This is the site's primary contact form. Every submission since launch has been silently dropped.** Combined with GAEB-Konverter (a8212a7) and Kalkulator (aa507db), that's **3 product-defining lead forms broken at the time of audit**.
+- [!] **LeadMagnet.tsx:12 — "Checkliste per Mail" form is stubbed.** TODO names `POST /api/forms/submit type=lead-magnet-checklist`. Success copy at line 71 promises "Wir senden die Checkliste binnen weniger Minuten" but no fetch exists.
+- [!] **ExitIntent.tsx:74 — Exit-intent whitepaper form is stubbed.** TODO names `POST /api/forms/submit type=whitepaper`. Success copy at line 109 promises "Wir senden Ihnen das Whitepaper an {email} innerhalb der nächsten Minuten" but no fetch exists.
+- [ ] **Aggregate: build the `POST /api/forms/submit` endpoint once with a `type` discriminator** (`contact`, `lead-magnet-checklist`, `whitepaper`, plus 2 from the tool pages). Wire all 5 forms to it. Until the endpoint exists, hide the success-state copy that promises delivery, or fall back to a `mailto:` so leads aren't lost.
+- [ ] ExitIntent.tsx:83 — `role="dialog"` set but no focus trap; tab order can leak to background page. Add focus-trap + `inert` body, restore focus to trigger on close.
+- [ ] ExitIntent.tsx:93-99 — close button missing `aria-controls` pointing to the dialog id.
+- [ ] MultiStepForm.tsx:160, 195, 260… — inputs are wrapped in a `Field` component that owns labels but doesn't propagate `htmlFor`. Threading `useId` through the Field wrapper fixes every input in one change.
+- [ ] Nav.tsx:65 — mobile hamburger has `aria-label` + `aria-expanded` (good) but focus isn't moved into the menu on open. Add `useEffect` to move focus to first menu item when expanded.
+- [ ] StickyMobileCta.tsx:29-30 — region has `aria-label="Schnell-Kontakt"` but the icon-only links inside lack `aria-label`. Add labels per link.
+- [ ] WhatsAppFab.tsx:14-19 — `useState(true)` defaults to "dismissed", then localStorage override fires on first render; brief flicker possible. Initialize state from localStorage in the lazy initializer rather than via effect.
+- [ ] FaqItem.tsx:31 — question text is in a `<span>` inside a button; screen reader announces it as button text only. Wrap question in semantic `<h3>` (or `<h4>` depending on outer headings) inside the button for proper outline.
+- [ ] CalendlyEmbed.tsx:18-19 — Calendly's `widget.js` script-load dedupe uses a DOM query but doesn't track in-flight async loads. Two embeds mounting simultaneously can both inject the script. Track a module-level boolean. Also note: external `assets.calendly.com` script load — confirm consent handling per GDPR before launch.
+- [ ] RoiBlock.tsx:29 — hardcoded pricing tiers (`subs <= 1 ? 400 : subs <= 5 ? 3000 : 5000`). When prices change on `/konditionen`, this drifts silently. Pull from a shared constant (`src/lib/constants.ts`).
+
+### Static pages — sweep findings
+
+- [ ] **Gewerk.tsx + Referenz.tsx — slug validation missing.** Routes `/leistungen/:slug` and `/referenzen/:slug` accept any string. Gewerk redirects to index on unknown slugs (silent, no 404 status); Referenz renders the `_PagePlaceholder` for any value. Either reject unknown slugs to `<NotFound />` (preferred — preserves 404 status for SEO) or add a `<Helmet>` `noindex` for the placeholder render.
+- [!] **Impressum.tsx:57 — public legal page contains the line "Vollständig juristisch geprüfte Fassung folgt in Phase 5 (Pre-Launch-QA)."** Customers inspect this page before signing. Remove the line and ship the final legal text now, OR move the page behind a noindex/staging banner until ready.
+- [ ] BlogIndex.tsx:145 — newsletter section copy implies a sign-up form but the only action is `mailto:info@kalku.de`. Either build the signup form or rewrite the copy to match (no UI promise of an email-based feature that isn't built).
+- [ ] BlogPost.tsx:24-40 — 404-fallback render path and "found-post" render path both use `<h1>`. They're mutually exclusive at runtime so the page never has two h1s simultaneously — minor — but the duplicate is a maintenance hazard. Demote the 404 fallback to `<h2>` inside a section that already has an h1.
+- [ ] src/data/blog.tsx:205, 873 — hardcoded phone numbers in two article bodies. Match the NAP constant currently but won't auto-update if NAP changes. Replace with `{NAP.phone}` expression or pull into a small `<PhoneLink />` helper.
+- [ ] All legal pages (Impressum, Datenschutz, AGB) — agent reports no `og:title`/`og:description`. Add `<meta property="og:..."`> via Helmet for share-preview consistency. Verify before fixing — agent didn't enumerate which tags Helmet currently sets.
 
 ## Backlog
 

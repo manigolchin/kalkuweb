@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-05-19 21:16 — Phase 2 sweep: remaining 50+ files (3 more critical no-op forms found)
+- Source: user typed "continue till end"; batched the remaining queue
+- Branch: claude-auto/2026-05-19-feature-audit-phase1 (continued)
+- Result: docs-only commit; all remaining Phase 2 items marked. Phase 3 gated on tooling blocker.
+- Notes: Delegated two parallel Explore agents — one on forms/overlays (13 files), one on static pages + sections (50+ files). Verified the two most consequential agent claims via direct read: **MultiStepForm.tsx:114-116 is intentionally stubbed (setTimeout(600ms) then setSent(true), TODO names Pipedrive backend); Impressum.tsx:57 contains public "Phase 5 Pre-Launch-QA" disclaimer.** Site-wide tally: **5 broken lead-capture forms** (GAEB-Konverter, Kalkulator, MultiStepForm/main contact, LeadMagnet checklist, ExitIntent whitepaper). All three new ones carry `// TODO Phase X backend` and were never wired. Filed a single combined fix item: build `POST /api/forms/submit` with a `type` discriminator and wire all 5 to it. Other items: Gewerk/Referenz lack slug validation, BlogPost has duplicate h1 across render branches, BlogIndex newsletter is mailto-only, hardcoded phone in 2 blog articles, Calendly script-dedup race, RoiBlock hardcodes pricing, several a11y items in MultiStepForm/Nav/StickyMobileCta/FaqItem/ExitIntent. **Phase 2 complete; Phase 3 (runtime) remains blocked on node/npm not being on PATH.**
+
 ## 2026-05-19 21:10 — Phase 2: static audit Mittellohn.tsx (export-drift bug)
 - Source: WORK_QUEUE Phase 2 next item; user typed "continue till end"
 - Branch: claude-auto/2026-05-19-feature-audit-phase1 (continued)

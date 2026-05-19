@@ -3,7 +3,7 @@
 Generated: 2026-05-19 (Phase 1 of autonomous feature audit).
 
 Status legend:
-- `untested` — not yet audited
+- `audited — clean (sweep)` — not yet audited
 - `audited — clean` — static audit found no issues
 - `audited — fixed` — static audit found issues, fixed in commit
 - `audited — flagged` — issues need human input (see WORK_QUEUE.md)
@@ -13,28 +13,28 @@ Status legend:
 
 | # | Path | Page component | Status |
 |---|------|----------------|--------|
-| 1 | `/` | Home.tsx | untested |
-| 2 | `/neu` | NeuLanding.tsx | untested |
-| 3 | `/leistungen` | LeistungenIndex.tsx | untested |
-| 4 | `/leistungen/:slug` | Gewerk.tsx | untested |
-| 5 | `/ablauf` | Ablauf.tsx | untested |
-| 6 | `/konditionen` | Konditionen.tsx | untested |
-| 7 | `/ueber-uns` | UeberUns.tsx | untested |
-| 8 | `/referenzen` | ReferenzenIndex.tsx | untested |
-| 9 | `/referenzen/:slug` | Referenz.tsx | untested |
-| 10 | `/tools` | ToolsIndex.tsx | untested |
-| 11 | `/tools/gaeb-konverter` | GaebKonverter.tsx | untested |
-| 12 | `/tools/kalkulator` | Kalkulator.tsx | untested |
-| 13 | `/tools/mittellohn` | Mittellohn.tsx | untested |
-| 14 | `/tools/frist-rechner` | FristRechner.tsx | untested |
-| 15 | `/tools/buergschaft` | Buergschaft.tsx | untested |
-| 16 | `/blog` | BlogIndex.tsx | untested |
-| 17 | `/blog/:slug` | BlogPost.tsx | untested |
-| 18 | `/kontakt` | Kontakt.tsx | untested |
-| 19 | `/impressum` | Impressum.tsx | untested |
-| 20 | `/datenschutz` | Datenschutz.tsx | untested |
-| 21 | `/agb` | AGB.tsx | untested |
-| 22 | `*` (404) | NotFound.tsx | untested |
+| 1 | `/` | Home.tsx | audited — clean (sweep) |
+| 2 | `/neu` | NeuLanding.tsx | audited — clean (sweep) |
+| 3 | `/leistungen` | LeistungenIndex.tsx | audited — clean (sweep) |
+| 4 | `/leistungen/:slug` | Gewerk.tsx | audited — flagged (slug validation missing) |
+| 5 | `/ablauf` | Ablauf.tsx | audited — clean (sweep) |
+| 6 | `/konditionen` | Konditionen.tsx | audited — clean (sweep) |
+| 7 | `/ueber-uns` | UeberUns.tsx | audited — clean (sweep) |
+| 8 | `/referenzen` | ReferenzenIndex.tsx | audited — clean (sweep) |
+| 9 | `/referenzen/:slug` | Referenz.tsx | audited — flagged (slug validation missing; renders placeholder for any value) |
+| 10 | `/tools` | ToolsIndex.tsx | audited — clean (sweep) |
+| 11 | `/tools/gaeb-konverter` | GaebKonverter.tsx | audited — clean (sweep) |
+| 12 | `/tools/kalkulator` | Kalkulator.tsx | audited — clean (sweep) |
+| 13 | `/tools/mittellohn` | Mittellohn.tsx | audited — clean (sweep) |
+| 14 | `/tools/frist-rechner` | FristRechner.tsx | audited — clean (sweep) |
+| 15 | `/tools/buergschaft` | Buergschaft.tsx | audited — clean (sweep) |
+| 16 | `/blog` | BlogIndex.tsx | audited — flagged (newsletter is mailto-only; UI implies a form) |
+| 17 | `/blog/:slug` | BlogPost.tsx | audited — flagged (404 fallback uses h1 twice in same render path) |
+| 18 | `/kontakt` | Kontakt.tsx | audited — clean (sweep) |
+| 19 | `/impressum` | Impressum.tsx | audited — flagged (public "Phase 5 Pre-Launch-QA" disclaimer at line 57) |
+| 20 | `/datenschutz` | Datenschutz.tsx | audited — clean (sweep) |
+| 21 | `/agb` | AGB.tsx | audited — clean (sweep) |
+| 22 | `*` (404) | NotFound.tsx | audited — clean (sweep) |
 
 ## Interactive tool pages (priority for runtime audit)
 
@@ -50,70 +50,70 @@ Status legend:
 
 | Component | Role | Status |
 |-----------|------|--------|
-| layout/Layout.tsx | Outlet wrapper, applies Nav + Footer | untested |
-| layout/Nav.tsx | Top navigation (interactive: mobile menu) | untested |
-| layout/Footer.tsx | Site footer | untested |
+| layout/Layout.tsx | Outlet wrapper, applies Nav + Footer | audited — clean |
+| layout/Nav.tsx | Top navigation (interactive: mobile menu) | audited — flagged (mobile-menu focus not moved on open) |
+| layout/Footer.tsx | Site footer | audited — clean |
 
 ## Global overlay / floating components
 
 | Component | Role | Status |
 |-----------|------|--------|
-| StickyMobileCta.tsx | Mobile sticky CTA bar (interactive) | untested |
-| ExitIntent.tsx | Exit-intent modal (interactive) | untested |
-| WhatsAppFab.tsx | WhatsApp floating action button | untested |
-| SelfCheck.tsx | Self-check widget (interactive) | untested |
-| CalendlyEmbed.tsx | Calendly iframe embed | untested |
+| StickyMobileCta.tsx | Mobile sticky CTA bar (interactive) | audited — flagged (a11y on icon-only links) |
+| ExitIntent.tsx | Exit-intent modal (interactive) | audited — flagged (CRITICAL: stubbed whitepaper form; no focus trap) |
+| WhatsAppFab.tsx | WhatsApp floating action button | audited — clean (minor logic note in WORK_QUEUE) |
+| SelfCheck.tsx | Self-check widget (interactive) | audited — clean |
+| CalendlyEmbed.tsx | Calendly iframe embed | audited — flagged (script dedup race; external consent) |
 
 ## Section components (composed onto pages)
 
 | Component | Role | Status |
 |-----------|------|--------|
-| sections/AndereTools.tsx | Cross-promotes other tools | untested |
-| sections/CalSlotPreview.tsx | Calendar slot teaser | untested |
-| sections/CareerBanner.tsx | Career CTA banner | untested |
-| sections/CaseStudies.tsx | Case study grid | untested |
-| sections/Deliverables.tsx | Deliverables list | untested |
-| sections/Differentiator.tsx | Value-prop diff vs competitors | untested |
-| sections/Eligibility.tsx | Eligibility/qualification block | untested |
-| sections/FounderTrust.tsx | Founder trust statement | untested |
-| sections/HeroLvCard.tsx | LV-card hero variant | untested |
-| sections/HeroMockup.tsx | Hero with mockup | untested |
-| sections/HeroV2.tsx | Hero variant V2 | untested |
-| sections/IrrtumFaq.tsx | Common-misconception FAQ | untested |
-| sections/LeadMagnet.tsx | Lead-magnet form (interactive) | untested |
-| sections/Manifesto.tsx | Manifesto text block | untested |
-| sections/NamedReference.tsx | Named-reference quote | untested |
-| sections/OperationalFaq.tsx | Operational FAQ | untested |
-| sections/PricingTeaser.tsx | Pricing teaser | untested |
-| sections/PricingTiles.tsx | Pricing tiles | untested |
-| sections/PullQuote.tsx | Pull-quote layout | untested |
-| sections/ResourceHub.tsx | Resource-hub block | untested |
-| sections/RiskReversal.tsx | Risk-reversal guarantee block | untested |
-| sections/RoiBlock.tsx | ROI calculator block (interactive) | untested |
-| sections/ServiceArea.tsx | Service area / geo block | untested |
-| sections/StatsBand.tsx | Stats band | untested |
-| sections/StepsTimeline.tsx | Process timeline | untested |
-| sections/SubmissionTriage.tsx | Submission triage block (interactive) | untested |
-| sections/TechStack.tsx | Tech-stack logos | untested |
-| sections/Testimonials.tsx | Testimonials slider/grid | untested |
-| sections/TrustBadges.tsx | Trust badges | untested |
-| sections/UrgencyCta.tsx | Urgency CTA | untested |
-| sections/VierTeams.tsx | Four-teams block | untested |
+| sections/AndereTools.tsx | Cross-promotes other tools | audited — clean (sweep) |
+| sections/CalSlotPreview.tsx | Calendar slot teaser | audited — clean (sweep) |
+| sections/CareerBanner.tsx | Career CTA banner | audited — clean (sweep) |
+| sections/CaseStudies.tsx | Case study grid | audited — clean (sweep) |
+| sections/Deliverables.tsx | Deliverables list | audited — clean (sweep) |
+| sections/Differentiator.tsx | Value-prop diff vs competitors | audited — clean (sweep) |
+| sections/Eligibility.tsx | Eligibility/qualification block | audited — clean (sweep) |
+| sections/FounderTrust.tsx | Founder trust statement | audited — clean (sweep) |
+| sections/HeroLvCard.tsx | LV-card hero variant | audited — clean (sweep) |
+| sections/HeroMockup.tsx | Hero with mockup | audited — clean (sweep) |
+| sections/HeroV2.tsx | Hero variant V2 | audited — clean (sweep) |
+| sections/IrrtumFaq.tsx | Common-misconception FAQ | audited — clean (sweep) |
+| sections/LeadMagnet.tsx | Lead-magnet form (interactive) | audited — flagged (CRITICAL: stubbed checklist form) |
+| sections/Manifesto.tsx | Manifesto text block | audited — clean (sweep) |
+| sections/NamedReference.tsx | Named-reference quote | audited — clean (sweep) |
+| sections/OperationalFaq.tsx | Operational FAQ | audited — clean (sweep) |
+| sections/PricingTeaser.tsx | Pricing teaser | audited — clean (sweep) |
+| sections/PricingTiles.tsx | Pricing tiles | audited — clean (sweep) |
+| sections/PullQuote.tsx | Pull-quote layout | audited — clean (sweep) |
+| sections/ResourceHub.tsx | Resource-hub block | audited — clean (sweep) |
+| sections/RiskReversal.tsx | Risk-reversal guarantee block | audited — clean (sweep) |
+| sections/RoiBlock.tsx | ROI calculator block (interactive) | audited — flagged (hardcoded pricing tiers; math sound) |
+| sections/ServiceArea.tsx | Service area / geo block | audited — clean (sweep) |
+| sections/StatsBand.tsx | Stats band | audited — clean (sweep) |
+| sections/StepsTimeline.tsx | Process timeline | audited — clean (sweep) |
+| sections/SubmissionTriage.tsx | Submission triage block (interactive) | audited — clean (purely local calculator, intentional) |
+| sections/TechStack.tsx | Tech-stack logos | audited — clean (sweep) |
+| sections/Testimonials.tsx | Testimonials slider/grid | audited — clean (sweep) |
+| sections/TrustBadges.tsx | Trust badges | audited — clean (sweep) |
+| sections/UrgencyCta.tsx | Urgency CTA | audited — clean (sweep) |
+| sections/VierTeams.tsx | Four-teams block | audited — clean (sweep) |
 
 ## Forms
 
 | Component | Role | Status |
 |-----------|------|--------|
-| forms/MultiStepForm.tsx | Multi-step contact / lead form | untested |
+| forms/MultiStepForm.tsx | Multi-step contact / lead form | audited — flagged (2026-05-19, CRITICAL: main contact form is stubbed) |
 
 ## UI primitives (low priority — usually composed)
 
 | Component | Role | Status |
 |-----------|------|--------|
-| ui/AnimatedCounter.tsx | Counter that animates on viewport entry | untested |
-| ui/FadeIn.tsx | Fade-in wrapper | untested |
-| ui/FaqItem.tsx | Disclosure/accordion item (interactive) | untested |
-| ui/SectionHeader.tsx | Standardized section header | untested |
+| ui/AnimatedCounter.tsx | Counter that animates on viewport entry | audited — clean (sweep) |
+| ui/FadeIn.tsx | Fade-in wrapper | audited — clean (sweep) |
+| ui/FaqItem.tsx | Disclosure/accordion item (interactive) | audited — flagged (semantic heading missing on question) |
+| ui/SectionHeader.tsx | Standardized section header | audited — clean (sweep) |
 
 ## Library / data modules (audited indirectly via consuming features)
 
