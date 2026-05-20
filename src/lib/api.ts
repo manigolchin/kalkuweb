@@ -123,6 +123,31 @@ export const api = {
       request<{ ok: true }>(`/shares/${shareId}`, { method: 'DELETE' }),
     responses: (shareId: string) =>
       request<{ responses: ShareResponse[] }>(`/shares/${shareId}/responses`),
+    resnapshotPreview: (shareId: string) =>
+      request<{
+        currentVersion: number;
+        proposedVersion: number;
+        currentHash: string | null;
+        proposedHash: string;
+        diff: {
+          added: Array<{ id: string; oz: string; shortText: string; ep: number; gp: number; quantity: number; unit: string }>;
+          removed: Array<{ id: string; oz: string; shortText: string; ep: number; gp: number; quantity: number; unit: string }>;
+          changed: Array<{
+            before: { id: string; oz: string; shortText: string; ep: number; gp: number; quantity: number; unit: string };
+            after: { id: string; oz: string; shortText: string; ep: number; gp: number; quantity: number; unit: string };
+            fields: string[];
+          }>;
+          unchanged: Array<{ id: string }>;
+          oldTotalNetto: number;
+          newTotalNetto: number;
+          delta: number;
+        };
+      }>(`/shares/${shareId}/resnapshot-preview`),
+    resnapshot: (shareId: string) =>
+      request<{ ok: true; snapshotVersion: number; snapshotHash: string }>(
+        `/shares/${shareId}/resnapshot`,
+        { method: 'POST' },
+      ),
   },
   inbox: {
     list: () =>

@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  X, Eye, EyeOff, Link2, Copy, Check, Loader2, AlertTriangle,
+  X, Eye, EyeOff, Link2, Copy, Check, Loader2, AlertTriangle, RefreshCw, ArrowRight,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -74,6 +74,7 @@ export default function ShareDialog({
   const [creating, setCreating] = useState(false);
   const [createdShare, setCreatedShare] = useState<ShareSummary | null>(null);
   const [copied, setCopied] = useState(false);
+  const [resnapTarget, setResnapTarget] = useState<ShareSummary | null>(null);
 
   const visiblePositions = useMemo(
     () => positions.filter((p) => selected.has(p.id)),
@@ -365,9 +366,19 @@ export default function ShareDialog({
                           <span className="font-mono text-xs text-slate-500 flex-1 truncate">
                             /share/{s.token.slice(0, 12)}…
                           </span>
+                          <span className="text-xs text-slate-400 hidden sm:inline">
+                            v{s.snapshotHash ? s.snapshottedAt?.slice(0, 10) || '' : '—'}
+                          </span>
                           <span className="text-xs text-slate-500">
                             {s.viewCount} Aufruf{s.viewCount === 1 ? '' : 'e'}
                           </span>
+                          <button
+                            onClick={() => setResnapTarget(s)}
+                            className="p-1.5 rounded text-slate-500 hover:bg-amber-50 hover:text-amber-700"
+                            title="Snapshot aktualisieren — neuen Stand des Projekts in den Link übernehmen"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                          </button>
                           <button
                             onClick={() => copy(shareUrl(s.token))}
                             className="p-1.5 rounded text-slate-500 hover:bg-slate-100"
@@ -390,6 +401,18 @@ export default function ShareDialog({
             </>
           )}
         </div>
+
+        {resnapTarget && (
+          <ResnapshotDialog
+            share={resnapTarget}
+            onClose={() => setResnapTarget(null)}
+            onDone={(snapshotVersion, snapshotHash) => {
+              onCreated({ ...resnapTarget, snapshotHash, snapshottedAt: new Date().toISOString() });
+              setResnapTarget(null);
+              toast.success(`Snapshot v${snapshotVersion} aktiv`);
+            }}
+          />
+        )}
 
         {!createdShare && (
           <div className="flex justify-between items-center px-6 py-4 border-t border-slate-100 bg-slate-50/40">
@@ -441,6 +464,212 @@ function Toggle({
         <span className="block text-xs text-slate-500 mt-0.5">{description}</span>
       </span>
     </label>
+  );
+}
+
+function ResnapshotDialog({
+  share,
+  onClose,
+  onDone,
+}: {
+  share: ShareSummary;
+  onClose: () => void;
+  onDone: (snapshotVersion: number, snapshotHash: string) => void;
+}) {
+  type Preview = Awaited<ReturnType<typeof api.shares.resnapshotPreview>>;
+  const [state, setState] = useState<{ kind: 'loading' } | { kind: 'error'; msg: string } | { kind: 'ready'; preview: Preview }>({ kind: 'loading' });
+  const [committing, setCommitting] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const preview = await api.shares.resnapshotPreview(share.id);
+        if (alive) setState({ kind: 'ready', preview });
+      } catch (err) {
+        if (alive) setState({ kind: 'error', msg: err instanceof Error ? err.message : 'Konnte Vorschau nicht laden.' });
+      }
+    })();
+    return () => { alive = false; };
+  }, [share.id]);
+
+  async function commit() {
+    setCommitting(true);
+    try {
+      const r = await api.shares.resnapshot(share.id);
+      onDone(r.snapshotVersion, r.snapshotHash);
+    } catch {
+      toast.error('Aktualisieren fehlgeschlagen.');
+    } finally {
+      setCommitting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[88vh] flex flex-col">
+        <header className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-amber-50 text-amber-700">
+              <RefreshCw className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-slate-900">Snapshot aktualisieren</h3>
+              <p className="text-xs text-slate-500 font-mono">/share/{share.token.slice(0, 12)}…</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-lg text-slate-400 hover:bg-slate-100">
+            <X className="w-4 h-4" />
+          </button>
+        </header>
+
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+          {state.kind === 'loading' && (
+            <div className="py-12 grid place-items-center"><Loader2 className="w-5 h-5 animate-spin text-primary-500" /></div>
+          )}
+          {state.kind === 'error' && (
+            <p className="text-sm text-red-700 bg-red-50 p-3 rounded">{state.msg}</p>
+          )}
+          {state.kind === 'ready' && (() => {
+            const { preview } = state;
+            const d = preview.diff;
+            const noChange = d.added.length === 0 && d.removed.length === 0 && d.changed.length === 0;
+            return (
+              <>
+                <p className="text-sm text-slate-600">
+                  Snapshot v{preview.currentVersion} → <strong>v{preview.proposedVersion}</strong>. Der Kunde
+                  sieht ab dann den neuen Stand des Projekts; alte rechtliche Bindung (Hash {preview.currentHash?.slice(0,10)}…) bleibt im Audit-Log.
+                </p>
+                {noChange ? (
+                  <p className="text-sm text-slate-500 italic bg-slate-50 border border-slate-200 rounded p-3">
+                    Keine Änderungen — der aktuelle Snapshot entspricht bereits dem Projektstand. Aktualisieren ist nicht nötig.
+                  </p>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-3 gap-2 text-xs">
+                      <Stat label="Neu" value={d.added.length} color="emerald" />
+                      <Stat label="Geändert" value={d.changed.length} color="amber" />
+                      <Stat label="Entfernt" value={d.removed.length} color="red" />
+                    </div>
+                    <div className="border border-slate-200 rounded-xl p-3 text-sm space-y-3">
+                      {d.added.length > 0 && (
+                        <DiffSection title="Neu" tone="emerald">
+                          {d.added.map((p) => (
+                            <DiffRow key={p.id} oz={p.oz} text={p.shortText} qty={`${p.quantity} ${p.unit}`} after={p.gp} />
+                          ))}
+                        </DiffSection>
+                      )}
+                      {d.changed.length > 0 && (
+                        <DiffSection title="Geändert" tone="amber">
+                          {d.changed.map((c) => (
+                            <DiffRow
+                              key={c.after.id}
+                              oz={c.after.oz}
+                              text={c.after.shortText}
+                              qty={c.fields.includes('quantity') ? `${c.before.quantity} → ${c.after.quantity} ${c.after.unit}` : `${c.after.quantity} ${c.after.unit}`}
+                              before={c.before.gp}
+                              after={c.after.gp}
+                            />
+                          ))}
+                        </DiffSection>
+                      )}
+                      {d.removed.length > 0 && (
+                        <DiffSection title="Entfernt" tone="red">
+                          {d.removed.map((p) => (
+                            <DiffRow key={p.id} oz={p.oz} text={p.shortText} qty={`${p.quantity} ${p.unit}`} before={p.gp} />
+                          ))}
+                        </DiffSection>
+                      )}
+                    </div>
+                    <div className="bg-slate-50 border border-slate-200 rounded p-3 text-sm flex items-center justify-between">
+                      <span className="text-slate-600">Netto-Summe</span>
+                      <span className="tabular-nums">
+                        {formatEUR(d.oldTotalNetto)} <ArrowRight className="w-3 h-3 inline mx-1" /> <strong>{formatEUR(d.newTotalNetto)}</strong>{' '}
+                        <span className={clsx('text-xs', d.delta > 0 ? 'text-amber-700' : d.delta < 0 ? 'text-emerald-700' : 'text-slate-400')}>
+                          ({d.delta > 0 ? '+' : ''}{formatEUR(d.delta)})
+                        </span>
+                      </span>
+                    </div>
+                  </>
+                )}
+              </>
+            );
+          })()}
+        </div>
+
+        <footer className="flex justify-between items-center px-6 py-4 border-t border-slate-100 bg-slate-50/40">
+          <p className="text-xs text-slate-500 flex items-center gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+            Alter Stand bleibt prüfbar im Audit-Log.
+          </p>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="btn btn-secondary">Abbrechen</button>
+            <button
+              onClick={commit}
+              disabled={committing || state.kind !== 'ready'}
+              className="btn btn-primary disabled:opacity-50 flex items-center gap-2"
+            >
+              {committing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              Snapshot aktualisieren
+            </button>
+          </div>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value, color }: { label: string; value: number; color: 'emerald' | 'amber' | 'red' }) {
+  return (
+    <div className={clsx(
+      'border rounded-lg p-2 text-center',
+      color === 'emerald' && 'border-emerald-200 bg-emerald-50/60',
+      color === 'amber' && 'border-amber-200 bg-amber-50/60',
+      color === 'red' && 'border-red-200 bg-red-50/60',
+    )}>
+      <div className={clsx('text-lg font-bold tabular-nums',
+        color === 'emerald' && 'text-emerald-700',
+        color === 'amber' && 'text-amber-700',
+        color === 'red' && 'text-red-700',
+      )}>{value}</div>
+      <div className="text-slate-600">{label}</div>
+    </div>
+  );
+}
+
+function DiffSection({ title, tone, children }: { title: string; tone: 'emerald' | 'amber' | 'red'; children: React.ReactNode }) {
+  return (
+    <div>
+      <h4 className={clsx('text-xs font-semibold uppercase tracking-wider mb-1',
+        tone === 'emerald' && 'text-emerald-700',
+        tone === 'amber' && 'text-amber-700',
+        tone === 'red' && 'text-red-700',
+      )}>{title}</h4>
+      <ul className="divide-y divide-slate-100 text-xs">{children}</ul>
+    </div>
+  );
+}
+
+function DiffRow({ oz, text, qty, before, after }: { oz: string; text: string; qty: string; before?: number; after?: number }) {
+  return (
+    <li className="py-1.5 flex items-center gap-3">
+      <span className="font-mono text-slate-400 w-12">{oz || '—'}</span>
+      <span className="flex-1 truncate">{text || '(leer)'}</span>
+      <span className="text-slate-500 hidden sm:inline">{qty}</span>
+      <span className="tabular-nums w-28 text-right">
+        {before !== undefined && after !== undefined ? (
+          <>
+            <span className="text-slate-400 line-through">{formatEUR(before)}</span>{' '}
+            <span className={clsx(after > before ? 'text-amber-700' : 'text-emerald-700', 'font-semibold')}>{formatEUR(after)}</span>
+          </>
+        ) : before !== undefined ? (
+          <span className="text-red-700 line-through">{formatEUR(before)}</span>
+        ) : (
+          <span className="text-emerald-700 font-semibold">{formatEUR(after ?? 0)}</span>
+        )}
+      </span>
+    </li>
   );
 }
 

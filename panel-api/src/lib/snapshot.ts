@@ -76,6 +76,69 @@ export function snapshotHash(snapshot: ShareSnapshot): string {
   return createHash('sha256').update(JSON.stringify(snapshot)).digest('hex');
 }
 
+export type SnapshotDiff = {
+  added: ShareSnapshot['positions'];
+  removed: ShareSnapshot['positions'];
+  changed: Array<{
+    before: ShareSnapshot['positions'][number];
+    after: ShareSnapshot['positions'][number];
+    fields: string[];
+  }>;
+  unchanged: ShareSnapshot['positions'];
+  oldTotalNetto: number;
+  newTotalNetto: number;
+  delta: number;
+};
+
+function totalNetto(s: ShareSnapshot): number {
+  return s.positions.filter((p) => !p.isHeader).reduce((t, p) => t + p.gp, 0);
+}
+
+/** Compare two snapshots — used both before re-share (preview) and after
+ *  (audit-log payload of snapshot.regenerated). Identity is by position.id. */
+export function diffSnapshots(before: ShareSnapshot, after: ShareSnapshot): SnapshotDiff {
+  const beforeById = new Map(before.positions.map((p) => [p.id, p]));
+  const afterById = new Map(after.positions.map((p) => [p.id, p]));
+
+  const added: ShareSnapshot['positions'] = [];
+  const removed: ShareSnapshot['positions'] = [];
+  const changed: SnapshotDiff['changed'] = [];
+  const unchanged: ShareSnapshot['positions'] = [];
+
+  for (const a of after.positions) {
+    const b = beforeById.get(a.id);
+    if (!b) {
+      added.push(a);
+      continue;
+    }
+    const diffFields: string[] = [];
+    if (b.shortText !== a.shortText) diffFields.push('shortText');
+    if (b.longText !== a.longText) diffFields.push('longText');
+    if (b.quantity !== a.quantity) diffFields.push('quantity');
+    if (b.unit !== a.unit) diffFields.push('unit');
+    if (Math.abs(b.ep - a.ep) > 1e-6) diffFields.push('ep');
+    if (Math.abs(b.gp - a.gp) > 1e-6) diffFields.push('gp');
+    if (b.isHeader !== a.isHeader) diffFields.push('isHeader');
+    if (diffFields.length > 0) changed.push({ before: b, after: a, fields: diffFields });
+    else unchanged.push(a);
+  }
+  for (const b of before.positions) {
+    if (!afterById.has(b.id)) removed.push(b);
+  }
+
+  const oldTotalNetto = totalNetto(before);
+  const newTotalNetto = totalNetto(after);
+  return {
+    added,
+    removed,
+    changed,
+    unchanged,
+    oldTotalNetto,
+    newTotalNetto,
+    delta: newTotalNetto - oldTotalNetto,
+  };
+}
+
 /**
  * Legacy fallback for share rows created before the snapshot column existed.
  * Builds a snapshot on-the-fly from the live project. Logs a warning so the

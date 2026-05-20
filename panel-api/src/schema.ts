@@ -31,6 +31,7 @@ export const shares = sqliteTable('shares', {
   settings: text('settings', { mode: 'json' }).notNull().$type<ShareSettings>(),
   snapshotData: text('snapshot_data', { mode: 'json' }).$type<ShareSnapshot | null>(),
   snapshotHash: text('snapshot_hash'),
+  snapshotVersion: integer('snapshot_version').notNull().default(1),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
   revokedAt: integer('revoked_at', { mode: 'timestamp_ms' }),
   lastViewedAt: integer('last_viewed_at', { mode: 'timestamp_ms' }),
