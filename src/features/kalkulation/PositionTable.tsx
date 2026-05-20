@@ -597,6 +597,38 @@ export default function PositionTable({ positions, params, onChange }: Props) {
         />
         <button
           onClick={() => {
+            // Smart-default: set timeMinutes=60 on rows whose unit is a
+            // time/hour unit AND timeMinutes is still 0. Covers the
+            // "Mittlerer Stundensatz / Bagger 0.4-1.0 / Radlader 15 to"
+            // pattern that's common in GAEB-imported Baustelleneinrichtung
+            // positions where the EH is "h" and the customer expects to
+            // see a labor portion. Material/NU we don't touch — too
+            // varied to guess.
+            const TIME_UNITS = new Set(['h', 'std', 'std.', 'stunde', 'stunden', 'h.', 'astd', 'astd.', 'akh']);
+            const isTimeUnit = (u: string) => TIME_UNITS.has(u.trim().toLowerCase());
+            let bumped = 0;
+            const next = positions.map((p) => {
+              if (p.isHeader) return p;
+              if (!isTimeUnit(p.unit)) return p;
+              if (p.timeMinutes > 0) return p;
+              bumped += 1;
+              return { ...p, timeMinutes: 60 };
+            });
+            if (bumped === 0) {
+              toast('Keine offenen Stundenlohn-Positionen gefunden.', { icon: 'ℹ️' });
+              return;
+            }
+            onChange(next);
+            toast.success(`${bumped} Stundenlohn-Position${bumped === 1 ? '' : 'en'}: 60 min/EH gesetzt (Verrechnungslohn × 1 h).`);
+          }}
+          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-sm text-slate-600 hover:border-slate-300"
+          title="Stundenlohn-Positionen (EH h/Std) automatisch auf 60 min/EH setzen — Material/NU müssen Sie weiter selbst eintragen"
+        >
+          <Sigma className="w-3.5 h-3.5" />
+          Stundensatz-Vorbelegung
+        </button>
+        <button
+          onClick={() => {
             const yes = positions.some((p) => !p.visibleToCustomer);
             onChange(positions.map((p) => ({ ...p, visibleToCustomer: yes })));
           }}
@@ -881,13 +913,23 @@ const NumCell = memo(function NumCell({
   value: number;
   onChange: (v: string) => void;
 }) {
+  const isZero = value === 0;
   return (
     <td className="px-1 py-1">
       <input
-        value={formatNum(value, value % 1 === 0 ? 0 : 2)}
+        value={isZero ? '' : formatNum(value, value % 1 === 0 ? 0 : 2)}
+        placeholder="0"
+        inputMode="decimal"
         onChange={(e: ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
         onFocus={(e) => e.target.select()}
-        className="w-full px-1.5 py-1 rounded-md border border-transparent bg-transparent text-right tabular-nums outline-none focus:bg-white focus:border-primary-300 focus:ring-1 focus:ring-primary-200"
+        className={clsx(
+          'w-full px-1.5 py-1 rounded-md border text-right tabular-nums outline-none transition-colors',
+          'placeholder:text-slate-300 cursor-text',
+          isZero
+            ? 'border-slate-200 bg-slate-50/70 hover:bg-white hover:border-slate-300 text-slate-700'
+            : 'border-slate-200 bg-white text-slate-900',
+          'focus:bg-white focus:border-primary-400 focus:ring-1 focus:ring-primary-200',
+        )}
       />
     </td>
   );
