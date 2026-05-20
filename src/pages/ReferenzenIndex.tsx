@@ -34,8 +34,8 @@ export default function ReferenzenIndex() {
         </div>
       </section>
 
-      {/* CASE STUDIES — reused from Home */}
-      <CaseStudies />
+      {/* CASE STUDIES — full pool on this page */}
+      <CaseStudies showAll />
 
       {/* WAS WIR NICHT MACHEN */}
       <section className="section bg-gray-50">

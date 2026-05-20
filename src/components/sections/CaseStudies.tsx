@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
-import { ArrowRight, RefreshCw } from 'lucide-react';
+import { useMemo } from 'react';
+import { Link } from 'react-router-dom';
+import { ArrowRight } from 'lucide-react';
 import SectionHeader from '@/components/ui/SectionHeader';
 
 type TradeColor =
@@ -130,22 +131,26 @@ const PILL_CLASSES: Record<TradeColor, string> = {
   indigo: 'bg-indigo-100 text-indigo-800',
 };
 
-const VISIBLE_CASES = 6;
+const SAMPLE_SIZE = 3;
 
-function pickCases(pool: Case[], n: number): Case[] {
+function shuffle(pool: Case[]): Case[] {
   const copy = pool.slice();
   for (let i = copy.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [copy[i], copy[j]] = [copy[j], copy[i]];
   }
-  return copy.slice(0, n);
+  return copy;
 }
 
-export default function CaseStudies() {
-  const [shuffleKey, setShuffleKey] = useState(0);
-  // shuffleKey is the re-shuffle trigger — bumping it via the button reruns pickCases.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const visible = useMemo(() => pickCases(CASES, VISIBLE_CASES), [shuffleKey]);
+type Props = {
+  showAll?: boolean;
+};
+
+export default function CaseStudies({ showAll = false }: Props) {
+  const visible = useMemo(
+    () => (showAll ? CASES : shuffle(CASES).slice(0, SAMPLE_SIZE)),
+    [showAll],
+  );
 
   return (
     <section className="section">
@@ -153,7 +158,11 @@ export default function CaseStudies() {
         <SectionHeader
           eyebrow="Anonymisierte Cases"
           title="Echte Fälle. Harte Zahlen."
-          subtitle="Wir nennen keine Kundennamen — Vertraulichkeit ist nicht verhandelbar. Wir nennen die Zahlen, die zählen."
+          subtitle={
+            showAll
+              ? 'Alle Cases im Pool. Vertraulich und anonymisiert — die Zahlen, die zählen.'
+              : 'Wir nennen keine Kundennamen — Vertraulichkeit ist nicht verhandelbar. Wir nennen die Zahlen, die zählen.'
+          }
         />
         <div className="grid gap-6 md:grid-cols-3 max-w-6xl mx-auto">
           {visible.map((c) => (
@@ -190,20 +199,21 @@ export default function CaseStudies() {
             </article>
           ))}
         </div>
-        <div className="flex justify-center mt-10">
-          <button
-            type="button"
-            onClick={() => setShuffleKey((k) => k + 1)}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full border border-gray-300 bg-white text-sm font-semibold text-gray-800 hover:border-gray-900 hover:text-gray-900 transition-colors"
-            aria-label="Andere Cases aus dem Pool anzeigen"
-          >
-            <RefreshCw className="w-4 h-4" aria-hidden />
-            Andere Cases anzeigen
-          </button>
-        </div>
-        <p className="text-center text-xs text-gray-500 mt-5 inline-flex items-center justify-center w-full gap-1.5">
-          {VISIBLE_CASES} von {CASES.length} Cases im Pool · jeder Aufruf zeigt eine neue Auswahl · echte Referenzen auf Anfrage
-          <ArrowRight className="w-3 h-3" />
+
+        {!showAll && (
+          <div className="flex justify-center mt-10">
+            <Link
+              to="/referenzen/"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-gray-900 text-sm font-semibold text-white hover:bg-gray-800 transition-colors"
+            >
+              Alle {CASES.length} Cases ansehen
+              <ArrowRight className="w-4 h-4" aria-hidden />
+            </Link>
+          </div>
+        )}
+
+        <p className="text-center text-xs text-gray-500 mt-5">
+          Daten anonymisiert · echte Referenzen auf Anfrage
         </p>
       </div>
     </section>
