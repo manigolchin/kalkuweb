@@ -175,11 +175,19 @@ export default function ExitIntent() {
           <div className="text-center py-4">
             <CheckCircle2 className="w-12 h-12 text-emerald-600 mx-auto mb-4" />
             <h3 id="exit-intent-title" className="text-2xl font-bold text-gray-900 mb-2">
-              Vielen Dank!
+              Ihr Whitepaper ist bereit.
             </h3>
-            <p className="text-gray-600">
-              Wir senden Ihnen das Whitepaper an {email} innerhalb der nächsten Minuten.
+            <p className="text-gray-600 mb-6">
+              Direkt herunterladen — wir senden zusätzlich eine Kopie an {email}.
             </p>
+            <a
+              href="/whitepaper-7-fehler-vob-kalkulation.pdf"
+              target="_blank"
+              rel="noopener"
+              className="btn btn-success w-full justify-center"
+            >
+              <Download className="w-4 h-4" /> PDF jetzt öffnen
+            </a>
           </div>
         ) : (
           <>

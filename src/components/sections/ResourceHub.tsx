@@ -28,9 +28,10 @@ const RESOURCES = [
   {
     icon: BookOpen,
     title: 'Whitepaper',
-    desc: '7 typische Fehler in der VOB-Kalkulation — und wie Sie sie vermeiden.',
-    cta: 'Per Mail anfordern',
-    to: '/kontakt/',
+    desc: 'Die 7 häufigsten Fehler in der VOB-Kalkulation — Symptom, Konsequenz, Lösung pro Fehler.',
+    cta: 'PDF herunterladen',
+    to: '/whitepaper-7-fehler-vob-kalkulation.pdf',
+    external: true,
     badge: 'PDF',
   },
   {
@@ -56,12 +57,10 @@ export default function ResourceHub() {
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4 max-w-6xl mx-auto">
           {RESOURCES.map((r) => {
             const Icon = r.icon;
-            return (
-              <Link
-                key={r.title}
-                to={r.to}
-                className="group bg-white border border-gray-200 rounded-lg p-6 flex flex-col hover:shadow-md hover:border-primary-200 transition-all"
-              >
+            const cardClass =
+              'group bg-white border border-gray-200 rounded-lg p-6 flex flex-col hover:shadow-md hover:border-primary-200 transition-all';
+            const inner = (
+              <>
                 <div className="flex items-center justify-between mb-5">
                   <div className="w-11 h-11 rounded-lg bg-primary-50 flex items-center justify-center">
                     <Icon className="w-5 h-5 text-primary-700" strokeWidth={2} />
@@ -77,6 +76,22 @@ export default function ResourceHub() {
                 <span className="inline-flex items-center gap-1 text-sm font-semibold text-primary-700">
                   {r.cta} <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
                 </span>
+              </>
+            );
+
+            return r.external ? (
+              <a
+                key={r.title}
+                href={r.to}
+                target="_blank"
+                rel="noopener"
+                className={cardClass}
+              >
+                {inner}
+              </a>
+            ) : (
+              <Link key={r.title} to={r.to} className={cardClass}>
+                {inner}
               </Link>
             );
           })}
