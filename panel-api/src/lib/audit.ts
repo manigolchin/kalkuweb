@@ -17,6 +17,20 @@ export type AuditInsert = {
 
 const GENESIS_PREV_HASH = '0'.repeat(64);
 
+// Per-process monotonic clock for audit timestamps. Two events that land in
+// the same millisecond would otherwise tie on `created_at` and the
+// tie-breaker is `id` — but nanoid ids sort unpredictably, so the tip
+// selection (DESC) could pick a different row than the verify iteration
+// (ASC) expects, falsely flagging the chain as tampered. Bumping the next
+// timestamp by 1 ms past the last write guarantees strict monotonicity.
+let lastAuditWriteMs = 0;
+function nextMonotonicMs(): number {
+  const now = Date.now();
+  const next = now > lastAuditWriteMs ? now : lastAuditWriteMs + 1;
+  lastAuditWriteMs = next;
+  return next;
+}
+
 function canonical(obj: Record<string, unknown>): string {
   // Stable key ordering = stable hash. JSON.stringify(obj, Object.keys(obj).sort())
   // is not enough because nested objects also need sorting.
@@ -35,7 +49,7 @@ function canonical(obj: Record<string, unknown>): string {
  *  multi-instance deploy we'd want a SELECT … FOR UPDATE around the tip read. */
 export async function recordAuditEvent(input: AuditInsert): Promise<AuditEvent> {
   const id = nanoid(16);
-  const createdAt = new Date();
+  const createdAt = new Date(nextMonotonicMs());
   const payload = input.payload ?? {};
 
   const tip = await db

@@ -87,15 +87,35 @@ test('hash chain — manual tamper of a payload is detected by verify', async ()
   assert.ok(idx >= 0, 'a row index is returned');
 });
 
+test('chain holds under tight burst — 50 events recorded in a single tick', async () => {
+  // Truncate via SQL rather than rmSync — better-sqlite3 holds the file open,
+  // so unlinking the path is a no-op for the existing connection.
+  const { db } = await import('../src/db.js');
+  const { auditEvents } = await import('../src/schema.js');
+  const { recordAuditEvent, verifyAuditChain } = await import('../src/lib/audit.js');
+  await db.delete(auditEvents);
+
+  // Hammer the chain with no awaited delays so many events share Date.now() —
+  // exactly the condition that caused the original tie-breaker bug.
+  for (let i = 0; i < 50; i++) {
+    await recordAuditEvent({
+      shareId: 'burst',
+      projectId: 'burst-project',
+      eventType: 'link.viewed',
+      actorKind: 'customer',
+      payload: { i },
+    });
+  }
+  const tampered = await verifyAuditChain();
+  assert.equal(tampered, null, 'chain must verify even when many events land in the same ms');
+});
+
 test('canonical hash is stable across key orderings', async () => {
-  // Re-import audit AFTER the tamper-detection test (which uses the SAME DB
-  // singleton). Insert two structurally-equal payloads with different key
-  // orders and confirm their row hashes equal — proves canonical_json sorts.
-  // Reset the DB so the chain is clean.
-  rmSync(dbFile, { force: true });
-  const { runMigrations } = await import('../src/db.js');
+  // Truncate via SQL — the SQLite connection is held open by the singleton.
+  const { db } = await import('../src/db.js');
+  const { auditEvents } = await import('../src/schema.js');
   const { recordAuditEvent } = await import('../src/lib/audit.js');
-  runMigrations();
+  await db.delete(auditEvents);
 
   const e1 = await recordAuditEvent({
     eventType: 'share.created',
