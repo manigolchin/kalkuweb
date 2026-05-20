@@ -43,3 +43,10 @@ coverage
 /api/data/
 /api/.env
 /api/.env.local
+
+# Panel API (Hono + SQLite) — same conventions
+/panel-api/node_modules/
+/panel-api/data/
+/panel-api/dist/
+/panel-api/.env
+/panel-api/.env.local

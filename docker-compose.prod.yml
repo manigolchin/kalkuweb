@@ -45,6 +45,33 @@ services:
       - "traefik.http.routers.kalku-api.tls.certresolver=cloudflare"
       - "traefik.http.services.kalku-api.loadbalancer.server.port=3000"
 
+  # Authenticated panel backend (auth, projects, customer share). Hono + SQLite.
+  # Traefik priority 400 > 300 (kalku-api) so /api/panel/* wins.
+  kalku-panel-api:
+    container_name: kalku-panel-api
+    build:
+      context: ./panel-api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_PATH: /app/data/kalku.db
+      CORS_ORIGINS: https://kalku.kalkus.de,https://kalku.de,https://www.kalku.de
+    env_file:
+      - ./panel-api/.env
+    volumes:
+      - ./panel-api/data:/app/data
+    networks:
+      - kalku_kalku-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.kalku-panel-api.entrypoints=websecure"
+      - "traefik.http.routers.kalku-panel-api.rule=Host(`kalku.kalkus.de`) && PathPrefix(`/api/panel`)"
+      - "traefik.http.routers.kalku-panel-api.priority=400"
+      - "traefik.http.routers.kalku-panel-api.tls.certresolver=cloudflare"
+      - "traefik.http.services.kalku-panel-api.loadbalancer.server.port=3000"
+
 networks:
   kalku_kalku-network:
     external: true
