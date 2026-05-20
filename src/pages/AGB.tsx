@@ -1,8 +1,3 @@
-// HINWEIS (intern): Diese AGB sind eine Vorlage und MUSS vor dem Produktiv-Cutover
-// (kalku.de) von einem Anwalt (Fachgebiet Bau-/Vergaberecht) final geprüft werden.
-// Insbesondere: §14-BGB-Eingrenzung B2B-only, Haftungsklauseln nach §307 BGB
-// (AGB-Inhaltskontrolle), Erfolgsprovisionsregelung, Loyalitätsversprechen und
-// Vollmacht-Klausel.
 import { Helmet } from 'react-helmet-async';
 import { canonical } from '@/lib/seo';
 import { NAP } from '@/lib/constants';

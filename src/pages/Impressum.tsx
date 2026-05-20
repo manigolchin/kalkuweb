@@ -1,8 +1,3 @@
-// HINWEIS (intern): Dieses Impressum ist eine Vorlage. Vor dem Produktiv-Cutover
-// (kalku.de) bitte von einem Anwalt prüfen lassen — insbesondere §18 MStV-Pflicht
-// (sobald journalistisch-redaktionelle Inhalte unter /blog/ veröffentlicht werden),
-// Handelsregister-/Berufshaftpflicht-Angaben (sofern zutreffend) und
-// Streitschlichtungs-Klausel.
 import { Helmet } from 'react-helmet-async';
 import { canonical } from '@/lib/seo';
 import { NAP } from '@/lib/constants';
@@ -27,15 +22,14 @@ export default function Impressum() {
             <p>
               {NAP.legalName}
               <br />
+              Inhaber: Alaatdin Coksari (Einzelunternehmen)
+              <br />
               {NAP.street}
               <br />
               {NAP.postalCode} {NAP.city}
               <br />
               Deutschland
             </p>
-
-            <h2>Vertreten durch</h2>
-            <p>Alaatdin Coksari</p>
 
             <h2>Kontakt</h2>
             <p>

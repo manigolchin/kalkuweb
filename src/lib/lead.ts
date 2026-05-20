@@ -1,10 +1,10 @@
 // Frontend client for the KALKU form-submission backend (api/server.js).
 // Used by every "leave-your-email" form on the site. The backend persists
-// to JSONL, optionally emails it@kalku.de via SMTP, and optionally pushes
+// to JSONL, optionally emails info@kalku.de via SMTP, and optionally pushes
 // to Pipedrive — see api/server.js POST /api/forms/submit.
 
 const API_URL = '/api/forms/submit';
-const LEAD_EMAIL = 'it@kalku.de';
+const LEAD_EMAIL = 'info@kalku.de';
 
 export type LeadPayload = {
   type: string;

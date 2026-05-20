@@ -24,7 +24,7 @@ export const PRICING = {
     successFee: '5 %',
     bullets: [
       'Pauschale abhängig von der Anzahl der LV-Positionen',
-      'Erfolgsprovision wird erst bei Auftragserteilung fällig',
+      'Erfolgsprovision 5 % zusätzlich zur Pauschale — fällig erst bei Zuschlag',
       'Keine monatlichen Grundgebühren',
       'Flexible Beauftragung bei Bedarf',
     ],

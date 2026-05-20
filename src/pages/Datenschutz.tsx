@@ -1,9 +1,3 @@
-// HINWEIS (intern): Diese Datenschutzerklärung ist eine Vorlage und MUSS vor dem
-// Produktiv-Cutover (kalku.de) von einem Anwalt (Fachgebiet IT-/Datenschutzrecht)
-// final geprüft werden. Insbesondere: SCC-/DPF-Belastbarkeit für Calendly + WhatsApp,
-// Vollständigkeit der Auftragsverarbeiter-Liste (Hosting-Provider, E-Mail-Provider
-// namentlich nennen, sobald gewählt), Speicherdauern, sowie Inhaber-Foto/Cookie-Banner
-// im Zusammenspiel mit ggf. später ergänzten Drittanbietern.
 import { Helmet } from 'react-helmet-async';
 import { canonical } from '@/lib/seo';
 import { NAP } from '@/lib/constants';
@@ -141,6 +135,29 @@ export default function Datenschutz() {
               .
             </p>
 
+            <h3>2.7 Karten-Einbettung (OpenStreetMap)</h3>
+            <p>
+              Auf den Seiten <em>/kontakt</em> und <em>/ueber-uns</em> binden wir interaktive
+              Karten der OpenStreetMap Foundation (St John's Innovation Centre, Cowley Road,
+              Cambridge, CB4 0WS, Vereinigtes Königreich) ein. Beim Aufruf dieser Seiten wird
+              Ihre IP-Adresse an die Server der OpenStreetMap Foundation übertragen, damit die
+              Kartenkacheln in Ihrem Browser geladen werden können. Wir haben keinen Einfluss
+              auf die weitere Verarbeitung durch die OpenStreetMap Foundation. Rechtsgrundlage:
+              Art. 6 Abs. 1 lit. f DSGVO (berechtigtes Interesse an einer barrierearmen
+              Standort-Visualisierung für Auftraggeber). Wenn Sie die Übermittlung vermeiden
+              möchten, rufen Sie die genannten Seiten nicht auf — alle Adress- und
+              Kontaktdaten sind auch ohne die Karte vollständig im Text verfügbar. Details zur
+              Datenverarbeitung entnehmen Sie der{' '}
+              <a
+                href="https://wiki.osmfoundation.org/wiki/Privacy_Policy"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Datenschutzerklärung der OpenStreetMap Foundation
+              </a>
+              .
+            </p>
+
             <h2>3. Empfänger / Auftragsverarbeiter</h2>
             <p>
               Wir geben Ihre Daten nur an folgende Empfänger / Auftragsverarbeiter weiter,
@@ -162,6 +179,13 @@ export default function Datenschutz() {
                 Meta Platforms Ireland Ltd., Dublin, Irland (bei Nutzung des WhatsApp-CTAs)
                 — Drittland-Übermittlung an die US-Konzernmutter auf Basis der
                 EU-Standard­vertrags­klauseln.
+              </li>
+              <li>
+                OpenStreetMap Foundation, Cambridge, Vereinigtes Königreich — Kartenkacheln
+                auf den Seiten <em>/kontakt</em> und <em>/ueber-uns</em>. Übermittlung der
+                IP-Adresse zum Laden der Kacheln; Drittland-Übermittlung auf Basis des
+                Angemessenheitsbeschlusses der EU-Kommission für das Vereinigte Königreich
+                (28.06.2021, Art. 45 DSGVO).
               </li>
             </ul>
 

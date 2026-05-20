@@ -255,7 +255,7 @@ export default function MultiStepForm({ defaultGewerk }: Props) {
             `Umkreis: ${data.umkreis || ''}\n\n` +
             `Nachricht:\n${data.anfrage || ''}\n`,
         );
-        window.location.href = `mailto:it@kalku.de?subject=${subject}&body=${body}`;
+        window.location.href = `mailto:info@kalku.de?subject=${subject}&body=${body}`;
         setSent(true);
         clearStoredDraft();
       }

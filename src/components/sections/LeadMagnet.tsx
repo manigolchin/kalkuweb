@@ -39,7 +39,7 @@ export default function LeadMagnet() {
     } catch {
       const subject = encodeURIComponent('Checkliste-Anfrage über kalku.de');
       const body = encodeURIComponent(`Checkliste-Anfrage\n\nEmail: ${email}\n`);
-      window.location.href = `mailto:it@kalku.de?subject=${subject}&body=${body}`;
+      window.location.href = `mailto:info@kalku.de?subject=${subject}&body=${body}`;
       setSent(true);
       setSending(false);
     }

@@ -134,7 +134,7 @@ export default function ExitIntent() {
     } catch {
       const subject = encodeURIComponent('Whitepaper-Anfrage über kalku.de');
       const body = encodeURIComponent(`Whitepaper-Anfrage\n\nEmail: ${email}\n`);
-      window.location.href = `mailto:it@kalku.de?subject=${subject}&body=${body}`;
+      window.location.href = `mailto:info@kalku.de?subject=${subject}&body=${body}`;
       setSubmitted(true);
       setSending(false);
       dismiss();
