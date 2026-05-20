@@ -1,3 +1,19 @@
+export const POSITION_TYPES = ['standard', 'wagnis', 'reserve', 'nu_marge', 'lohn_puffer'] as const;
+export type PositionType = (typeof POSITION_TYPES)[number];
+export const INTERNAL_POSITION_TYPES: ReadonlySet<PositionType> = new Set([
+  'wagnis',
+  'reserve',
+  'nu_marge',
+  'lohn_puffer',
+]);
+export const POSITION_TYPE_LABELS: Record<PositionType, string> = {
+  standard: 'Position',
+  wagnis: 'Wagnis',
+  reserve: 'Reserve',
+  nu_marge: 'NU-Marge',
+  lohn_puffer: 'Lohn-Puffer',
+};
+
 export type Position = {
   id: string;
   oz: string;
@@ -21,6 +37,7 @@ export type Position = {
   classification?: string | null;
   visibleToCustomer: boolean;
   internalNote?: string;
+  positionType?: PositionType;
 };
 
 export type CalcParams = {

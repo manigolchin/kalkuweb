@@ -27,6 +27,20 @@ const MAX_POSITIONS = 5000;
 // previous schema's z.array(z.any())).
 const fnum = (max = 1e12) => z.number().finite().min(-max).max(max);
 
+/**
+ * Position type taxonomy. The four "internal" values are forced to
+ * `visibleToCustomer: false` by the server below — a Wagnis line in a
+ * customer-shared LV is the kind of mistake that destroys trust, so we
+ * make it impossible to misshare by accident.
+ */
+const POSITION_TYPES = ['standard', 'wagnis', 'reserve', 'nu_marge', 'lohn_puffer'] as const;
+export const INTERNAL_POSITION_TYPES = new Set<typeof POSITION_TYPES[number]>([
+  'wagnis',
+  'reserve',
+  'nu_marge',
+  'lohn_puffer',
+]);
+
 const positionSchema = z.object({
   id: z.string().min(1).max(64),
   oz: z.string().max(64).default(''),
@@ -54,6 +68,7 @@ const positionSchema = z.object({
   classification: z.string().max(64).nullable().optional(),
   visibleToCustomer: z.boolean().default(true),
   internalNote: z.string().max(4000).optional(),
+  positionType: z.enum(POSITION_TYPES).default('standard'),
 });
 
 const calcParamsSchema = z.object({
@@ -224,7 +239,17 @@ export const projectsRoute = new Hono<{ Variables: AuthVariables }>()
     const recomputedPositions = recomputePositions(
       parsed.data.data.positions,
       parsed.data.data.calcParams,
-    );
+    ).map((p) => ({
+      // Default-deny: internal position-types are force-hidden from customer
+      // share regardless of what the client sent. Owner can still manually
+      // expose by setting positionType back to "standard".
+      ...p,
+      visibleToCustomer: INTERNAL_POSITION_TYPES.has(
+        (p.positionType ?? 'standard') as typeof POSITION_TYPES[number],
+      )
+        ? false
+        : p.visibleToCustomer,
+    }));
     const dataToStore = { ...parsed.data.data, positions: recomputedPositions };
 
     const bumpVersion = parsed.data.bumpVersion === true;

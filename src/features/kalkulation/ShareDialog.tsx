@@ -4,7 +4,14 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
-import type { Position, ShareSettings, ShareSummary } from './types';
+import {
+  INTERNAL_POSITION_TYPES,
+  POSITION_TYPE_LABELS,
+  type Position,
+  type PositionType,
+  type ShareSettings,
+  type ShareSummary,
+} from './types';
 import { calcTotals, calculatePosition, formatEUR } from './calc';
 import { api } from '@/lib/api';
 
@@ -28,7 +35,31 @@ export default function ShareDialog({
   onCreated,
 }: Props) {
   const [selected, setSelected] = useState<Set<string>>(
-    () => new Set(positions.filter((p) => p.visibleToCustomer).map((p) => p.id)),
+    () =>
+      new Set(
+        positions
+          .filter(
+            (p) =>
+              p.visibleToCustomer &&
+              !INTERNAL_POSITION_TYPES.has((p.positionType || 'standard') as PositionType),
+          )
+          .map((p) => p.id),
+      ),
+  );
+
+  const shareablePositions = useMemo(
+    () =>
+      positions.filter(
+        (p) => !INTERNAL_POSITION_TYPES.has((p.positionType || 'standard') as PositionType),
+      ),
+    [positions],
+  );
+  const internalPositions = useMemo(
+    () =>
+      positions.filter((p) =>
+        INTERNAL_POSITION_TYPES.has((p.positionType || 'standard') as PositionType),
+      ),
+    [positions],
   );
   const [settings, setSettings] = useState<ShareSettings>({
     brandHeader: 'co-branded',
@@ -54,7 +85,7 @@ export default function ShareDialog({
   );
 
   function toggleAll(visible: boolean) {
-    setSelected(visible ? new Set(positions.map((p) => p.id)) : new Set());
+    setSelected(visible ? new Set(shareablePositions.map((p) => p.id)) : new Set());
   }
 
   function toggleRow(id: string) {
@@ -162,16 +193,16 @@ export default function ShareDialog({
                     Keine
                   </button>
                   <span className="ml-auto text-slate-500">
-                    {selected.size} / {positions.length} sichtbar
+                    {selected.size} / {shareablePositions.length} sichtbar
                   </span>
                 </div>
                 <div className="border border-slate-200/80 rounded-xl max-h-72 overflow-y-auto">
-                  {positions.length === 0 ? (
+                  {shareablePositions.length === 0 ? (
                     <p className="p-4 text-sm text-slate-500 text-center">
-                      Keine Positionen vorhanden.
+                      Keine kundensichtbaren Positionen vorhanden.
                     </p>
                   ) : (
-                    positions.map((p) => (
+                    shareablePositions.map((p) => (
                       <label
                         key={p.id}
                         className="flex items-center gap-3 px-3 py-2 border-b border-slate-100 last:border-0 hover:bg-slate-50 cursor-pointer"
@@ -218,6 +249,25 @@ export default function ShareDialog({
                     ))
                   )}
                 </div>
+
+                {internalPositions.length > 0 && (
+                  <details className="mt-3 border border-amber-200/60 bg-amber-50/40 rounded-xl">
+                    <summary className="px-3 py-2 text-xs text-amber-800 cursor-pointer select-none">
+                      <strong>{internalPositions.length}</strong> interne Position{internalPositions.length === 1 ? '' : 'en'} (Wagnis / Reserve / NU-Marge / Lohn-Puffer) — werden nie geteilt
+                    </summary>
+                    <ul className="px-3 pb-3 pt-1 text-xs text-amber-700 space-y-1">
+                      {internalPositions.map((p) => (
+                        <li key={p.id} className="flex items-center gap-2">
+                          <span className="font-mono text-amber-600 w-12">{p.oz || '—'}</span>
+                          <span className="flex-1 truncate">{p.shortText || '(leer)'}</span>
+                          <span className="uppercase text-[10px] tracking-wider px-1.5 py-0.5 rounded bg-amber-100">
+                            {POSITION_TYPE_LABELS[(p.positionType || 'standard') as PositionType]}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
                 <div className="mt-3 flex flex-wrap items-center gap-4 text-sm">
                   <span className="text-slate-500">
                     Kunde sieht <strong className="text-slate-900">{visiblePositions.filter((p) => !p.isHeader).length}</strong> Positionen

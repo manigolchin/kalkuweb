@@ -85,6 +85,8 @@ export type Share = typeof shares.$inferSelect;
 export type ShareResponse = typeof shareResponses.$inferSelect;
 export type AuditEvent = typeof auditEvents.$inferSelect;
 
+export type PositionType = 'standard' | 'wagnis' | 'reserve' | 'nu_marge' | 'lohn_puffer';
+
 export type Position = {
   id: string;
   oz: string;
@@ -108,6 +110,7 @@ export type Position = {
   classification?: string | null;
   visibleToCustomer: boolean;
   internalNote?: string;
+  positionType?: PositionType;
 };
 
 export type CalcParams = {

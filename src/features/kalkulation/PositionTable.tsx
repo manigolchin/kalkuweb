@@ -1,7 +1,14 @@
 import { memo, useCallback, useMemo, type ChangeEvent, type ClipboardEvent } from 'react';
-import { Eye, EyeOff, Plus, Trash2, GripVertical } from 'lucide-react';
+import { Eye, EyeOff, Plus, Trash2, GripVertical, Lock } from 'lucide-react';
 import clsx from 'clsx';
-import type { CalcParams, Position } from './types';
+import {
+  POSITION_TYPES,
+  INTERNAL_POSITION_TYPES,
+  POSITION_TYPE_LABELS,
+  type CalcParams,
+  type Position,
+  type PositionType,
+} from './types';
 import { calculatePosition, formatEUR, formatNum, makeBlankPosition } from './calc';
 import { nanoid } from 'nanoid';
 
@@ -67,6 +74,27 @@ export default function PositionTable({ positions, params, onChange }: Props) {
   const toggleHeader = useCallback(
     (id: string) => {
       onChange(positions.map((p) => (p.id === id ? { ...p, isHeader: !p.isHeader } : p)));
+    },
+    [positions, onChange],
+  );
+
+  const setPositionType = useCallback(
+    (id: string, positionType: PositionType) => {
+      onChange(
+        positions.map((p) =>
+          p.id === id
+            ? {
+                ...p,
+                positionType,
+                // Default-deny: internal types automatically hide from customer.
+                // (Server enforces this too, but reflect it in the UI immediately.)
+                visibleToCustomer: INTERNAL_POSITION_TYPES.has(positionType)
+                  ? false
+                  : p.visibleToCustomer,
+              }
+            : p,
+        ),
+      );
     },
     [positions, onChange],
   );
@@ -173,23 +201,39 @@ export default function PositionTable({ positions, params, onChange }: Props) {
                   <GripVertical className="w-3.5 h-3.5 text-slate-300 group-hover:text-slate-400" />
                 </td>
                 <td className="px-1 py-1 align-middle">
-                  <button
-                    onClick={() => toggleVisibility(p.id)}
-                    title={p.visibleToCustomer ? 'Für Kunden sichtbar' : 'Vor Kunden versteckt'}
-                    aria-label="Sichtbarkeit umschalten"
-                    className={clsx(
-                      'p-1 rounded-md transition-colors',
-                      p.visibleToCustomer
-                        ? 'text-emerald-600 hover:bg-emerald-50'
-                        : 'text-slate-300 hover:bg-slate-100',
-                    )}
-                  >
-                    {p.visibleToCustomer ? (
-                      <Eye className="w-3.5 h-3.5" />
-                    ) : (
-                      <EyeOff className="w-3.5 h-3.5" />
-                    )}
-                  </button>
+                  {(() => {
+                    const pt = (p.positionType || 'standard') as PositionType;
+                    const internal = INTERNAL_POSITION_TYPES.has(pt);
+                    return (
+                      <button
+                        onClick={() => internal ? setPositionType(p.id, 'standard') : toggleVisibility(p.id)}
+                        title={
+                          internal
+                            ? `${POSITION_TYPE_LABELS[pt]} — intern (immer versteckt). Klicken: zurück auf Standard.`
+                            : p.visibleToCustomer
+                            ? 'Für Kunden sichtbar'
+                            : 'Vor Kunden versteckt'
+                        }
+                        aria-label="Sichtbarkeit umschalten"
+                        className={clsx(
+                          'p-1 rounded-md transition-colors',
+                          internal
+                            ? 'text-amber-700 bg-amber-50 hover:bg-amber-100'
+                            : p.visibleToCustomer
+                              ? 'text-emerald-600 hover:bg-emerald-50'
+                              : 'text-slate-300 hover:bg-slate-100',
+                        )}
+                      >
+                        {internal ? (
+                          <Lock className="w-3.5 h-3.5" />
+                        ) : p.visibleToCustomer ? (
+                          <Eye className="w-3.5 h-3.5" />
+                        ) : (
+                          <EyeOff className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    );
+                  })()}
                 </td>
 
                 {p.isHeader ? (
@@ -204,7 +248,19 @@ export default function PositionTable({ positions, params, onChange }: Props) {
                 ) : (
                   <>
                     <Cell value={p.oz} onChange={(v) => updateRow(p.id, { oz: v })} />
-                    <Cell value={p.shortText} onChange={(v) => updateRow(p.id, { shortText: v })} />
+                    <td className="px-1 py-1">
+                      <div className="flex items-center gap-1">
+                        <input
+                          value={p.shortText}
+                          onChange={(e) => updateRow(p.id, { shortText: e.target.value })}
+                          className="flex-1 px-1.5 py-1 rounded-md border border-transparent bg-transparent outline-none focus:bg-white focus:border-primary-300 focus:ring-1 focus:ring-primary-200"
+                        />
+                        <PositionTypeSelect
+                          value={(p.positionType || 'standard') as PositionType}
+                          onChange={(t) => setPositionType(p.id, t)}
+                        />
+                      </div>
+                    </td>
                     <NumCell value={p.quantity} onChange={(v) => updateNumber(p.id, 'quantity', v)} />
                     <Cell value={p.unit} onChange={(v) => updateRow(p.id, { unit: v })} small />
                     <NumCell value={p.materialCost} onChange={(v) => updateNumber(p.id, 'materialCost', v)} />
@@ -284,6 +340,36 @@ function parseDeNumber(s: string): number {
   const cleaned = String(s).replace(/\./g, '').replace(',', '.').trim();
   const n = parseFloat(cleaned);
   return Number.isFinite(n) ? n : 0;
+}
+
+function PositionTypeSelect({
+  value,
+  onChange,
+}: {
+  value: PositionType;
+  onChange: (t: PositionType) => void;
+}) {
+  const internal = INTERNAL_POSITION_TYPES.has(value);
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value as PositionType)}
+      title={internal ? 'Intern — wird Kunden nie gezeigt' : 'Position-Typ'}
+      className={clsx(
+        'text-[10px] uppercase tracking-wider rounded px-1 py-0.5 border border-transparent bg-transparent outline-none',
+        'focus:bg-white focus:border-slate-300 cursor-pointer max-w-[7rem]',
+        internal
+          ? 'text-amber-700 bg-amber-50/60 border-amber-200/60 font-semibold'
+          : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100',
+      )}
+    >
+      {POSITION_TYPES.map((t) => (
+        <option key={t} value={t}>
+          {POSITION_TYPE_LABELS[t]}
+        </option>
+      ))}
+    </select>
+  );
 }
 
 const Cell = memo(function Cell({

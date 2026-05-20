@@ -171,5 +171,6 @@ export function makeBlankPosition(id: string, sortOrder: number): Position {
     ep: 0,
     gp: 0,
     visibleToCustomer: true,
+    positionType: 'standard',
   };
 }
