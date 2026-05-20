@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ClipboardEvent } from 'react';
 import {
   Eye, EyeOff, Plus, Trash2, GripVertical, Lock, Sigma, X, AlertCircle,
-  Bookmark, BookmarkPlus, Search, FileUp, Loader2,
+  Bookmark, BookmarkPlus, Search, FileUp, Loader2, ChevronRight, ChevronDown, FileText,
 } from 'lucide-react';
 import { parseGaebFile, type Position as GaebPosition, type ParsedGaeb } from '@/lib/gaeb';
 import clsx from 'clsx';
@@ -45,6 +45,24 @@ export default function PositionTable({ positions, params, onChange }: Props) {
   const [pickerFilter, setPickerFilter] = useState('');
   const [gaebImporting, setGaebImporting] = useState(false);
   const gaebFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [expandedLong, setExpandedLong] = useState<Set<string>>(new Set());
+
+  const toggleLongText = useCallback((id: string) => {
+    setExpandedLong((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const allLongIds = useMemo(
+    () => positions.filter((p) => !p.isHeader && p.longText && p.longText.trim().length > 0).map((p) => p.id),
+    [positions],
+  );
+  const allExpanded = allLongIds.length > 0 && allLongIds.every((id) => expandedLong.has(id));
+  const expandAll = useCallback(() => setExpandedLong(new Set(allLongIds)), [allLongIds]);
+  const collapseAll = useCallback(() => setExpandedLong(new Set()), []);
 
   useEffect(() => {
     let alive = true;
@@ -454,6 +472,21 @@ export default function PositionTable({ positions, params, onChange }: Props) {
                     <Cell value={p.oz} onChange={(v) => updateRow(p.id, { oz: v })} />
                     <td className="px-1 py-1 min-w-0">
                       <div className="flex items-center gap-1 min-w-0">
+                        {p.longText && p.longText.trim().length > 0 ? (
+                          <button
+                            onClick={() => toggleLongText(p.id)}
+                            className={clsx(
+                              'p-1 rounded text-slate-400 hover:text-primary-600 hover:bg-primary-50/60 shrink-0',
+                              expandedLong.has(p.id) && 'text-primary-700 bg-primary-50',
+                            )}
+                            title={expandedLong.has(p.id) ? 'Langtext einklappen' : 'Langtext anzeigen'}
+                            aria-label="Langtext umschalten"
+                          >
+                            {expandedLong.has(p.id) ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                          </button>
+                        ) : (
+                          <span className="w-5 shrink-0" aria-hidden />
+                        )}
                         <input
                           value={p.shortText}
                           onChange={(e) => updateRow(p.id, { shortText: e.target.value })}
@@ -556,6 +589,32 @@ export default function PositionTable({ positions, params, onChange }: Props) {
                   </td>
                 </tr>
               )}
+              {expandedLong.has(p.id) && !p.isHeader && (
+                <tr className="bg-slate-50/40 border-t border-slate-100">
+                  <td colSpan={12} className="px-12 py-2.5">
+                    <div className="flex items-start gap-2">
+                      <FileText className="w-3.5 h-3.5 text-slate-400 mt-2 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                          Langtext
+                          {p.longText && (
+                            <span className="ml-2 font-normal lowercase tracking-normal text-slate-400">
+                              ({p.longText.length} Zeichen)
+                            </span>
+                          )}
+                        </div>
+                        <textarea
+                          value={p.longText}
+                          onChange={(e) => updateRow(p.id, { longText: e.target.value })}
+                          rows={Math.min(Math.max(3, (p.longText || '').split(/\r?\n/).length), 12)}
+                          className="w-full text-sm bg-white border border-slate-200 rounded p-2 outline-none focus:border-primary-300 focus:ring-1 focus:ring-primary-200 whitespace-pre-wrap font-sans leading-relaxed"
+                          placeholder="Detaillierte Beschreibung der Position…"
+                        />
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              )}
               </FragmentRow>
             ))}
           </tbody>
@@ -650,6 +709,16 @@ export default function PositionTable({ positions, params, onChange }: Props) {
           <Eye className="w-3.5 h-3.5" />
           Sichtbarkeit umschalten
         </button>
+        {allLongIds.length > 0 && (
+          <button
+            onClick={allExpanded ? collapseAll : expandAll}
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-sm text-slate-600 hover:border-slate-300"
+            title={allExpanded ? 'Alle Langtexte einklappen' : `Alle ${allLongIds.length} Langtexte ausklappen`}
+          >
+            {allExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+            {allExpanded ? 'Langtexte einklappen' : `Langtexte (${allLongIds.length})`}
+          </button>
+        )}
         <span className="text-xs text-slate-400 ml-auto hidden sm:inline">
           Tipp: aus Excel kopieren und mit Strg+V einfügen.
         </span>
