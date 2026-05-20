@@ -117,5 +117,21 @@ export function runMigrations() {
       created_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_view_presets_project ON view_presets(project_id);
+
+    CREATE TABLE IF NOT EXISTS position_templates (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      oz TEXT NOT NULL DEFAULT '',
+      short_text TEXT NOT NULL,
+      long_text TEXT NOT NULL DEFAULT '',
+      unit TEXT NOT NULL DEFAULT '',
+      default_material_cost_cents INTEGER NOT NULL DEFAULT 0,
+      default_time_minutes INTEGER NOT NULL DEFAULT 0,
+      default_nu_cost_cents INTEGER NOT NULL DEFAULT 0,
+      use_count INTEGER NOT NULL DEFAULT 0,
+      last_used_at INTEGER,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_position_templates_user ON position_templates(user_id);
   `);
 }

@@ -144,7 +144,12 @@ export type CustomerViewPayload = {
   snapshotHash: string | null;
   snapshottedAt: string;
   nachtragNumber?: number;
-  parent?: { createdAt: string; snapshotHash: string | null } | null;
+  parent?: {
+    createdAt: string;
+    snapshotHash: string | null;
+    netto: number;
+    brutto: number;
+  } | null;
   project: {
     name: string;
     client: string;
@@ -188,6 +193,20 @@ export type AuthUser = {
   companyPhone: string;
   companyContactEmail: string;
   mustChangePassword: boolean;
+};
+
+export type PositionTemplate = {
+  id: string;
+  oz: string;
+  shortText: string;
+  longText: string;
+  unit: string;
+  defaultMaterialCost: number;
+  defaultTimeMinutes: number;
+  defaultNuCost: number;
+  useCount: number;
+  lastUsedAt: string | null;
+  createdAt: string;
 };
 
 export type ViewPreset = {

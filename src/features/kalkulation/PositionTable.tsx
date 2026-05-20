@@ -1,6 +1,10 @@
-import { memo, useCallback, useMemo, useState, type ChangeEvent, type ClipboardEvent } from 'react';
-import { Eye, EyeOff, Plus, Trash2, GripVertical, Lock, Sigma, X, AlertCircle } from 'lucide-react';
+import { memo, useCallback, useEffect, useMemo, useState, type ChangeEvent, type ClipboardEvent } from 'react';
+import {
+  Eye, EyeOff, Plus, Trash2, GripVertical, Lock, Sigma, X, AlertCircle,
+  Bookmark, BookmarkPlus, Search,
+} from 'lucide-react';
 import clsx from 'clsx';
+import toast from 'react-hot-toast';
 import {
   POSITION_TYPES,
   INTERNAL_POSITION_TYPES,
@@ -8,9 +12,11 @@ import {
   type CalcParams,
   type Position,
   type PositionType,
+  type PositionTemplate,
 } from './types';
 import { calculatePosition, formatEUR, formatNum, makeBlankPosition } from './calc';
 import { evaluateAufmass } from './aufmass';
+import { api } from '@/lib/api';
 import { nanoid } from 'nanoid';
 
 type Col = { key: keyof Position; label: string; width: string; align?: 'right' };
@@ -33,6 +39,88 @@ type Props = {
 
 export default function PositionTable({ positions, params, onChange }: Props) {
   const [aufmassOpen, setAufmassOpen] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<PositionTemplate[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerFilter, setPickerFilter] = useState('');
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const { templates } = await api.templates.list();
+        if (alive) setTemplates(templates);
+      } catch {
+        // silent — templates are an optional helper
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const saveAsTemplate = useCallback(async (p: Position) => {
+    if (!p.shortText.trim()) {
+      toast.error('Position braucht mindestens einen Kurztext zum Speichern.');
+      return;
+    }
+    try {
+      const t = await api.templates.create({
+        oz: p.oz,
+        shortText: p.shortText,
+        longText: p.longText,
+        unit: p.unit,
+        defaultMaterialCost: p.materialCost,
+        defaultTimeMinutes: p.timeMinutes,
+        defaultNuCost: p.nuCost,
+      });
+      setTemplates((arr) => [t, ...arr]);
+      toast.success(`„${t.shortText.slice(0, 32)}…" als Vorlage gespeichert.`);
+    } catch {
+      toast.error('Konnte nicht als Vorlage speichern.');
+    }
+  }, []);
+
+  const insertFromTemplate = useCallback(
+    async (t: PositionTemplate) => {
+      const id = nanoid(12);
+      const sortOrder = (positions[positions.length - 1]?.sortOrder ?? 0) + 1;
+      const fresh: Position = {
+        ...makeBlankPosition(id, sortOrder),
+        oz: t.oz,
+        shortText: t.shortText,
+        longText: t.longText,
+        unit: t.unit,
+        materialCost: t.defaultMaterialCost,
+        timeMinutes: t.defaultTimeMinutes,
+        nuCost: t.defaultNuCost,
+      };
+      onChange([...positions, fresh]);
+      setPickerOpen(false);
+      setPickerFilter('');
+      // Fire-and-forget use-count bump
+      api.templates.use(t.id).then(() => {
+        setTemplates((arr) =>
+          arr.map((x) => (x.id === t.id ? { ...x, useCount: x.useCount + 1, lastUsedAt: new Date().toISOString() } : x)),
+        );
+      }).catch(() => {});
+    },
+    [positions, onChange],
+  );
+
+  const deleteTemplate = useCallback(async (id: string) => {
+    try {
+      await api.templates.delete(id);
+      setTemplates((arr) => arr.filter((t) => t.id !== id));
+    } catch {
+      toast.error('Löschen fehlgeschlagen.');
+    }
+  }, []);
+
+  const filteredTemplates = useMemo(() => {
+    const q = pickerFilter.trim().toLowerCase();
+    if (!q) return templates;
+    return templates.filter(
+      (t) => t.shortText.toLowerCase().includes(q) || t.oz.toLowerCase().includes(q) || t.longText.toLowerCase().includes(q),
+    );
+  }, [templates, pickerFilter]);
 
   const calculatedRows = useMemo(
     () =>
@@ -336,14 +424,26 @@ export default function PositionTable({ positions, params, onChange }: Props) {
                   {p.isHeader ? '' : formatEUR(calc.gp)}
                 </td>
                 <td className="px-1 py-1 text-right">
-                  <button
-                    onClick={() => removeRow(p.id)}
-                    className="p-1 rounded-md text-slate-300 hover:bg-red-50 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
-                    title="Zeile löschen"
-                    aria-label="Zeile löschen"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="inline-flex items-center gap-0.5">
+                    {!p.isHeader && (
+                      <button
+                        onClick={() => saveAsTemplate(p)}
+                        className="p-1 rounded-md text-slate-300 hover:bg-primary-50 hover:text-primary-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Als Vorlage speichern"
+                        aria-label="Als Vorlage speichern"
+                      >
+                        <BookmarkPlus className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => removeRow(p.id)}
+                      className="p-1 rounded-md text-slate-300 hover:bg-red-50 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Zeile löschen"
+                      aria-label="Zeile löschen"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </td>
               </tr>
               {aufmassOpen === p.id && !p.isHeader && (
@@ -384,6 +484,19 @@ export default function PositionTable({ positions, params, onChange }: Props) {
           Titel
         </button>
         <button
+          onClick={() => setPickerOpen(true)}
+          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-sm font-medium text-slate-700 hover:border-primary-300 hover:text-primary-700"
+          title="Position aus Ihrer Vorlage-Bibliothek einfügen"
+        >
+          <Bookmark className="w-3.5 h-3.5" />
+          Aus Vorlage
+          {templates.length > 0 && (
+            <span className="ml-1 inline-flex items-center justify-center min-w-[1.25rem] h-4 px-1 rounded-full bg-primary-50 text-primary-700 text-[10px] font-bold tabular-nums">
+              {templates.length}
+            </span>
+          )}
+        </button>
+        <button
           onClick={() => {
             const yes = positions.some((p) => !p.visibleToCustomer);
             onChange(positions.map((p) => ({ ...p, visibleToCustomer: yes })));
@@ -407,6 +520,91 @@ export default function PositionTable({ positions, params, onChange }: Props) {
         tabIndex={-1}
         aria-hidden
       />
+
+      {pickerOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setPickerOpen(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <header className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary-50 text-primary-600"><Bookmark className="w-4 h-4" /></div>
+                <div>
+                  <h3 className="font-semibold text-slate-900">Aus Vorlage einfügen</h3>
+                  <p className="text-xs text-slate-500">
+                    Ihre eigene Bibliothek wiederverwendbarer Positionen.
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setPickerOpen(false)} className="p-2 rounded-lg text-slate-400 hover:bg-slate-100">
+                <X className="w-4 h-4" />
+              </button>
+            </header>
+            <div className="px-6 py-3 border-b border-slate-100">
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  autoFocus
+                  value={pickerFilter}
+                  onChange={(e) => setPickerFilter(e.target.value)}
+                  placeholder="OZ, Kurztext oder Langtext durchsuchen…"
+                  className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 outline-none focus:border-primary-300 focus:ring-1 focus:ring-primary-200 text-sm"
+                />
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto px-3 py-2">
+              {filteredTemplates.length === 0 ? (
+                <p className="p-6 text-sm text-slate-500 text-center">
+                  {templates.length === 0
+                    ? 'Noch keine Vorlagen. Klicken Sie das Lesezeichen-Symbol an einer Position, um sie zu speichern.'
+                    : 'Keine Vorlage passt zur Suche.'}
+                </p>
+              ) : (
+                <ul className="space-y-1">
+                  {filteredTemplates.map((t) => (
+                    <li key={t.id} className="group flex items-stretch gap-1">
+                      <button
+                        onClick={() => insertFromTemplate(t)}
+                        className="flex-1 text-left px-3 py-2 rounded-lg hover:bg-primary-50/60"
+                      >
+                        <div className="flex items-baseline gap-2">
+                          <span className="font-mono text-xs text-slate-500 min-w-[3rem]">{t.oz || '—'}</span>
+                          <span className="font-medium text-slate-900 truncate flex-1">{t.shortText}</span>
+                          {t.useCount > 0 && (
+                            <span className="text-xs text-slate-400">{t.useCount}×</span>
+                          )}
+                        </div>
+                        {t.longText && (
+                          <p className="text-xs text-slate-500 mt-0.5 line-clamp-2 ml-[3.5rem]">{t.longText}</p>
+                        )}
+                        <p className="text-xs text-slate-400 mt-1 ml-[3.5rem] tabular-nums">
+                          {t.unit && <>EH: {t.unit} · </>}
+                          {t.defaultMaterialCost > 0 && <>Material: {formatEUR(t.defaultMaterialCost)} · </>}
+                          {t.defaultTimeMinutes > 0 && <>Zeit: {t.defaultTimeMinutes} min · </>}
+                          {t.defaultNuCost > 0 && <>NU: {formatEUR(t.defaultNuCost)}</>}
+                        </p>
+                      </button>
+                      <button
+                        onClick={() => deleteTemplate(t.id)}
+                        className="self-start mt-2 p-1.5 rounded text-slate-300 hover:bg-red-50 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Vorlage löschen"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <footer className="px-6 py-3 border-t border-slate-100 text-xs text-slate-500 bg-slate-50/40">
+              {templates.length === 0 ? (
+                <>Tipp: Position erstellen → Lesezeichen-Symbol rechts klicken → ab dann hier verfügbar.</>
+              ) : (
+                <>Sortiert nach Häufigkeit der Verwendung. Klick fügt am Ende der Liste ein.</>
+              )}
+            </footer>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

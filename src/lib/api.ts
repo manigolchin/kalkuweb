@@ -2,6 +2,7 @@ import type {
   AuthUser,
   CustomerViewPayload,
   InboxEntry,
+  PositionTemplate,
   ProjectDetail,
   ProjectData,
   ProjectSummary,
@@ -172,6 +173,26 @@ export const api = {
       }),
     delete: (presetId: string) =>
       request<{ ok: true }>(`/presets/${presetId}`, { method: 'DELETE' }),
+  },
+  templates: {
+    list: () => request<{ templates: PositionTemplate[] }>(`/templates`),
+    create: (input: {
+      oz?: string;
+      shortText: string;
+      longText?: string;
+      unit?: string;
+      defaultMaterialCost?: number;
+      defaultTimeMinutes?: number;
+      defaultNuCost?: number;
+    }) =>
+      request<PositionTemplate>(`/templates`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    use: (id: string) =>
+      request<{ ok: true }>(`/templates/${id}/use`, { method: 'POST' }),
+    delete: (id: string) =>
+      request<{ ok: true }>(`/templates/${id}`, { method: 'DELETE' }),
   },
   public: {
     getShare: (token: string) => request<CustomerViewPayload>(`/share/${token}`),

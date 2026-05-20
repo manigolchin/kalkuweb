@@ -368,7 +368,7 @@ export default function ShareView() {
             <footer className="border-t border-slate-200 px-6 py-5 bg-slate-50/60">
               <dl className="ml-auto max-w-xs space-y-1 text-sm">
                 <div className="flex items-center justify-between">
-                  <dt className="text-slate-600">Netto</dt>
+                  <dt className="text-slate-600">Netto{isNachtrag ? ' (Nachtrag)' : ''}</dt>
                   <dd className="text-slate-900 tabular-nums">{formatEUR(visibleTotal.netto)}</dd>
                 </div>
                 {settings.showMwst && (
@@ -382,11 +382,30 @@ export default function ShareView() {
                 <div className="flex items-center justify-between pt-2 mt-1 border-t border-slate-200">
                   <dt className="font-semibold text-slate-900">
                     {settings.showMwst ? 'Brutto-Summe' : 'Gesamt'}
+                    {isNachtrag && <span className="text-xs font-normal text-amber-700 ml-1">(Nachtrag)</span>}
                   </dt>
                   <dd className="font-bold text-slate-900 tabular-nums text-lg">
                     {formatEUR(visibleTotal.brutto)}
                   </dd>
                 </div>
+                {isNachtrag && payload.parent && (
+                  <div className="mt-3 pt-3 border-t border-amber-200/60 space-y-1 text-xs">
+                    <div className="flex items-center justify-between text-slate-500">
+                      <span>Ursprüngliches Angebot vom {parentDate}</span>
+                      <span className="tabular-nums">{formatEUR(payload.parent.brutto)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-slate-500">
+                      <span>+ dieser Nachtrag N{payload.nachtragNumber}</span>
+                      <span className="tabular-nums">{formatEUR(visibleTotal.brutto)}</span>
+                    </div>
+                    <div className="flex items-center justify-between pt-1.5 mt-1 border-t border-amber-300/40 text-amber-800 font-semibold">
+                      <span>= Gesamt (Original + Nachträge)</span>
+                      <span className="tabular-nums text-base">
+                        {formatEUR(payload.parent.brutto + visibleTotal.brutto)}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </dl>
             </footer>
           )}

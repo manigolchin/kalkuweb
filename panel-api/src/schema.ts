@@ -73,6 +73,27 @@ export const shareResponses = sqliteTable('share_responses', {
  * (visible-positions + share-settings) combo across multiple shares — useful
  * when the same Inhaber sends "Privatkunden-Ansicht" or "AG-Ansicht" repeatedly.
  */
+/**
+ * Reusable position templates ("Vorlagen"). Lite STLB-Bau pattern: the owner
+ * builds their own library of frequently-used positions over time and
+ * inserts them into new projects with a single click. Last-used + use_count
+ * drive the picker ordering.
+ */
+export const positionTemplates = sqliteTable('position_templates', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  oz: text('oz').notNull().default(''),
+  shortText: text('short_text').notNull(),
+  longText: text('long_text').notNull().default(''),
+  unit: text('unit').notNull().default(''),
+  defaultMaterialCost: integer('default_material_cost_cents').notNull().default(0),
+  defaultTimeMinutes: integer('default_time_minutes').notNull().default(0),
+  defaultNuCost: integer('default_nu_cost_cents').notNull().default(0),
+  useCount: integer('use_count').notNull().default(0),
+  lastUsedAt: integer('last_used_at', { mode: 'timestamp_ms' }),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+});
+
 export const viewPresets = sqliteTable('view_presets', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
@@ -111,6 +132,7 @@ export type Share = typeof shares.$inferSelect;
 export type ShareResponse = typeof shareResponses.$inferSelect;
 export type AuditEvent = typeof auditEvents.$inferSelect;
 export type ViewPreset = typeof viewPresets.$inferSelect;
+export type PositionTemplate = typeof positionTemplates.$inferSelect;
 
 export type PositionType = 'standard' | 'wagnis' | 'reserve' | 'nu_marge' | 'lohn_puffer';
 

@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { db } from '../db.js';
 import { projects, shares, shareResponses, users, auditEvents } from '../schema.js';
-import { clientIp } from '../lib/middleware.js';
+import { clientIp, clientFingerprint } from '../lib/middleware.js';
 import { buildLegacySnapshot, snapshotHash } from '../lib/snapshot.js';
 import { recordAuditEvent } from '../lib/audit.js';
 import { renderQuotePdf, renderCertificatePdf } from '../lib/pdf.js';
@@ -81,18 +81,31 @@ export const publicRoute = new Hono()
       payload: {
         isFirstView,
         viewCount: (share.viewCount || 0) + 1,
+        browserFingerprint: clientFingerprint(c),
       },
     });
 
     // For Nachtrag shares, surface parent metadata so the customer page can
-    // render "Nachtrag N1 zum Angebot vom DD.MM.YYYY".
-    let parentMeta: { createdAt: string; snapshotHash: string | null } | null = null;
+    // render "Nachtrag N1 zum Angebot vom DD.MM.YYYY" plus the running total
+    // of the original + this addendum.
+    let parentMeta: {
+      createdAt: string;
+      snapshotHash: string | null;
+      netto: number;
+      brutto: number;
+    } | null = null;
     if (share.parentShareId) {
       const parent = await db.query.shares.findFirst({ where: eq(shares.id, share.parentShareId) });
-      if (parent) {
+      if (parent && parent.snapshotData) {
+        const parentNetto = parent.snapshotData.positions
+          .filter((p) => !p.isHeader)
+          .reduce((t, p) => t + p.gp, 0);
+        const parentMwst = parent.settings.showMwst ? parentNetto * parent.snapshotData.project.mwst : 0;
         parentMeta = {
           createdAt: parent.createdAt.toISOString(),
           snapshotHash: parent.snapshotHash,
+          netto: Math.round(parentNetto * 100) / 100,
+          brutto: Math.round((parentNetto + parentMwst) * 100) / 100,
         };
       }
     }
@@ -222,6 +235,7 @@ export const publicRoute = new Hono()
         responseType: 'approve',
         snapshotHash: share.snapshotHash,
         customerName: parsed.data.customerName,
+        browserFingerprint: clientFingerprint(c),
       },
     });
 
@@ -371,6 +385,7 @@ export const publicRoute = new Hono()
         changesCount: parsed.data.changes.length,
         snapshotHash: share.snapshotHash,
         customerName: parsed.data.customerName,
+        browserFingerprint: clientFingerprint(c),
       },
     });
 

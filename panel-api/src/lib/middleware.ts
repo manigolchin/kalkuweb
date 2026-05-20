@@ -33,3 +33,17 @@ export function clientIp(c: Context): string {
   if (xff) return xff.split(',')[0].trim();
   return c.req.header('x-real-ip') || 'unknown';
 }
+
+/**
+ * Stable non-PII fingerprint hash of the request's browser context.
+ * SHA-256 of (UA + Accept-Language + Accept) — doesn't reveal the raw values
+ * but lets the audit log distinguish "same browser, different network" from
+ * "different person entirely". Audit-trail research D8.
+ */
+import { createHash } from 'node:crypto';
+export function clientFingerprint(c: Context): string {
+  const ua = c.req.header('user-agent') || '';
+  const al = c.req.header('accept-language') || '';
+  const ac = c.req.header('accept') || '';
+  return createHash('sha256').update(`${ua}\n${al}\n${ac}`).digest('hex').slice(0, 16);
+}
