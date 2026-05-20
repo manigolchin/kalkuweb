@@ -1,6 +1,7 @@
 /* Shared atoms for the panel redesign. Kept in one file so the foundation
  * lives in a single place — the rest of the panel imports from here. */
 import { useEffect, useState, useCallback, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import clsx from 'clsx';
 
 /* ─── Theme (light / dark) ───────────────────────────────────────────────── */
@@ -72,6 +73,7 @@ export type StatusKind =
   | 'viewed'       // Vom Kunden geöffnet
   | 'approved'     // Freigegeben
   | 'changes'      // Änderungswünsche
+  | 'rejected'     // Abgelehnt
   | 'revoked'      // Widerrufen
   | 'stale'        // Snapshot älter als aktueller Stand
   | 'nachtrag'     // VOB §2 Nr.3/5/6 Nachtrag
@@ -97,6 +99,10 @@ const STATUS_STYLES: Record<StatusKind, { label: string; cls: string }> = {
   changes: {
     label: 'Änderungen',
     cls: 'bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-950/50 dark:text-amber-200 dark:ring-amber-800',
+  },
+  rejected: {
+    label: 'Abgelehnt',
+    cls: 'bg-rose-50 text-rose-700 ring-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:ring-rose-800',
   },
   revoked: {
     label: 'Widerrufen',
@@ -178,12 +184,12 @@ export function Breadcrumb({ items }: { items: Crumb[] }) {
           <span key={i} className="inline-flex items-center">
             {i > 0 && <span className="mx-1.5 text-slate-300 dark:text-slate-600">›</span>}
             {c.to && !isLast ? (
-              <a
-                href={c.to}
+              <Link
+                to={c.to}
                 className="hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
               >
                 {c.label}
-              </a>
+              </Link>
             ) : (
               <span className={clsx(isLast && 'text-slate-700 dark:text-slate-200 font-medium')}>
                 {c.label}

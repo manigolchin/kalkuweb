@@ -19,7 +19,7 @@ type Bucket = { key: string; label: string; events: TimelineEvent[] };
 
 type TimelineEvent = {
   ts: number;
-  kind: 'approve' | 'changes' | 'viewed' | 'created';
+  kind: 'approve' | 'changes' | 'reject' | 'viewed' | 'created';
   entry: InboxEntry;
   response?: ShareResponse;
 };
@@ -30,7 +30,12 @@ function buildBuckets(entries: InboxEntry[]): Bucket[] {
     for (const r of e.responses) {
       events.push({
         ts: Date.parse(r.respondedAt),
-        kind: r.responseType === 'approve' ? 'approve' : 'changes',
+        kind:
+          r.responseType === 'approve'
+            ? 'approve'
+            : r.responseType === 'reject'
+              ? 'reject'
+              : 'changes',
         entry: e,
         response: r,
       });
@@ -181,9 +186,14 @@ function TimelineRow({ ev }: { ev: TimelineEvent }) {
           </div>
           <div className="flex items-center gap-1.5">
             {meta.badge && <StatusBadge kind={meta.badge} size="xs" />}
-            <time className="text-[11px] text-slate-400 dark:text-slate-500 tabular-nums whitespace-nowrap">
-              {fmtRelative(new Date(ev.ts).toISOString())}
-            </time>
+            {(() => {
+              const rel = fmtRelative(new Date(ev.ts).toISOString());
+              return rel ? (
+                <time className="text-[11px] text-slate-400 dark:text-slate-500 tabular-nums whitespace-nowrap">
+                  {rel}
+                </time>
+              ) : null;
+            })()}
           </div>
         </header>
 
@@ -240,7 +250,7 @@ function TimelineRow({ ev }: { ev: TimelineEvent }) {
 function describeEvent(ev: TimelineEvent): {
   actor: string;
   verb: string;
-  badge: 'approved' | 'changes' | 'viewed' | 'shared' | null;
+  badge: 'approved' | 'changes' | 'rejected' | 'viewed' | 'shared' | null;
   dotCls: string;
 } {
   const r = ev.response;
@@ -250,6 +260,14 @@ function describeEvent(ev: TimelineEvent): {
       verb: 'hat das Angebot angenommen.',
       badge: 'approved',
       dotCls: 'bg-emerald-500',
+    };
+  }
+  if (ev.kind === 'reject' && r) {
+    return {
+      actor: r.customerName || 'Kunde',
+      verb: 'hat das Angebot abgelehnt.',
+      badge: 'rejected',
+      dotCls: 'bg-rose-500',
     };
   }
   if (ev.kind === 'changes' && r) {

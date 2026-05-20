@@ -209,11 +209,14 @@ export default function ProjectDetail() {
   if (error || !data || !project) {
     return (
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-8 text-center max-w-md mx-auto">
-        <div className="inline-flex p-3 rounded-full bg-red-50 mb-3">
-          <AlertCircle className="w-5 h-5 text-red-500" />
+        <div className="inline-flex p-3 rounded-full bg-red-50 dark:bg-rose-950/40 mb-3">
+          <AlertCircle className="w-5 h-5 text-red-500 dark:text-rose-400" />
         </div>
-        <h2 className="font-semibold text-slate-900">{error || 'Projekt nicht gefunden.'}</h2>
-        <Link to="/panel/kalkulation" className="inline-flex items-center gap-1 text-primary-600 hover:underline mt-3 text-sm">
+        <h2 className="font-semibold text-slate-900 dark:text-slate-100">{error || 'Projekt nicht gefunden.'}</h2>
+        <Link
+          to="/panel/kalkulation"
+          className="inline-flex items-center gap-1 text-primary-600 dark:text-primary-300 hover:underline mt-3 text-sm"
+        >
           <ArrowLeft className="w-4 h-4" />
           Zurück zur Übersicht
         </Link>
@@ -350,10 +353,10 @@ function SaveIndicator({
       className={clsx(
         'inline-flex items-center gap-1.5 text-xs px-2 py-1.5 rounded-md',
         state === 'error'
-          ? 'bg-red-50 text-red-700'
+          ? 'bg-red-50 text-red-700 dark:bg-rose-950/40 dark:text-rose-300'
           : state === 'saved'
-            ? 'bg-emerald-50 text-emerald-700'
-            : 'bg-slate-100 text-slate-500',
+            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+            : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
       )}
     >
       {state === 'saving' || state === 'pending' ? (
@@ -382,7 +385,7 @@ function TotalsCard({
 }) {
   return (
     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5">
-      <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Summen</h3>
+      <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Summen</h3>
 
       <div className="mt-3 space-y-1.5 text-sm">
         <Row label="Lohnanteil" value={totals.totalLohn} muted />
@@ -391,18 +394,18 @@ function TotalsCard({
         <Row label="Nachunternehmer" value={totals.totalNu} muted />
       </div>
 
-      <div className="mt-4 pt-3 border-t border-slate-100 space-y-1.5">
+      <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 space-y-1.5">
         <Row label="Netto (gesamt)" value={totals.totalNetto} strong />
         <Row label="MwSt 19 %" value={totals.totalMwst} muted />
         <Row label="Brutto" value={totals.totalBrutto} strong />
       </div>
 
-      <div className="mt-4 pt-3 border-t border-slate-100">
-        <p className="text-xs text-slate-500 leading-relaxed">
+      <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
+        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
           {positionCount} {positionCount === 1 ? 'Zeile' : 'Zeilen'} insgesamt,{' '}
-          <strong className="text-emerald-700">{visibleCount} für Kunde sichtbar</strong>.
+          <strong className="text-emerald-700 dark:text-emerald-300">{visibleCount} für Kunde sichtbar</strong>.
         </p>
-        <p className="text-xs text-slate-400 mt-1">
+        <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
           Aufwand: {formatNum(totals.totalHours, 1)} h
         </p>
       </div>
@@ -423,11 +426,18 @@ function Row({
 }) {
   return (
     <div className="flex items-center justify-between">
-      <span className={clsx('text-slate-500', strong && 'text-slate-900 font-semibold')}>{label}</span>
+      <span
+        className={clsx(
+          'text-slate-500 dark:text-slate-400',
+          strong && 'text-slate-900 dark:text-slate-100 font-semibold',
+        )}
+      >
+        {label}
+      </span>
       <span
         className={clsx(
           'tabular-nums',
-          muted ? 'text-slate-500' : 'text-slate-900',
+          muted ? 'text-slate-500 dark:text-slate-400' : 'text-slate-900 dark:text-slate-100',
           strong && 'font-semibold',
         )}
       >
@@ -463,17 +473,17 @@ function SharesCard({
   return (
     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5">
       <div className="flex items-center justify-between mb-2">
-        <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Geteilte Links</h3>
+        <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Geteilte Links</h3>
         <button
           onClick={onOpenShare}
-          className="text-xs text-primary-600 hover:underline font-medium"
+          className="text-xs text-primary-600 dark:text-primary-300 hover:underline font-medium"
         >
           + Neuer Link
         </button>
       </div>
       {staleCount > 0 && (
-        <div className="mt-2 mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-amber-600" />
+        <div className="mt-2 mb-3 flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
+          <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-amber-600 dark:text-amber-400" />
           <div className="leading-relaxed">
             <span className="font-semibold">
               {staleCount === 1 ? '1 Link zeigt einen älteren Stand.' : `${staleCount} Links zeigen einen älteren Stand.`}
@@ -482,7 +492,7 @@ function SharesCard({
             <button
               type="button"
               onClick={onOpenShare}
-              className="underline font-semibold hover:text-amber-700"
+              className="underline font-semibold hover:text-amber-700 dark:hover:text-amber-100"
             >
               Schnappschuss aktualisieren
             </button>
@@ -490,7 +500,7 @@ function SharesCard({
         </div>
       )}
       {shares.length === 0 ? (
-        <p className="text-sm text-slate-500 mt-3">
+        <p className="text-sm text-slate-500 dark:text-slate-400 mt-3">
           Noch nicht geteilt. Erstellen Sie einen Link, um das Angebot dem Kunden zugänglich zu
           machen.
         </p>
@@ -501,15 +511,15 @@ function SharesCard({
             return (
               <li key={s.id} className="flex items-center gap-2">
                 <Eye className={`w-3.5 h-3.5 flex-shrink-0 ${stale ? 'text-amber-500' : 'text-emerald-500'}`} />
-                <span className="flex-1 truncate font-mono text-xs text-slate-500">
+                <span className="flex-1 truncate font-mono text-xs text-slate-500 dark:text-slate-400">
                   /{s.token.slice(0, 10)}…
                 </span>
                 {stale && (
-                  <span className="text-[10px] uppercase tracking-wider font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
+                  <span className="text-[10px] uppercase tracking-wider font-bold text-amber-700 bg-amber-100 dark:bg-amber-950/60 dark:text-amber-200 px-1.5 py-0.5 rounded">
                     Veraltet
                   </span>
                 )}
-                <span className="text-xs text-slate-400">
+                <span className="text-xs text-slate-400 dark:text-slate-500">
                   {s.viewCount}× gesehen
                 </span>
               </li>
@@ -518,7 +528,7 @@ function SharesCard({
         </ul>
       )}
       {allShares.some((s) => s.revokedAt) && (
-        <p className="text-xs text-slate-400 mt-3 pt-2 border-t border-slate-100">
+        <p className="text-xs text-slate-400 dark:text-slate-500 mt-3 pt-2 border-t border-slate-100 dark:border-slate-800">
           {allShares.filter((s) => s.revokedAt).length} widerrufen
         </p>
       )}
@@ -539,7 +549,7 @@ function SettingsPanel({
 }) {
   return (
     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5">
-      <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+      <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3">
         Projekt & Stellschrauben
       </h3>
 
@@ -554,7 +564,7 @@ function SettingsPanel({
         />
       </div>
 
-      <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 sm:grid-cols-5 gap-3">
         <NumField
           label="Mittellohn €/h"
           value={params.mittellohn}
@@ -582,7 +592,7 @@ function SettingsPanel({
         />
       </div>
 
-      <p className="text-xs text-slate-400 mt-3">
+      <p className="text-xs text-slate-400 dark:text-slate-500 mt-3">
         Änderungen wirken sofort auf alle EP/GP-Berechnungen.
       </p>
     </div>
@@ -604,7 +614,7 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="text-xs font-medium text-slate-600">{label}</span>
+      <span className="text-xs font-medium text-slate-600 dark:text-slate-300">{label}</span>
       <input
         type={type}
         value={value}
@@ -627,7 +637,7 @@ function NumField({
 }) {
   return (
     <label className="block">
-      <span className="text-xs font-medium text-slate-600">{label}</span>
+      <span className="text-xs font-medium text-slate-600 dark:text-slate-300">{label}</span>
       <input
         type="number"
         step="any"

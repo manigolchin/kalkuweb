@@ -226,9 +226,9 @@ function KpiCard({
           <Icon className="w-3.5 h-3.5" />
         </span>
       </div>
-      <p className="mt-3 text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
+      <div className="mt-3 text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">
         {value == null ? <Skeleton className="inline-block h-7 w-10 align-middle" /> : value}
-      </p>
+      </div>
     </>
   );
   const cls =
@@ -276,16 +276,20 @@ function Card({
 function ActivityRow({ entry }: { entry: InboxEntry }) {
   const latest = entry.responses[0];
   const project = entry.project;
-  const responseKind: 'approved' | 'changes' | null = latest
+  const responseKind: 'approved' | 'changes' | 'rejected' | null = latest
     ? latest.responseType === 'approve'
       ? 'approved'
-      : 'changes'
+      : latest.responseType === 'reject'
+        ? 'rejected'
+        : 'changes'
     : null;
   const when = latest?.respondedAt ?? entry.share.lastViewedAt ?? entry.share.createdAt;
   const verb = latest
     ? latest.responseType === 'approve'
       ? 'hat freigegeben'
-      : 'hat Änderungen angefordert'
+      : latest.responseType === 'reject'
+        ? 'hat abgelehnt'
+        : 'hat Änderungen angefordert'
     : entry.share.lastViewedAt
       ? 'hat den Link geöffnet'
       : 'Link erstellt';
@@ -300,9 +304,11 @@ function ActivityRow({ entry }: { entry: InboxEntry }) {
             'mt-1 w-2 h-2 rounded-full flex-shrink-0',
             responseKind === 'approved'
               ? 'bg-emerald-500'
-              : responseKind === 'changes'
-                ? 'bg-amber-500'
-                : 'bg-sky-500',
+              : responseKind === 'rejected'
+                ? 'bg-rose-500'
+                : responseKind === 'changes'
+                  ? 'bg-amber-500'
+                  : 'bg-sky-500',
           )}
           aria-hidden
         />
@@ -319,9 +325,14 @@ function ActivityRow({ entry }: { entry: InboxEntry }) {
         </div>
         <div className="flex flex-col items-end gap-1">
           {responseKind && <StatusBadge kind={responseKind} size="xs" />}
-          <time className="text-[11px] text-slate-400 dark:text-slate-500 tabular-nums whitespace-nowrap">
-            {relativeTime(when)}
-          </time>
+          {(() => {
+            const rel = relativeTime(when);
+            return rel ? (
+              <time className="text-[11px] text-slate-400 dark:text-slate-500 tabular-nums whitespace-nowrap">
+                {rel}
+              </time>
+            ) : null;
+          })()}
         </div>
       </Link>
     </li>

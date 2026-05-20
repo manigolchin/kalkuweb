@@ -45,13 +45,15 @@
     @apply bg-kalku-green text-white hover:bg-emerald-700 active:bg-emerald-800 shadow-sm hover:shadow-md;
   }
   .btn-secondary {
-    @apply bg-gray-100 text-gray-700 hover:bg-gray-200 active:bg-gray-300;
+    @apply bg-gray-100 text-gray-700 hover:bg-gray-200 active:bg-gray-300
+           dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 dark:active:bg-slate-600;
   }
   .btn-outline {
-    @apply border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 active:bg-gray-100;
+    @apply border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 active:bg-gray-100
+           dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800;
   }
   .btn-ghost {
-    @apply text-gray-700 hover:bg-gray-100;
+    @apply text-gray-700 hover:bg-gray-100 dark:text-slate-300 dark:hover:bg-slate-800;
   }
   .btn-lg {
     @apply px-6 py-3 text-base;
@@ -62,10 +64,11 @@
 
   /* Inputs */
   .input {
-    @apply w-full px-3 py-2 border border-gray-300 rounded-xl bg-white transition-colors focus:ring-2 focus:ring-primary-500 focus:border-primary-500;
+    @apply w-full px-3 py-2 border border-gray-300 rounded-xl bg-white text-gray-900 placeholder:text-gray-400 transition-colors focus:ring-2 focus:ring-primary-500 focus:border-primary-500
+           dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500;
   }
   .label {
-    @apply block text-sm font-medium text-gray-700 mb-1.5;
+    @apply block text-sm font-medium text-gray-700 mb-1.5 dark:text-slate-300;
   }
 
   /* Cards */

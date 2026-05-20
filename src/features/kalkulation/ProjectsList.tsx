@@ -43,13 +43,16 @@ export default function ProjectsList() {
   }
 
   // Auto-trigger creation when arriving from ⌘K / `c` shortcut / dashboard
-  // button with ?new=1. Strip the param so a refresh doesn't loop.
+  // button with ?new=1. Strip the param FIRST so a refresh doesn't loop, AND
+  // so the subsequent navigate-away from onCreateBlank doesn't try to set
+  // state on an unmounting component.
   useEffect(() => {
     if (params.get('new') === '1' && !loading && !creating) {
       const next = new URLSearchParams(params);
       next.delete('new');
       setParams(next, { replace: true });
-      onCreateBlank();
+      // Defer so the param-strip commits first.
+      queueMicrotask(() => onCreateBlank());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params, loading]);

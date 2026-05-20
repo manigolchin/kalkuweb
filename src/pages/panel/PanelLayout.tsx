@@ -15,8 +15,6 @@ import {
   PanelLeftOpen,
   Moon,
   Sun,
-  Rows3,
-  Rows,
   Menu,
   X,
 } from 'lucide-react';
@@ -24,7 +22,7 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/lib/auth';
 import { api, ApiError } from '@/lib/api';
-import { usePanelTheme, usePanelDensity, StatusBadge, Kbd } from './ui';
+import { usePanelTheme, StatusBadge, Kbd } from './ui';
 import CommandPalette from './CommandPalette';
 
 type NavItem = {
@@ -50,7 +48,6 @@ export default function PanelLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { theme, toggle: toggleTheme } = usePanelTheme();
-  const { density, toggle: toggleDensity } = usePanelDensity();
   const [unreadFeedback, setUnreadFeedback] = useState<number>(0);
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
@@ -97,7 +94,12 @@ export default function PanelLayout() {
     setMobileOpen(false);
   }, [location.pathname]);
 
+  const forceChange = user?.mustChangePassword === true;
+
   // Global hotkeys: ⌘K / Ctrl+K open palette; g+i / g+p / g+s navigate.
+  // Disabled entirely while the force-password modal is open (security gate).
+  // While the palette is open, only the ⌘K toggle works — so the user can
+  // close it. Other shortcuts skip so they don't navigate behind the modal.
   useEffect(() => {
     let leader = false;
     let leaderTimer: number | null = null;
@@ -120,13 +122,17 @@ export default function PanelLayout() {
       );
     }
     function onKey(e: KeyboardEvent) {
-      // ⌘K / Ctrl+K — palette
+      if (forceChange) return; // hard-block while force-password is up
+      // ⌘K / Ctrl+K — palette open/close. Allowed even when palette is open
+      // (so ⌘K closes it). Always pre-empts everything else.
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setPaletteOpen((v) => !v);
         clearLeader();
         return;
       }
+      // While palette is open, leave all other input handling to the palette.
+      if (paletteOpen) return;
       if (isTyping(e.target)) {
         clearLeader();
         return;
@@ -171,16 +177,13 @@ export default function PanelLayout() {
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [navigate]);
-
-  const forceChange = user?.mustChangePassword === true;
+  }, [navigate, paletteOpen, forceChange]);
 
   return (
     <div
       className={clsx(
         'min-h-screen flex bg-slate-50 text-slate-900',
         'dark:bg-slate-950 dark:text-slate-100',
-        density === 'dense' && 'panel-dense',
       )}
     >
       <Helmet>
@@ -249,17 +252,7 @@ export default function PanelLayout() {
             </span>
           </button>
 
-          <div className="flex items-center gap-1 ml-auto">
-            <button
-              type="button"
-              onClick={toggleDensity}
-              title={density === 'dense' ? 'Komfortable Ansicht' : 'Dichte Ansicht'}
-              aria-label={density === 'dense' ? 'Komfortable Ansicht aktivieren' : 'Dichte Ansicht aktivieren'}
-              className="hidden sm:inline-flex items-center justify-center w-9 h-9 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-800"
-            >
-              {density === 'dense' ? <Rows3 className="w-4 h-4" /> : <Rows className="w-4 h-4" />}
-            </button>
-          </div>
+          <div className="flex items-center gap-1 ml-auto" />
         </header>
 
         <main className="flex-1 px-4 sm:px-6 py-6 max-w-[1600px] w-full mx-auto">
