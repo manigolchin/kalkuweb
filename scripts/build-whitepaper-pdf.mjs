@@ -258,7 +258,7 @@ function drawIntro() {
 
   let y = 96;
   eyebrow('Vorwort', MARGIN, y, BRAND.primary);
-  y += 22;
+  y += 36;
 
   y = heading(
     'Warum die meisten VOB-Kalkulationen Geld liegen lassen.',
@@ -432,17 +432,19 @@ function drawError(err) {
 
   let y = 96;
 
-  // Step counter pill + title
+  // Step counter (eyebrow). jsPDF places y at the text BASELINE, so we need
+  // enough advance (eyebrow descender + heading ascent + gap) before drawing
+  // the heading — otherwise eyebrow and heading collide vertically.
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   setText(BRAND.primary);
   doc.setCharSpace(1.6);
   doc.text(`FEHLER NR. ${err.n} / 7`, MARGIN, y);
   doc.setCharSpace(0);
-  y += 16;
+  y += 34;
 
   y = heading(err.title, MARGIN, y, { size: 24 });
-  y += 14;
+  y += 18;
 
   // Intro / framing line
   y = paragraph(err.intro, MARGIN, y, {
@@ -487,7 +489,7 @@ function drawChecklist() {
 
   let y = 96;
   eyebrow('Anhang', MARGIN, y, BRAND.primary);
-  y += 22;
+  y += 34;
   y = heading('Die 7 Fehler — als Schnell-Checkliste für die nächste Submission.', MARGIN, y, { size: 22 });
   y += 18;
 
@@ -541,7 +543,7 @@ function drawOutro() {
   // Big quote/lead
   let y = 110;
   eyebrow('Wie es weitergeht', MARGIN, y, BRAND.primary);
-  y += 22;
+  y += 36;
   y = heading('Sie können diese sieben Fehler selbst beheben. Oder uns die Kalkulation übergeben.', MARGIN, y, { size: 24 });
   y += 18;
 
