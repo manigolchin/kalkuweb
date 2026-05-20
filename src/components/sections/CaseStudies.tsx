@@ -13,7 +13,15 @@ type TradeColor =
   | 'violet'
   | 'orange'
   | 'teal'
-  | 'indigo';
+  | 'indigo'
+  | 'gray'
+  | 'lime'
+  | 'cyan'
+  | 'zinc'
+  | 'red'
+  | 'stone'
+  | 'blue'
+  | 'fuchsia';
 
 type Case = {
   trade: string;
@@ -116,6 +124,78 @@ const CASES: Case[] = [
     after: { metric: 'Bepreisung Mischgewerk', value: '72 Std.' },
     outcome: 'LV + Schmiede-Sondergewerke in einem Aufwasch · Inhaber pflegt nur noch Stammdaten',
   },
+  {
+    trade: 'Straßen- & Asphaltbau',
+    tradeColor: 'gray',
+    region: 'Bayern',
+    size: '38 MA',
+    before: { metric: 'EFB-Nachweise pro Großlos', value: '3 Wochen' },
+    after: { metric: 'EFB-Nachweise pro Großlos', value: '4 Tage' },
+    outcome: '4 Großlose 2025 · ⌀ 720 k € Volumen · Vermessungsdaten direkt in die Massenermittlung übernommen',
+  },
+  {
+    trade: 'Zimmerei & Holzbau',
+    tradeColor: 'lime',
+    region: 'Schwarzwald',
+    size: '16 MA',
+    before: { metric: 'Auslastung Q4 – Q1', value: '35 %' },
+    after: { metric: 'Auslastung Q4 – Q1', value: '92 %' },
+    outcome: 'Erstmals durchgehende Auftragslage über Winter · 2 Kita-Holzbauten in Q1 gewonnen',
+  },
+  {
+    trade: 'Fliesenleger',
+    tradeColor: 'cyan',
+    region: 'NRW',
+    size: '7 MA',
+    before: { metric: 'Submissionen / Monat', value: '1' },
+    after: { metric: 'Submissionen / Monat', value: '4' },
+    outcome: '11 öffentliche Aufträge in 2025 · Inhaber kalkuliert nur noch Sonderbeläge selbst',
+  },
+  {
+    trade: 'Abbruch & Rückbau',
+    tradeColor: 'zinc',
+    region: 'Sachsen',
+    size: '24 MA',
+    before: { metric: 'Massenermittlung pro LV', value: '5 Tage' },
+    after: { metric: 'Massenermittlung pro LV', value: '1 Tag' },
+    outcome: '⌀ 220 k € Volumen · präzise Entsorgungskosten reduzieren Nachträge spürbar',
+  },
+  {
+    trade: 'Brandschutz',
+    tradeColor: 'red',
+    region: 'Hamburg',
+    size: '19 MA',
+    before: { metric: 'Angebotsquote', value: '12 %' },
+    after: { metric: 'Angebotsquote', value: '41 %' },
+    outcome: 'Komplexe BMA- & Sprinkler-LVs ohne Nachtrags-Konflikte · 3 Folgeaufträge im selben Quartal',
+  },
+  {
+    trade: 'Fassade & WDVS',
+    tradeColor: 'stone',
+    region: 'Niedersachsen',
+    size: '14 MA',
+    before: { metric: 'Sondergerüst-Bepreisung', value: '5 Tage' },
+    after: { metric: 'Sondergerüst-Bepreisung', value: '48 h' },
+    outcome: '3 Großaufträge gegen Konzern-GU gewonnen · stabile Marge trotz Materialpreis-Volatilität',
+  },
+  {
+    trade: 'HLK Industrie',
+    tradeColor: 'blue',
+    region: 'Bayern',
+    size: '52 MA',
+    before: { metric: 'Industrieanlagen-LV Durchlauf', value: '3 Wochen' },
+    after: { metric: 'Industrieanlagen-LV Durchlauf', value: '96 Std.' },
+    outcome: 'Lebensmittel- & Pharma-Industrie als Stammkunden · 2 Rahmenverträge in Süddeutschland',
+  },
+  {
+    trade: 'Schlosserei & Stahlbau',
+    tradeColor: 'fuchsia',
+    region: 'Saarland',
+    size: '6 MA',
+    before: { metric: 'Submissionsteilnahme / Jahr', value: '0' },
+    after: { metric: 'Submissionsteilnahme / Jahr', value: '9' },
+    outcome: 'KALKU als externe Kalkulationsabteilung · 5 Schul- & Verwaltungsbauten 2025 erstmals direkt gewonnen',
+  },
 ];
 
 const PILL_CLASSES: Record<TradeColor, string> = {
@@ -129,6 +209,14 @@ const PILL_CLASSES: Record<TradeColor, string> = {
   orange: 'bg-orange-100 text-orange-800',
   teal: 'bg-teal-100 text-teal-800',
   indigo: 'bg-indigo-100 text-indigo-800',
+  gray: 'bg-gray-100 text-gray-800',
+  lime: 'bg-lime-100 text-lime-800',
+  cyan: 'bg-cyan-100 text-cyan-800',
+  zinc: 'bg-zinc-100 text-zinc-800',
+  red: 'bg-red-100 text-red-800',
+  stone: 'bg-stone-100 text-stone-800',
+  blue: 'bg-blue-100 text-blue-800',
+  fuchsia: 'bg-fuchsia-100 text-fuchsia-800',
 };
 
 const SAMPLE_SIZE = 3;
