@@ -71,6 +71,8 @@ export function runMigrations() {
   const usersHas = (n: string) => usersCols.some((c) => c.name === n);
   if (!usersHas('company_phone')) sqlite.exec("ALTER TABLE users ADD COLUMN company_phone TEXT NOT NULL DEFAULT ''");
   if (!usersHas('company_contact_email')) sqlite.exec("ALTER TABLE users ADD COLUMN company_contact_email TEXT NOT NULL DEFAULT ''");
+  if (!usersHas('last_feedback_viewed_at')) sqlite.exec('ALTER TABLE users ADD COLUMN last_feedback_viewed_at INTEGER');
+  if (!usersHas('last_digest_sent_at')) sqlite.exec('ALTER TABLE users ADD COLUMN last_digest_sent_at INTEGER');
 
   sqlite.exec(`
 

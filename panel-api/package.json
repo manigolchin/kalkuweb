@@ -17,12 +17,16 @@
     "hono": "^4.6.13",
     "jose": "^5.9.6",
     "nanoid": "^5.0.9",
+    "nodemailer": "^8.0.7",
+    "pdfmake": "^0.3.8",
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.12",
     "@types/bcryptjs": "^2.4.6",
+    "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.2",
+    "@types/nodemailer": "^8.0.0",
+    "@types/pdfmake": "^0.3.3",
     "drizzle-kit": "^0.30.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"

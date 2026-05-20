@@ -10,6 +10,7 @@ import { projectsRoute } from './routes/projects.js';
 import { sharesRoute } from './routes/shares.js';
 import { publicRoute } from './routes/public.js';
 import { inboxRoute } from './routes/inbox.js';
+import { notificationsRoute, digestRoute } from './routes/notifications.js';
 import { rateLimit } from './lib/ratelimit.js';
 
 runMigrations();
@@ -75,6 +76,8 @@ app.route('/api/panel/projects', projectsRoute);
 app.route('/api/panel', sharesRoute);
 app.route('/api/panel', publicRoute);
 app.route('/api/panel', inboxRoute);
+app.route('/api/panel', notificationsRoute);
+app.route('/api/panel', digestRoute);
 
 app.notFound((c) => c.json({ error: 'not_found', path: c.req.path }, 404));
 

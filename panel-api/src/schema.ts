@@ -10,6 +10,12 @@ export const users = sqliteTable('users', {
   companyPhone: text('company_phone').notNull().default(''),
   companyContactEmail: text('company_contact_email').notNull().default(''),
   mustChangePassword: integer('must_change_password', { mode: 'boolean' }).notNull().default(false),
+  /** When the owner last opened the feedback inbox. Drives the unread-count
+   *  badge on the Kunden-Feedback tab and the digest "since" cursor. */
+  lastFeedbackViewedAt: integer('last_feedback_viewed_at', { mode: 'timestamp_ms' }),
+  /** When the most recent digest email was sent to this user. Lets the cron
+   *  job skip days with no events and resume after gaps. */
+  lastDigestSentAt: integer('last_digest_sent_at', { mode: 'timestamp_ms' }),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
 });

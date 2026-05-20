@@ -14,6 +14,7 @@ import {
   Mail,
   Fingerprint,
   Clock,
+  Download,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api, ApiError } from '@/lib/api';
@@ -219,6 +220,15 @@ export default function ShareView() {
               </p>
             )}
           </div>
+          <a
+            href={`/api/panel/share/${token}/pdf`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs sm:text-sm text-slate-700 hover:bg-slate-50 whitespace-nowrap"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">PDF</span>
+          </a>
           {brandHeader === 'co-branded' && (
             <a
               href="https://kalku.de"

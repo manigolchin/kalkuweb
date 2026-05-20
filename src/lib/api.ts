@@ -153,6 +153,11 @@ export const api = {
     list: () =>
       request<{ entries: InboxEntry[]; generatedAt: string }>(`/inbox`),
   },
+  notifications: {
+    unread: () => request<{ count: number }>(`/notifications/unread`),
+    markViewed: () =>
+      request<{ ok: true }>(`/notifications/mark-viewed`, { method: 'POST' }),
+  },
   public: {
     getShare: (token: string) => request<CustomerViewPayload>(`/share/${token}`),
     approve: (

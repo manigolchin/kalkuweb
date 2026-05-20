@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useEffect, useState, type FormEvent } from 'react';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { Calculator, LogOut, Settings, FolderClosed, Inbox, Lock, Loader2, ShieldAlert } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -23,11 +23,35 @@ const tabs: Tab[] = [
 export default function PanelLayout() {
   const { user, logout, setUser } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [unreadFeedback, setUnreadFeedback] = useState<number>(0);
 
   async function onLogout() {
     await logout();
     navigate('/login', { replace: true });
   }
+
+  // Refresh the unread-count whenever the panel route changes — cheap, no polling.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const { count } = await api.notifications.unread();
+        if (alive) setUnreadFeedback(count);
+      } catch {
+        // Ignore — badge stays at last known value.
+      }
+    })();
+    return () => { alive = false; };
+  }, [location.pathname]);
+
+  // When the user navigates INTO the feedback inbox, mark as viewed so the
+  // badge clears on next pathname change.
+  useEffect(() => {
+    if (location.pathname.startsWith('/panel/feedback')) {
+      api.notifications.markViewed().catch(() => {});
+    }
+  }, [location.pathname]);
 
   const forceChange = user?.mustChangePassword === true;
 
@@ -63,6 +87,11 @@ export default function PanelLayout() {
               >
                 <Icon className="w-4 h-4" />
                 {label}
+                {to === '/panel/feedback' && unreadFeedback > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-amber-500 text-white text-xs font-bold tabular-nums">
+                    {unreadFeedback > 99 ? '99+' : unreadFeedback}
+                  </span>
+                )}
               </NavLink>
             ))}
           </nav>
