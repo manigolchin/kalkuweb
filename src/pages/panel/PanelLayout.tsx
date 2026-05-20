@@ -66,9 +66,11 @@ export default function PanelLayout() {
       <header className="sticky top-0 z-30 bg-white border-b border-slate-200/80">
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 h-14 flex items-center gap-4">
           <NavLink to="/panel" className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-primary-500 grid place-items-center text-white text-sm font-bold">
-              K
-            </div>
+            <img
+              src="/logo.png"
+              alt="KALKU"
+              className="w-7 h-7 rounded-lg object-cover"
+            />
             <span className="font-semibold text-slate-900 hidden sm:inline">KALKU Panel</span>
           </NavLink>
 

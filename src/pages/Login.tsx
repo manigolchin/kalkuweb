@@ -64,9 +64,11 @@ export default function Login() {
         <main className="flex-1 grid place-items-center px-6 pb-16">
           <div className="w-full max-w-md">
             <div className="text-center mb-8">
-              <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-primary-500 text-white mb-4">
-                <span className="font-bold text-lg">K</span>
-              </div>
+              <img
+                src="/logo.png"
+                alt="KALKU"
+                className="inline-block w-14 h-14 rounded-2xl object-cover mb-4"
+              />
               <h1 className="text-2xl font-bold text-slate-900">KALKU Panel</h1>
               <p className="text-sm text-slate-500 mt-2">
                 Anmeldung für Inhaber / Bauunternehmer

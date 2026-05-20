@@ -69,7 +69,7 @@ export default function BlogPost() {
               '@type': 'Organization',
               name: NAP.legalName,
               url: NAP.url,
-              logo: { '@type': 'ImageObject', url: `${NAP.url}/favicon.svg` },
+              logo: { '@type': 'ImageObject', url: `${NAP.url}/logo.png` },
             },
             mainEntityOfPage: { '@type': 'WebPage', '@id': url },
             inLanguage: 'de-DE',

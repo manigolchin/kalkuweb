@@ -1,4 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#1a5276"/>
-  <path d="M16 18 L16 46 L20 46 L20 36 L24 36 L32 46 L37 46 L28 34 L37 22 L32 22 L24 32 L20 32 L20 18 Z" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="KALKU">
+  <!-- Brand cobalt sampled from logo.png: #0064d2 -->
+  <!-- Main square, inset to leave a strip for the corner offset detail -->
+  <rect x="0" y="6" width="58" height="58" fill="#0064d2"/>
+  <!-- Top-right detached square (signature corner detail of the KALKU mark) -->
+  <rect x="52" y="0" width="12" height="12" fill="#0064d2"/>
+  <!-- Bottom-left detached square -->
+  <rect x="0" y="58" width="6" height="6" fill="#0064d2"/>
+  <!-- Bold "K" wordmark — drawn as paths so the favicon renders identically
+       across browsers without depending on system fonts. Geometry mirrors the
+       real logo's letterform: vertical stroke + two angled strokes meeting at
+       a point past mid-height. -->
+  <path d="M 14 18 L 14 50 L 21 50 L 21 39 L 25 39 L 33 50 L 41 50 L 30 35 L 41 22 L 33 22 L 25 32 L 21 32 L 21 18 Z" fill="#ffffff"/>
 </svg>
