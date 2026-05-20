@@ -59,7 +59,11 @@ services:
       DB_PATH: /app/data/kalku.db
       CORS_ORIGINS: https://kalku.kalkus.de,https://kalku.de,https://www.kalku.de
     env_file:
-      - ./panel-api/.env
+      # Optional. Create panel-api/.env from panel-api/.env.example and fill in
+      # JWT_SECRET + SEED_PASSWORD for stable sessions. Without it the API mints
+      # a per-process secret on every restart — sessions invalidate.
+      - path: ./panel-api/.env
+        required: false
     volumes:
       - ./panel-api/data:/app/data
     networks:
