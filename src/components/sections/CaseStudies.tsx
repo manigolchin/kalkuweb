@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { ArrowRight } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { ArrowRight, RefreshCw } from 'lucide-react';
 import SectionHeader from '@/components/ui/SectionHeader';
 
 type TradeColor =
@@ -130,7 +130,7 @@ const PILL_CLASSES: Record<TradeColor, string> = {
   indigo: 'bg-indigo-100 text-indigo-800',
 };
 
-const VISIBLE_CASES = 3;
+const VISIBLE_CASES = 6;
 
 function pickCases(pool: Case[], n: number): Case[] {
   const copy = pool.slice();
@@ -142,7 +142,10 @@ function pickCases(pool: Case[], n: number): Case[] {
 }
 
 export default function CaseStudies() {
-  const visible = useMemo(() => pickCases(CASES, VISIBLE_CASES), []);
+  const [shuffleKey, setShuffleKey] = useState(0);
+  // shuffleKey is the re-shuffle trigger — bumping it via the button reruns pickCases.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const visible = useMemo(() => pickCases(CASES, VISIBLE_CASES), [shuffleKey]);
 
   return (
     <section className="section">
@@ -187,8 +190,19 @@ export default function CaseStudies() {
             </article>
           ))}
         </div>
-        <p className="text-center text-xs text-gray-500 mt-8 inline-flex items-center justify-center w-full gap-1.5">
-          {CASES.length} Cases im Pool · jeder Aufruf zeigt eine neue Auswahl · echte Referenzen auf Anfrage
+        <div className="flex justify-center mt-10">
+          <button
+            type="button"
+            onClick={() => setShuffleKey((k) => k + 1)}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full border border-gray-300 bg-white text-sm font-semibold text-gray-800 hover:border-gray-900 hover:text-gray-900 transition-colors"
+            aria-label="Andere Cases aus dem Pool anzeigen"
+          >
+            <RefreshCw className="w-4 h-4" aria-hidden />
+            Andere Cases anzeigen
+          </button>
+        </div>
+        <p className="text-center text-xs text-gray-500 mt-5 inline-flex items-center justify-center w-full gap-1.5">
+          {VISIBLE_CASES} von {CASES.length} Cases im Pool · jeder Aufruf zeigt eine neue Auswahl · echte Referenzen auf Anfrage
           <ArrowRight className="w-3 h-3" />
         </p>
       </div>
