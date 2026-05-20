@@ -65,7 +65,9 @@ services:
       - path: ./panel-api/.env
         required: false
     volumes:
-      - ./panel-api/data:/app/data
+      # Named volume (Docker-managed) so the container's `app` user owns the dir
+      # without needing host-side chown of a bind-mounted directory.
+      - kalku-panel-data:/app/data
     networks:
       - kalku_kalku-network
     labels:
@@ -75,6 +77,9 @@ services:
       - "traefik.http.routers.kalku-panel-api.priority=400"
       - "traefik.http.routers.kalku-panel-api.tls.certresolver=cloudflare"
       - "traefik.http.services.kalku-panel-api.loadbalancer.server.port=3000"
+
+volumes:
+  kalku-panel-data:
 
 networks:
   kalku_kalku-network:
