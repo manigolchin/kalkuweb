@@ -46,12 +46,14 @@ Neue B2B-Website für KALKU Baukalkulationen, Saarbrücken. Vite + React 19 + Ty
         └───────────────┘    └───────────────────┘    └────────────┘
 ```
 
-Zwei Container in diesem Repo:
+Vier Container in diesem Repo:
 
 - **`kalku-website`** — Haupt-Site (Vite-Build → nginx) → `kalku.kalkus.de` (Staging während Bauphase, später `kalku.de`)
 - **`kalku-direkt`** — Standalone-Tools-Micro-App im `/direkt/`-Subdir → eigene Traefik-Route
+- **`kalku-api`** — Legacy-Lead-Form-Backend (Express + JSONL) hinter `/api/forms/*` und `/api/healthz`
+- **`kalku-panel-api`** — Inhaber-Panel-Backend (Hono + SQLite) hinter `/api/panel/*`. Eigenes Verzeichnis [`panel-api/`](./panel-api/) mit eigener [README](./panel-api/README.md). Liefert Auth, Projekte, Kunden-Share-Flow, PDF-Export, Audit-Log, Digest-Mails.
 
-Beide hängen an Traefiks externem Netzwerk `kalku_kalku-network`.
+Alle hängen an Traefiks externem Netzwerk `kalku_kalku-network`. Routing-Priorität: Panel (400) > Forms (300) > Static (200).
 
 ---
 
@@ -59,13 +61,25 @@ Beide hängen an Traefiks externem Netzwerk `kalku_kalku-network`.
 
 ```bash
 npm install
-npm run dev          # http://localhost:5173
+npm run dev          # http://localhost:5174
 ```
+
+Für volle Funktionalität läuft das Panel-Backend parallel:
+
+```bash
+cd panel-api
+npm install
+JWT_SECRET=dev-only-secret SEED_PASSWORD=test1234 \
+  SEED_EMAIL=test@kalku.de npm run dev          # http://localhost:3000
+```
+
+Vite proxied `/api/*` automatisch nach `localhost:3000` (siehe `vite.config.ts`).
 
 Build prüfen:
 ```bash
-npm run build        # Production-Build in dist/
-npx tsc -b           # Typcheck
+npm run build        # Frontend production-Build in dist/
+npx tsc -b           # Frontend typecheck
+cd panel-api && npm run build && npm test    # Backend build + 32 tests
 ```
 
 Optional Container lokal:
@@ -106,6 +120,8 @@ ssh -4 -i ~/.ssh/hetzner_claude admin@91.98.185.113 \
 - Traefik-Netzwerk `kalku_kalku-network` muss existieren
 - Domain `kalku.kalkus.de` zeigt auf 91.98.185.113
 - Cloudflare-Wildcard-Cert `*.kalkus.de` ist via cert-resolver `cloudflare` verfügbar
+- `panel-api/.env` enthält `JWT_SECRET` (sonst startet `kalku-panel-api` nicht), optional SMTP-Credentials + `DIGEST_SECRET` (siehe [`panel-api/README.md`](./panel-api/README.md))
+- Wenn Digest-Mails gewünscht: Host-Cron, das `POST /api/panel/digest/run` mit dem `x-digest-secret`-Header trifft (z. B. werktags 07:00 CET)
 
 **Verify nach Deploy:**
 ```bash
@@ -153,8 +169,15 @@ GitHub `main` ist Single Source of Truth — der Server fast-forwarded nur von `
 ### Tests / Verifikation vor Push
 
 ```bash
+# Frontend
 npx tsc -b           # TypeScript clean
 npm run build        # Vite-Build erfolgreich
+npm run lint         # ESLint clean
+
+# Backend (panel-api)
+cd panel-api
+npm run build        # tsc -p tsconfig.json
+npm test             # 32 Tests: Aufmaß-Parser, Snapshot-Diff, Audit-Hash-Chain
 ```
 
 Visuelle Verifikation im Browser via Claude-Preview-Tools oder `npm run dev`.
