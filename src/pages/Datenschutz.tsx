@@ -17,7 +17,6 @@ export default function Datenschutz() {
       <Helmet>
         <title>{TITLE}</title>
         <meta name="description" content={DESC} />
-        <meta name="robots" content="noindex" />
         <link rel="canonical" href={canonical('/datenschutz/')} />
       </Helmet>
 

@@ -6,7 +6,7 @@ import { TRADES } from '@/lib/constants';
 
 const TITLE = 'Leistungen — Baukalkulation für 10 Gewerke | KALKU';
 const DESC =
-  'Übersicht aller KALKU-Leistungen pro Gewerk: Hochbau, Tiefbau, Straßenbau, GaLaBau, HLS, Innenausbau, Erd-/Abbrucharbeiten, Elektro, Fenster, Schadstoff. Outsourced Kalkulation für VOB/A-Ausschreibungen — alle Gewerke aus einer Hand.';
+  'Outsourced Baukalkulation für 10 Gewerke: Hochbau, Tiefbau, Straßenbau, GaLaBau, HLS, Innenausbau, Erd-/Abbruch, Elektro, Fenster, Schadstoff. VOB/A-konform, Festpreis ab 200 €.';
 
 export default function LeistungenIndex() {
   return (

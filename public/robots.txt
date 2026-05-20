@@ -1,7 +1,12 @@
 User-agent: *
 Allow: /
 
-# Tool-Endpoints (kein Crawling, da serverless)
+# Auth- und Token-geschützte Bereiche — kein SEO-Wert, Tokens nicht in Crawler-Indizes.
+Disallow: /login
+Disallow: /panel/
+Disallow: /share/
+
+# API-Endpunkte (kein Crawling, da JSON-only / nicht für Menschen)
 Disallow: /api/
 
 # Tracking-Parameter aus Index halten

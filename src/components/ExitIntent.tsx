@@ -111,12 +111,18 @@ export default function ExitIntent() {
     setSending(true);
     localStorage.setItem(LEAD_KEY, JSON.stringify({ email, ts: Date.now() }));
 
-    // Try API first (Phase 4 backend) — fall through to mailto on any failure.
+    // Send to the lead-capture API. The consent flag is persisted alongside the
+    // email so the JSONL row is a self-contained DSGVO audit-trail record.
     try {
       const res = await fetch('/api/forms/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'whitepaper', email }),
+        body: JSON.stringify({
+          type: 'whitepaper',
+          email,
+          consent: true,
+          consentText: 'Ich habe die Datenschutzerklärung zur Kenntnis genommen.',
+        }),
       });
       if (res.ok) {
         setSubmitted(true);

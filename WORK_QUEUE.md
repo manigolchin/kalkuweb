@@ -108,9 +108,7 @@ Phase 2 (static audit) — one feature per iteration, priority order:
 
 ### Forms & overlays — sweep findings (delegated scan, verified MultiStepForm + Impressum)
 
-- [!] **MultiStepForm.tsx:114-116 — main contact form is intentionally stubbed.** The submit handler is `await new Promise((r) => setTimeout(r, 600))` followed by `setSent(true)`. The success screen (line 130) tells the customer "Wir haben deine Anfrage erhalten und melden uns innerhalb eines Werktags telefonisch unter {data.telefon}." The TODO at line 114 names the intended destination: `// TODO Phase 3.4 backend: POST /api/forms/submit (Pipedrive async push + retry queue)`. **This is the site's primary contact form. Every submission since launch has been silently dropped.** Combined with GAEB-Konverter (a8212a7) and Kalkulator (aa507db), that's **3 product-defining lead forms broken at the time of audit**.
-- [!] **LeadMagnet.tsx:12 — "Checkliste per Mail" form is stubbed.** TODO names `POST /api/forms/submit type=lead-magnet-checklist`. Success copy at line 71 promises "Wir senden die Checkliste binnen weniger Minuten" but no fetch exists.
-- [!] **ExitIntent.tsx:74 — Exit-intent whitepaper form is stubbed.** TODO names `POST /api/forms/submit type=whitepaper`. Success copy at line 109 promises "Wir senden Ihnen das Whitepaper an {email} innerhalb der nächsten Minuten" but no fetch exists.
+- [x] **MultiStepForm / LeadMagnet / ExitIntent — all RESOLVED.** Verified live 2026-05-20: `POST https://kalku.kalkus.de/api/forms/submit` returns `{ok:true,id:"..."}`. `kalku-api` container is up and healthy. `src/lib/lead.ts` + per-form fetch chains wire through to it; all three forms have mailto fallbacks. Whitepaper PDF served at canonical URL (20 833 bytes). Note: human-mediated SLA promises ("Werktag", "Checkliste") remain — softened LeadMagnet success copy.
 - [ ] **Aggregate: build the `POST /api/forms/submit` endpoint once with a `type` discriminator** (`contact`, `lead-magnet-checklist`, `whitepaper`, plus 2 from the tool pages). Wire all 5 forms to it. Until the endpoint exists, hide the success-state copy that promises delivery, or fall back to a `mailto:` so leads aren't lost.
 
   **Architecture context (research, 2026-05-19):** The backend endpoint **does not exist anywhere in this repo.**
@@ -194,6 +192,56 @@ verified against `panel-api/src/routes/*.ts`, `src/features/kalkulation/*`, and
 - [ ] **Customer self-service: download the snapshot PDF without approving.** Currently `/share/:token/pdf` works but isn't surfaced before approval. Add a "Als PDF speichern" link in `ShareView` so the customer can keep a copy before deciding.
 - [ ] **PDF visual proofread.** `panel-api/src/lib/pdf.ts` (`renderQuotePdf` + `renderCertificatePdf`) — eyebrow/heading baseline overlap was a problem in the marketing whitepaper PDF generator; check that the same y-advance bug isn't lurking here on long LVs.
 - [ ] **Math: position-level rounding vs sum-then-round.** Current approach rounds `gp` per line then sums. Standard for invoicing, but if a project has many low-value lines the cumulative rounding error can be visible to customers comparing the sum manually. Optionally add a tooltip or footnote on the totals card.
+
+## Active — Pre-launch audit (2026-05-20)
+
+Full-site readiness audit across legal, forms, SEO, tools, infra. Items
+shipped same-day are marked `[x]`; remainder queued by priority.
+
+### Shipped same-day (reference)
+
+- [x] Removed `<meta robots="noindex">` from Impressum / Datenschutz / AGB. Legal-required transparency pages must be Google-discoverable.
+- [x] `public/robots.txt` now also disallows `/login`, `/panel/`, `/share/` (auth/token-gated, no SEO value).
+- [x] `LeadMagnet.tsx` + `ExitIntent.tsx` submissions now carry `consent: true` + `consentText` string so the JSONL row in `api/server.js` is a self-contained DSGVO audit-trail record.
+- [x] LeadMagnet success copy softened: "wir melden uns kurz und schicken Ihnen die Checkliste" (was: "binnen Minuten" — promised automation that doesn't exist).
+- [x] `ReferenzenIndex.tsx` description: aligned "Gewerken" count to 10 (matches `TRADES` constant + LeistungenIndex title; the 18-case pool stays in `CaseStudies.tsx` but the meta-description no longer contradicts the brand claim).
+- [x] `LeistungenIndex.tsx` description tightened (233 → 168 chars; was being SERP-truncated).
+- [x] `GaebKonverter.tsx`: removed dead `useEffect` no-op block (lines 140-144) and unused `useEffect` import.
+
+### BLOCKERS — need user input
+
+- [ ] **Impressum: Rechtsform + Handelsregister missing.** `src/pages/Impressum.tsx:27-49` lists only "KALKU Baukalkulationen" without UG / GmbH / GbR / e.K. suffix and no HRB/HRA + Registergericht. **§5 Abs. 1 Nr. 4 TMG requires the registry entry** for any registered company. If KALKU is a sole-proprietorship, the legal name in `src/lib/constants.ts:3` must include the owner's full name or `e.K.`. Abmahn-Anwalt risk at any moment until corrected. **Decide and fix.**
+- [ ] **AGB §3 vs marketing copy contradiction.** `src/pages/AGB.tsx:62-66` says Erfolgsprovision "in Höhe von 5 % **zusätzlich** zur Pauschale"; `src/lib/constants.ts:25` bullet says the provision is "**erst bei Auftragserteilung fällig**" — implying it replaces the pauschale. §305c BGB: ambiguity in AGB resolves against the drafter (KALKU). **Pick the actual contractual model and unify both surfaces.**
+- [ ] **`it@kalku.de` vs `info@kalku.de` inconsistency.** NAP email is `info@kalku.de` (`src/lib/constants.ts:11`) but mailto fallbacks in `MultiStepForm.tsx:258`, `LeadMagnet.tsx:36`, `ExitIntent.tsx:131`, `lead.ts` (`LEAD_FALLBACK_EMAIL = 'it@kalku.de'`) all use `it@`. **Decide which address is canonical for customer-facing surfaces and unify.**
+
+### HIGH — server / infra
+
+- [ ] **OpenStreetMap iframes not disclosed in Datenschutz.** `src/pages/Kontakt.tsx:93` and `src/pages/UeberUns.tsx:361` embed OSM tiles; visitor's IP leaves the EU on every page-load. Either add a `§ OpenStreetMap` section to `src/pages/Datenschutz.tsx` (similar to the existing Plausible/Calendly/WhatsApp/Pipedrive blocks) **or** convert the iframe to a click-to-load wrapper.
+- [ ] **`kalku-nginx-1` container on prod is in restart loop.** `docker ps` shows "Restarting (1) 44 seconds ago". The `-1` suffix and 2-week-old creation date suggest an orphan from another project's compose file. Verify it's not serving anything KALKU-related, then remove the orphan service. Use `docker compose -f docker-compose.prod.yml up -d --remove-orphans` after confirming.
+- [ ] **`api/.env` on prod: confirm `SMTP_*` and `PIPEDRIVE_API_TOKEN` set.** Without those, leads still persist to `api/data/submissions.jsonl` and the API returns 200, but no notification email lands in the inbox and no Pipedrive lead is created. **Manual SSH check before launch.**
+
+### HIGH — SEO polish
+
+- [ ] **Per-page OG/Twitter tags missing on most non-Home pages.** `LeistungenIndex`, `Gewerk` (×10), `Ablauf`, `Konditionen`, `UeberUns`, `ReferenzenIndex`, `ToolsIndex`, 5 tool pages, `Kontakt`, `Impressum`, `Datenschutz`, `AGB` all only emit `<title>`/description/canonical. Result: every LinkedIn / WhatsApp share of e.g. `/konditionen/` renders the same Home OG card. Sweep all `<Helmet>` blocks; add `og:title`, `og:description`, `og:url` (Home and BlogPost already do this — copy the pattern).
+- [ ] **6 more meta descriptions over the 160-char SERP cap** (LeistungenIndex + ReferenzenIndex already fixed). Tighten: `GaebKonverter.tsx:48` (193), `Home.tsx:46` (181), `NeuLanding.tsx:40` (179 — noindex, low priority), `Kalkulator.tsx:42` (175), `Konditionen.tsx:12` (172), `ToolsIndex.tsx:15` (163).
+- [ ] **`Home.tsx:44` title is 80 chars** — SERPs will truncate after "Sie unterschreiben." Shorten to ≤60 if the key phrase can be kept.
+- [ ] **`sitemap.xml` has no `<lastmod>`** — cheap crawl-priority win for blog posts especially.
+- [ ] **`sitemap.xml` is hand-edited.** When a new blog post lands in `src/data/blog.tsx` the sitemap will silently desync. Add a tiny build-time script that emits sitemap.xml from `POSTS` + a route table.
+
+### MEDIUM — UX / a11y / tool polish
+
+- [ ] **Kalkulator CSV uses LF, not CRLF.** `src/pages/Kalkulator.tsx:435` — Excel-Windows shows everything in one cell. One-line fix.
+- [ ] **`exportExcel` chunk-load has no `catch`** in `Kalkulator.tsx:444-496` and `Buergschaft.tsx:130-181`. If the dynamic `xlsx` chunk 404s (CSP / offline / proxy), button silently snaps back to idle with no feedback. Wrap in try/catch + inline error.
+- [ ] **GAEB-90 OZ-truncation only `console.warn`s.** `src/lib/gaeb/export.ts:531-535` warns when a deep position-id (e.g. `01.02.03.999`) is sliced to 9 chars. Surface in the UI when export runs.
+- [ ] **FristRechner Bindefrist slider missing `id`/`htmlFor` pair.** `src/pages/FristRechner.tsx:494-508` (other 4 fields are correctly wired).
+- [ ] **Buergschaft Bareinbehalt inputs missing `id`/`htmlFor` pair.** `src/pages/Buergschaft.tsx:547-575` (main 3 fields are correctly wired).
+- [ ] **Mittellohn uses `window.confirm` for reset + preset load.** `src/pages/Mittellohn.tsx:221, 236`. Kalkulator already uses a modal; align Mittellohn for consistency.
+- [ ] **Internal `HINWEIS (intern)` JS comments at the top of `Impressum.tsx`, `Datenschutz.tsx`, `AGB.tsx`.** Not rendered to users but should be deleted for hygiene before the final cut-over (and to avoid grep-leaks).
+- [ ] **`pipedriveWebhookPath` constant** in `src/lib/constants.ts:194` is exported but never imported. Remove or wire up.
+
+### Optional — bigger refactors
+
+- [ ] **404 returns HTTP 200** because the SPA serves `index.html` for any unknown path. `<meta robots="noindex">` on the NotFound component already prevents Google indexing — so this is OK for SEO — but actual HTTP 404 would be cleaner. Requires nginx route map (allowlist of real routes) or moving to SSR. Not a launch blocker.
 
 ## Backlog
 

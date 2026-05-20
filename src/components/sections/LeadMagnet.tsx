@@ -17,12 +17,18 @@ export default function LeadMagnet() {
     setSending(true);
     localStorage.setItem(LEAD_KEY, JSON.stringify({ email, ts: Date.now() }));
 
-    // Try API first (Phase 4 backend) — fall through to mailto on any failure.
+    // Send to the lead-capture API. The consent flag is persisted alongside the
+    // email so the JSONL row is a self-contained DSGVO audit-trail record.
     try {
       const res = await fetch('/api/forms/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'lead-magnet-checklist', email }),
+        body: JSON.stringify({
+          type: 'lead-magnet-checklist',
+          email,
+          consent: true,
+          consentText: 'Ich habe die Datenschutzerklärung zur Kenntnis genommen.',
+        }),
       });
       if (res.ok) {
         setSent(true);
@@ -94,7 +100,7 @@ export default function LeadMagnet() {
               <div className="inline-flex items-center gap-3 px-5 py-4 rounded-lg bg-emerald-50 border border-emerald-200">
                 <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
                 <p className="text-sm text-emerald-900">
-                  Vielen Dank! Wir senden die Checkliste binnen weniger Minuten an{' '}
+                  Vielen Dank! Wir melden uns kurz und schicken Ihnen die Checkliste an{' '}
                   <span className="font-semibold">{email}</span>.
                 </p>
               </div>

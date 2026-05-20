@@ -16,7 +16,6 @@ export default function Impressum() {
       <Helmet>
         <title>{TITLE}</title>
         <meta name="description" content={DESC} />
-        <meta name="robots" content="noindex" />
         <link rel="canonical" href={canonical('/impressum/')} />
       </Helmet>
 
