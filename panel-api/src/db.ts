@@ -48,11 +48,23 @@ export function runMigrations() {
       created_at INTEGER NOT NULL,
       revoked_at INTEGER,
       last_viewed_at INTEGER,
-      view_count INTEGER NOT NULL DEFAULT 0
+      view_count INTEGER NOT NULL DEFAULT 0,
+      snapshot_data TEXT,
+      snapshot_hash TEXT
     );
 
     CREATE INDEX IF NOT EXISTS idx_shares_project ON shares(project_id);
     CREATE INDEX IF NOT EXISTS idx_shares_token ON shares(token);
+  `);
+
+  // Idempotent column-add for DBs that predate the snapshot columns.
+  // SQLite ALTER TABLE ADD COLUMN has no IF NOT EXISTS, so probe pragma first.
+  const cols = sqlite.prepare("PRAGMA table_info(shares)").all() as Array<{ name: string }>;
+  const has = (n: string) => cols.some((c) => c.name === n);
+  if (!has('snapshot_data')) sqlite.exec('ALTER TABLE shares ADD COLUMN snapshot_data TEXT');
+  if (!has('snapshot_hash')) sqlite.exec('ALTER TABLE shares ADD COLUMN snapshot_hash TEXT');
+
+  sqlite.exec(`
 
     CREATE TABLE IF NOT EXISTS share_responses (
       id TEXT PRIMARY KEY,

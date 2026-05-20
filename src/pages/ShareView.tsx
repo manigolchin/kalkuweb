@@ -175,7 +175,9 @@ export default function ShareView() {
             <h1 className="font-semibold text-slate-900 truncate">
               {owner.companyName || owner.name || 'Anbieter'}
             </h1>
-            <p className="text-xs text-slate-500 truncate">{owner.email}</p>
+            {owner.name && owner.companyName && owner.name !== owner.companyName && (
+              <p className="text-xs text-slate-500 truncate">{owner.name}</p>
+            )}
           </div>
           {brandHeader === 'co-branded' && (
             <a

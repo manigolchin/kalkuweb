@@ -5,14 +5,15 @@ import { nanoid } from 'nanoid';
 import { db } from '../db.js';
 import { projects, shares, shareResponses } from '../schema.js';
 import { requireAuth, type AuthVariables } from '../lib/middleware.js';
+import { buildShareSnapshot, snapshotHash } from '../lib/snapshot.js';
 
 const createShareSchema = z.object({
-  visiblePositionIds: z.array(z.string()),
+  visiblePositionIds: z.array(z.string()).max(1000),
   settings: z.object({
     brandHeader: z.enum(['own', 'co-branded', 'minimal']).default('co-branded'),
-    customerName: z.string().optional(),
-    customerEmail: z.string().optional(),
-    message: z.string().optional(),
+    customerName: z.string().max(200).optional(),
+    customerEmail: z.string().max(200).optional(),
+    message: z.string().max(2000).optional(),
     allowApproval: z.boolean().default(true),
     allowChangeRequests: z.boolean().default(true),
     showTotals: z.boolean().default(true),
@@ -37,12 +38,34 @@ export const sharesRoute = new Hono<{ Variables: AuthVariables }>()
     const id = nanoid(16);
     const token = nanoid(32);
     const now = new Date();
+
+    // Freeze the customer-visible content at share-creation time so the owner
+    // editing the project later does NOT change what the customer sees or
+    // approves. The snapshot is the legal source of truth for the share.
+    const snapshot = buildShareSnapshot(
+      {
+        name: project.data.name,
+        client: project.data.client,
+        service: project.data.service,
+        tenderNumber: project.data.tenderNumber,
+        deadline: project.data.deadline,
+        notes: project.data.notes,
+        calcParams: project.data.calcParams,
+      },
+      project.data.positions || [],
+      parsed.data.visiblePositionIds,
+      project.versionNumber,
+    );
+    const hash = snapshotHash(snapshot);
+
     await db.insert(shares).values({
       id,
       projectId,
       token,
       visiblePositionIds: parsed.data.visiblePositionIds,
       settings: parsed.data.settings,
+      snapshotData: snapshot,
+      snapshotHash: hash,
       createdAt: now,
       viewCount: 0,
     });
@@ -52,6 +75,8 @@ export const sharesRoute = new Hono<{ Variables: AuthVariables }>()
       projectId,
       visiblePositionIds: parsed.data.visiblePositionIds,
       settings: parsed.data.settings,
+      snapshotHash: hash,
+      snapshottedAt: snapshot.snapshottedAt,
       createdAt: now,
       revokedAt: null,
       lastViewedAt: null,

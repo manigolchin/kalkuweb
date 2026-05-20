@@ -3,26 +3,30 @@ import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { db } from '../db.js';
-import { projects, shares, shareResponses, users, type Position } from '../schema.js';
+import { projects, shares, shareResponses, users } from '../schema.js';
 import { clientIp } from '../lib/middleware.js';
+import { buildLegacySnapshot, snapshotHash } from '../lib/snapshot.js';
 
 const approveSchema = z.object({
-  customerName: z.string().min(1),
-  customerEmail: z.string().email().optional(),
-  message: z.string().optional(),
+  customerName: z.string().trim().min(1).max(200),
+  customerEmail: z.string().email().max(200).optional(),
+  message: z.string().max(4000).optional(),
 });
 
 const changesSchema = z.object({
-  customerName: z.string().min(1),
-  customerEmail: z.string().email().optional(),
-  message: z.string().optional(),
-  changes: z.array(
-    z.object({
-      positionId: z.string(),
-      type: z.enum(['modify', 'remove', 'comment']),
-      text: z.string(),
-    }),
-  ).min(1),
+  customerName: z.string().trim().min(1).max(200),
+  customerEmail: z.string().email().max(200).optional(),
+  message: z.string().max(4000).optional(),
+  changes: z
+    .array(
+      z.object({
+        positionId: z.string().max(64),
+        type: z.enum(['modify', 'remove', 'comment']),
+        text: z.string().max(2000),
+      }),
+    )
+    .min(1)
+    .max(100),
 });
 
 export const publicRoute = new Hono()
@@ -35,6 +39,23 @@ export const publicRoute = new Hono()
     const project = await db.query.projects.findFirst({ where: eq(projects.id, share.projectId) });
     if (!project) return c.json({ error: 'not_found' }, 404);
 
+    // Lazy snapshot for legacy share rows that predate the snapshot column.
+    // New shares always have snapshotData populated at creation.
+    let snapshot = share.snapshotData;
+    if (!snapshot) {
+      snapshot = buildLegacySnapshot(
+        { data: project.data, versionNumber: project.versionNumber },
+        share.visiblePositionIds,
+      );
+      const hash = snapshotHash(snapshot);
+      await db
+        .update(shares)
+        .set({ snapshotData: snapshot, snapshotHash: hash })
+        .where(eq(shares.id, share.id));
+      share.snapshotHash = hash;
+      console.warn(`[share] backfilled snapshot for legacy share ${share.id}`);
+    }
+
     const owner = await db.query.users.findFirst({ where: eq(users.id, project.ownerId) });
 
     await db
@@ -45,44 +66,23 @@ export const publicRoute = new Hono()
       })
       .where(eq(shares.id, share.id));
 
-    const visibleIds = new Set(share.visiblePositionIds);
-    const allPositions = (project.data.positions || []) as Position[];
-    const filteredPositions = allPositions
-      .filter((p) => visibleIds.has(p.id))
-      .map((p) => ({
-        id: p.id,
-        oz: p.oz,
-        shortText: p.shortText,
-        longText: p.longText,
-        quantity: p.quantity,
-        unit: p.unit,
-        isHeader: p.isHeader,
-        sortOrder: p.sortOrder,
-        ep: p.ep,
-        gp: p.gp,
-      }));
-
     return c.json({
       shareId: share.id,
       token: share.token,
       settings: share.settings,
+      snapshotHash: share.snapshotHash,
+      snapshottedAt: snapshot.snapshottedAt,
       project: {
-        name: project.data.name,
-        client: project.data.client,
-        service: project.data.service,
-        tenderNumber: project.data.tenderNumber,
-        deadline: project.data.deadline,
-        versionNumber: project.versionNumber,
-        notes: project.data.notes,
-        mwst: project.data.calcParams.mwst,
+        ...snapshot.project,
+        versionNumber: snapshot.projectVersionNumber,
       },
       owner: {
         name: owner?.name || '',
         companyName: owner?.companyName || '',
         companyLogoUrl: owner?.companyLogoUrl || '',
-        email: owner?.email || '',
+        // owner.email intentionally omitted — login email must not leak to the public.
       },
-      positions: filteredPositions,
+      positions: snapshot.positions,
     });
   })
 
@@ -105,7 +105,7 @@ export const publicRoute = new Hono()
       customerName: parsed.data.customerName,
       customerEmail: parsed.data.customerEmail,
       ip: clientIp(c),
-      userAgent: c.req.header('user-agent') || null,
+      userAgent: (c.req.header('user-agent') || '').slice(0, 500),
       payload: {
         message: parsed.data.message,
         signature: {
@@ -113,10 +113,11 @@ export const publicRoute = new Hono()
           timestamp: now.getTime(),
           ip: clientIp(c),
         },
+        snapshotHash: share.snapshotHash || undefined,
       },
       respondedAt: now,
     });
-    return c.json({ ok: true, respondedAt: now });
+    return c.json({ ok: true, respondedAt: now, snapshotHash: share.snapshotHash });
   })
 
   .post('/share/:token/changes', async (c) => {
@@ -138,12 +139,13 @@ export const publicRoute = new Hono()
       customerName: parsed.data.customerName,
       customerEmail: parsed.data.customerEmail,
       ip: clientIp(c),
-      userAgent: c.req.header('user-agent') || null,
+      userAgent: (c.req.header('user-agent') || '').slice(0, 500),
       payload: {
         message: parsed.data.message,
         changes: parsed.data.changes,
+        snapshotHash: share.snapshotHash || undefined,
       },
       respondedAt: now,
     });
-    return c.json({ ok: true, respondedAt: now });
+    return c.json({ ok: true, respondedAt: now, snapshotHash: share.snapshotHash });
   });

@@ -27,6 +27,8 @@ export const shares = sqliteTable('shares', {
   token: text('token').notNull().unique(),
   visiblePositionIds: text('visible_position_ids', { mode: 'json' }).notNull().$type<string[]>(),
   settings: text('settings', { mode: 'json' }).notNull().$type<ShareSettings>(),
+  snapshotData: text('snapshot_data', { mode: 'json' }).$type<ShareSnapshot | null>(),
+  snapshotHash: text('snapshot_hash'),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
   revokedAt: integer('revoked_at', { mode: 'timestamp_ms' }),
   lastViewedAt: integer('last_viewed_at', { mode: 'timestamp_ms' }),
@@ -125,4 +127,33 @@ export type ResponsePayload = {
     timestamp: number;
     ip: string;
   };
+  /** SHA-256 of the share snapshot the customer was responding to. Lets the
+   *  owner prove (and the customer verify) which exact pricing was approved. */
+  snapshotHash?: string;
+};
+
+export type ShareSnapshot = {
+  snapshottedAt: string;
+  projectVersionNumber: number;
+  project: {
+    name: string;
+    client: string;
+    service: string;
+    tenderNumber: string;
+    deadline: string;
+    notes?: string;
+    mwst: number;
+  };
+  positions: Array<{
+    id: string;
+    oz: string;
+    shortText: string;
+    longText: string;
+    quantity: number;
+    unit: string;
+    isHeader: boolean;
+    sortOrder: number;
+    ep: number;
+    gp: number;
+  }>;
 };

@@ -90,6 +90,8 @@ export type ShareSummary = {
   revokedAt: string | null;
   lastViewedAt: string | null;
   viewCount: number;
+  snapshotHash?: string | null;
+  snapshottedAt?: string;
 };
 
 export type ShareResponse = {
@@ -116,6 +118,8 @@ export type CustomerViewPayload = {
   shareId: string;
   token: string;
   settings: ShareSettings;
+  snapshotHash: string | null;
+  snapshottedAt: string;
   project: {
     name: string;
     client: string;
@@ -130,7 +134,8 @@ export type CustomerViewPayload = {
     name: string;
     companyName: string;
     companyLogoUrl: string;
-    email: string;
+    // Login email intentionally not exposed. Owner contact info should live in
+    // the share `settings.message` or a future public contact field.
   };
   positions: Array<{
     id: string;

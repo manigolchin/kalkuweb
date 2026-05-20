@@ -2,13 +2,17 @@ import bcrypt from 'bcryptjs';
 import { SignJWT, jwtVerify } from 'jose';
 import { nanoid } from 'nanoid';
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'CHANGE-ME-IN-PROD-' + nanoid(32)
-);
-
 if (!process.env.JWT_SECRET) {
-  console.warn('[WARN] JWT_SECRET env not set — using random per-process secret (sessions reset on restart)');
+  if (process.env.NODE_ENV === 'production') {
+    console.error('[FATAL] JWT_SECRET env not set in production. Refusing to start with an ephemeral secret.');
+    process.exit(1);
+  }
+  console.warn('[WARN] JWT_SECRET env not set — using random per-process secret (sessions reset on restart). OK for dev only.');
 }
+
+const JWT_SECRET = new TextEncoder().encode(
+  process.env.JWT_SECRET || 'DEV-ONLY-' + nanoid(32)
+);
 
 export const COOKIE_NAME = 'kalku_session';
 export const COOKIE_MAX_AGE_DAYS = 30;
