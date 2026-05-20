@@ -81,7 +81,7 @@ export default function StickyMobileCta() {
 
   return (
     <div
-      className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]"
+      className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] pb-[env(safe-area-inset-bottom)]"
       role="region"
       aria-label="Schnell-Kontakt"
     >
@@ -115,9 +115,9 @@ export default function StickyMobileCta() {
           type="button"
           onClick={dismiss}
           aria-label="Schnellkontakt-Leiste schließen"
-          className="absolute top-1 right-1 w-7 h-7 inline-flex items-center justify-center text-gray-400 hover:text-gray-700 rounded-full"
+          className="absolute -top-3 right-1 w-11 h-11 inline-flex items-center justify-center text-gray-500 hover:text-gray-800 bg-white border border-gray-200 rounded-full shadow-sm"
         >
-          <X className="w-3.5 h-3.5" aria-hidden="true" />
+          <X className="w-4 h-4" aria-hidden="true" />
         </button>
       </div>
     </div>

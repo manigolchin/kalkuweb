@@ -519,7 +519,7 @@ export default function FristRechner() {
                 >
                   <Scale className="w-3.5 h-3.5" />
                   VOB/A § 12a Mindestfrist-Prüfung
-                  <span className="text-[10px] text-gray-400 font-normal normal-case tracking-normal">
+                  <span className="text-xs text-gray-400 font-normal normal-case tracking-normal">
                     {showVobCheck ? '— ausblenden' : '— prüfen'}
                   </span>
                 </button>

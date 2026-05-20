@@ -173,7 +173,7 @@ function SocialIcon({
       rel="noopener noreferrer"
       aria-label={label}
       title={label}
-      className={`w-9 h-9 rounded-lg border flex items-center justify-center transition-colors ${cls}`}
+      className={`w-11 h-11 rounded-lg border flex items-center justify-center transition-colors ${cls}`}
     >
       {children}
     </a>

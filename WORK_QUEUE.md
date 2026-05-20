@@ -243,6 +243,37 @@ shipped same-day are marked `[x]`; remainder queued by priority.
 
 - [ ] **404 returns HTTP 200** because the SPA serves `index.html` for any unknown path. `<meta robots="noindex">` on the NotFound component already prevents Google indexing — so this is OK for SEO — but actual HTTP 404 would be cleaner. Requires nginx route map (allowlist of real routes) or moving to SSR. Not a launch blocker.
 
+## Active — Mobile responsiveness audit (2026-05-20)
+
+Full sweep of 25+ pages/components for 360–414px viewport behaviour.
+0 blockers. The high-impact fixes shipped same-day; remainder queued.
+
+### Shipped same-day (reference)
+
+- [x] `StickyMobileCta.tsx`: outer div now carries `pb-[env(safe-area-inset-bottom)]` so the CTA strip doesn't hide behind the iOS home-bar gesture area.
+- [x] `StickyMobileCta.tsx` close-X moved out of the CTA strip and grown to 44×44 (was 28×28 sitting on top of the WhatsApp tap zone — fat-finger risk). Now a floating pill `-top-3 right-1` with a thin border.
+- [x] `ShareView.tsx` sticky bottom totals bar: same `pb-[env(safe-area-inset-bottom)]` so "Annehmen" doesn't get eaten by iOS home-bar. Customer-facing page, most likely opened on a phone.
+- [x] `ShareView.tsx` PDF + Annehmen buttons: 44×44 minimum on mobile (was ~30 tall), enforced via `min-w-[44px] min-h-[44px]` that resets at `sm:`.
+- [x] `Footer.tsx` social-icon links: 36×36 → 44×44 (`w-9 h-9` → `w-11 h-11`) to meet the WCAG touch-target floor.
+- [x] `FristRechner.tsx:522` `text-[10px]` → `text-xs` (below readability threshold on small screens).
+
+### MEDIUM — queued
+
+- [ ] **`Footer.tsx:50` columns jump from 1 to 2 (at `md:`) and 2 to 5 (at `lg:`).** At iPad portrait the brand column claims `lg:col-span-2` worth of width because lg-only spans are ignored, but the link columns still render under brand as 1-col. Either change to `sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5` for smoother reflow, or accept the current behaviour as acceptable (it works; just not elegant).
+- [ ] **`Home.tsx:74` hero padding `py-16` (=128 px) eats too much viewport on 360×640 phones.** Consider `py-10 sm:py-16 lg:py-24`. Same applies to other landing-style sections with `section` utility (likely `py-16` baseline in `index.css`).
+- [ ] **`MultiStepForm.tsx:738` step-progress columns are tight at 360 px.** `w-20 sm:w-28` + label `max-w-[110px]` with 3 columns + 2 connector lines on a ~312 px content width. Works but the label "Bestätigung & Terminbuchung" wraps to 3 lines. Either shorten the label on mobile, or render only the current step's label.
+- [ ] **`Footer.tsx:74-95` NAP-block icons (MapPin/Phone/Mail) lack `aria-hidden="true"`.** Screen reader announces them as decorative-image noise alongside the visible label. Minor a11y polish.
+- [ ] **`PositionTable` in `src/features/kalkulation/PositionTable.tsx`** — already inside `overflow-x-auto`, so horizontal scroll is the intended behaviour on phones. Adding a small "← Wischen für mehr →" hint would improve discoverability for first-time users on a phone. Not a bug.
+
+### Tested and OK
+
+- Viewport meta tag set correctly (`width=device-width, initial-scale=1.0`).
+- 161 `sm:`, 30 `md:`, 79 `lg:` Tailwind responsive utilities in use; H1s are uniformly `text-4xl sm:text-5xl lg:text-6xl` — no oversized hero text on phones.
+- Tables in tool pages all sit inside `overflow-x-auto`; phone users scroll horizontally rather than hitting a broken layout.
+- `Nav.tsx` hamburger: 44×44 hit area, focus moves into the menu on open (prior WORK_QUEUE concern resolved at `Nav.tsx:46-56`).
+- `ExitIntent.tsx` dialog: `max-w-lg w-full` inside a `px-4` backdrop = always has edge padding on phones.
+- `StickyMobileCta.tsx` CTA links all have visible text + `aria-hidden` on icons — accessible without needing `aria-label`.
+
 ## Backlog
 
 (longer-term ideas, lower priority)

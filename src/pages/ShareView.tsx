@@ -225,9 +225,10 @@ export default function ShareView() {
             href={`/api/panel/share/${token}/pdf`}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs sm:text-sm text-slate-700 hover:bg-slate-50 whitespace-nowrap"
+            aria-label="Angebot als PDF herunterladen"
+            className="inline-flex items-center justify-center gap-1.5 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 px-3 sm:py-1.5 rounded-lg border border-slate-200 text-xs sm:text-sm text-slate-700 hover:bg-slate-50 whitespace-nowrap"
           >
-            <Download className="w-3.5 h-3.5" />
+            <Download className="w-4 h-4" />
             <span className="hidden sm:inline">PDF</span>
           </a>
           {brandHeader === 'co-branded' && (
@@ -460,7 +461,7 @@ export default function ShareView() {
 
       {/* Sticky bottom totals bar — shows running brutto while customer scrolls */}
       {settings.showTotals && !submitted && (
-        <div className="sticky bottom-0 left-0 right-0 bg-white/95 backdrop-blur border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
+        <div className="sticky bottom-0 left-0 right-0 bg-white/95 backdrop-blur border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.04)] pb-[env(safe-area-inset-bottom)]">
           <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4 text-sm">
             <div className="flex items-center gap-4 flex-wrap min-w-0">
               <span className="text-slate-500 hidden sm:inline">Netto <strong className="text-slate-800 tabular-nums">{formatEUR(visibleTotal.netto)}</strong></span>
@@ -474,7 +475,7 @@ export default function ShareView() {
             {settings.allowApproval && (
               <a
                 href="#approve-form"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs sm:text-sm font-semibold hover:bg-emerald-700 whitespace-nowrap"
+                className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-4 sm:px-3 sm:py-1.5 rounded-lg bg-emerald-600 text-white text-xs sm:text-sm font-semibold hover:bg-emerald-700 whitespace-nowrap"
               >
                 <ShieldCheck className="w-4 h-4" />
                 <span className="hidden sm:inline">Angebot annehmen</span>
