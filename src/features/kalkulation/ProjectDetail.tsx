@@ -23,6 +23,7 @@ import type {
   ShareSummary,
 } from './types';
 import { calcTotals, formatEUR, formatNum, DEFAULT_CALC_PARAMS, recalcAll } from './calc';
+import { Breadcrumb } from '@/pages/panel/ui';
 import PositionTable from './PositionTable';
 import ShareDialog from './ShareDialog';
 
@@ -207,7 +208,7 @@ export default function ProjectDetail() {
 
   if (error || !data || !project) {
     return (
-      <div className="bg-white border border-slate-200/80 rounded-2xl p-8 text-center max-w-md mx-auto">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-8 text-center max-w-md mx-auto">
         <div className="inline-flex p-3 rounded-full bg-red-50 mb-3">
           <AlertCircle className="w-5 h-5 text-red-500" />
         </div>
@@ -229,11 +230,19 @@ export default function ProjectDetail() {
         <title>{data.name || 'Kalkulation'} – KALKU Panel</title>
       </Helmet>
 
+      <Breadcrumb
+        items={[
+          { label: 'Panel', to: '/panel' },
+          { label: 'Kalkulation', to: '/panel/kalkulation' },
+          { label: data.name || 'Projekt' },
+        ]}
+      />
+
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <Link
             to="/panel/kalkulation"
-            className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+            className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
             aria-label="Zurück"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -243,13 +252,13 @@ export default function ProjectDetail() {
               value={data.name}
               onChange={(e) => updateMeta({ name: e.target.value })}
               placeholder="Projektname"
-              className="text-xl font-bold text-slate-900 bg-transparent w-full px-1 -mx-1 rounded outline-none focus:bg-white focus:ring-1 focus:ring-primary-300"
+              className="text-xl font-bold text-slate-900 dark:text-slate-100 bg-transparent w-full px-1 -mx-1 rounded outline-none focus:bg-white dark:focus:bg-slate-800 focus:ring-1 focus:ring-primary-300"
             />
             <input
               value={data.client}
               onChange={(e) => updateMeta({ client: e.target.value })}
               placeholder="Auftraggeber / Kunde"
-              className="text-sm text-slate-500 bg-transparent w-full px-1 -mx-1 mt-0.5 rounded outline-none focus:bg-white focus:ring-1 focus:ring-primary-300"
+              className="text-sm text-slate-500 dark:text-slate-400 bg-transparent w-full px-1 -mx-1 mt-0.5 rounded outline-none focus:bg-white dark:focus:bg-slate-800 focus:ring-1 focus:ring-primary-300"
             />
           </div>
         </div>
@@ -372,7 +381,7 @@ function TotalsCard({
   visibleCount: number;
 }) {
   return (
-    <div className="bg-white border border-slate-200/80 rounded-2xl p-5">
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5">
       <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Summen</h3>
 
       <div className="mt-3 space-y-1.5 text-sm">
@@ -452,7 +461,7 @@ function SharesCard({
   const staleCount = shares.filter(isStale).length;
 
   return (
-    <div className="bg-white border border-slate-200/80 rounded-2xl p-5">
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5">
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Geteilte Links</h3>
         <button
@@ -529,7 +538,7 @@ function SettingsPanel({
   onParams: (patch: Partial<CalcParams>) => void;
 }) {
   return (
-    <div className="bg-white border border-slate-200/80 rounded-2xl p-5">
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5">
       <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
         Projekt & Stellschrauben
       </h3>

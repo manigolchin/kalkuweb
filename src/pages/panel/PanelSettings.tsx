@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { Loader2, Save, Lock, Building2 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { api, ApiError } from '@/lib/api';
+import { Breadcrumb } from './ui';
 
 export default function PanelSettings() {
   const { user, setUser } = useAuth();
@@ -60,18 +61,20 @@ export default function PanelSettings() {
 
   return (
     <div className="max-w-2xl space-y-6">
+      <Breadcrumb items={[{ label: 'Panel', to: '/panel' }, { label: 'Einstellungen' }]} />
+
       <header>
-        <h1 className="text-2xl font-bold text-slate-900">Einstellungen</h1>
-        <p className="text-sm text-slate-500 mt-1">Profil und Passwort</p>
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Einstellungen</h1>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Profil und Passwort</p>
       </header>
 
-      <form onSubmit={saveProfile} className="bg-white border border-slate-200/80 rounded-2xl p-6 space-y-4">
-        <h2 className="font-semibold text-slate-900 flex items-center gap-2">
+      <form onSubmit={saveProfile} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-4">
+        <h2 className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
           <Building2 className="w-4 h-4 text-primary-500" /> Firma & Profil
         </h2>
 
         <label className="block">
-          <span className="text-sm font-medium text-slate-700">Name</span>
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Name</span>
           <input
             className="mt-1 input"
             value={profile.name}
@@ -81,20 +84,20 @@ export default function PanelSettings() {
         </label>
 
         <label className="block">
-          <span className="text-sm font-medium text-slate-700">Firmenname</span>
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Firmenname</span>
           <input
             className="mt-1 input"
             value={profile.companyName}
             onChange={(e) => setProfile({ ...profile, companyName: e.target.value })}
             placeholder="z. B. Mustermann Bau GmbH"
           />
-          <span className="block text-xs text-slate-500 mt-1">
+          <span className="block text-xs text-slate-500 dark:text-slate-400 mt-1">
             Wird im Header des Kunden-Angebots angezeigt.
           </span>
         </label>
 
         <label className="block">
-          <span className="text-sm font-medium text-slate-700">Logo-URL (optional)</span>
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Logo-URL (optional)</span>
           <input
             className="mt-1 input"
             value={profile.companyLogoUrl}
@@ -104,20 +107,20 @@ export default function PanelSettings() {
         </label>
 
         <label className="block">
-          <span className="text-sm font-medium text-slate-700">Telefon (für Kunden-Angebote)</span>
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Telefon (für Kunden-Angebote)</span>
           <input
             className="mt-1 input"
             value={profile.companyPhone}
             onChange={(e) => setProfile({ ...profile, companyPhone: e.target.value })}
             placeholder="+49 681 123 45 67"
           />
-          <span className="block text-xs text-slate-500 mt-1">
+          <span className="block text-xs text-slate-500 dark:text-slate-400 mt-1">
             Wird im Kunden-Angebot unter Ihrem Namen angezeigt. Bleibt leer, wenn Sie nur per E-Mail erreichbar sein wollen.
           </span>
         </label>
 
         <label className="block">
-          <span className="text-sm font-medium text-slate-700">Antwort-E-Mail (für Kunden-Angebote)</span>
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Antwort-E-Mail (für Kunden-Angebote)</span>
           <input
             type="email"
             className="mt-1 input"
@@ -125,7 +128,7 @@ export default function PanelSettings() {
             onChange={(e) => setProfile({ ...profile, companyContactEmail: e.target.value })}
             placeholder="kontakt@firma.de"
           />
-          <span className="block text-xs text-slate-500 mt-1">
+          <span className="block text-xs text-slate-500 dark:text-slate-400 mt-1">
             Öffentlich auf dem Kunden-Angebot — getrennt von Ihrer Login-E-Mail. Empfehlung: ein Postfach wie kontakt@/angebot@…, das mehrere Mitarbeiter lesen können.
           </span>
         </label>
@@ -142,13 +145,13 @@ export default function PanelSettings() {
         </div>
       </form>
 
-      <form onSubmit={changePwd} className="bg-white border border-slate-200/80 rounded-2xl p-6 space-y-4">
-        <h2 className="font-semibold text-slate-900 flex items-center gap-2">
+      <form onSubmit={changePwd} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 space-y-4">
+        <h2 className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
           <Lock className="w-4 h-4 text-primary-500" /> Passwort ändern
         </h2>
 
         <label className="block">
-          <span className="text-sm font-medium text-slate-700">Aktuelles Passwort</span>
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Aktuelles Passwort</span>
           <input
             type="password"
             autoComplete="current-password"
@@ -159,7 +162,7 @@ export default function PanelSettings() {
         </label>
 
         <label className="block">
-          <span className="text-sm font-medium text-slate-700">Neues Passwort (min. 12 Zeichen)</span>
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Neues Passwort (min. 12 Zeichen)</span>
           <input
             type="password"
             autoComplete="new-password"
@@ -170,7 +173,7 @@ export default function PanelSettings() {
         </label>
 
         <label className="block">
-          <span className="text-sm font-medium text-slate-700">Bestätigen</span>
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Bestätigen</span>
           <input
             type="password"
             autoComplete="new-password"
