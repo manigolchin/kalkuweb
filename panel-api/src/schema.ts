@@ -7,6 +7,8 @@ export const users = sqliteTable('users', {
   name: text('name').notNull(),
   companyName: text('company_name').notNull().default(''),
   companyLogoUrl: text('company_logo_url').notNull().default(''),
+  companyPhone: text('company_phone').notNull().default(''),
+  companyContactEmail: text('company_contact_email').notNull().default(''),
   mustChangePassword: integer('must_change_password', { mode: 'boolean' }).notNull().default(false),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
@@ -47,10 +49,41 @@ export const shareResponses = sqliteTable('share_responses', {
   respondedAt: integer('responded_at', { mode: 'timestamp_ms' }).notNull(),
 });
 
+/**
+ * Append-only, hash-chained event log. Per audit-trail research:
+ *   row_hash = SHA-256(prev_hash || canonical_json(this_row_without_row_hash))
+ * The chain lets a third party verify the log has not been retroactively
+ * mutated. The API role's GRANTS deliberately omit UPDATE/DELETE on this
+ * table — only INSERT is exposed.
+ */
+export const auditEvents = sqliteTable('audit_events', {
+  id: text('id').primaryKey(),
+  shareId: text('share_id'),
+  projectId: text('project_id'),
+  eventType: text('event_type', {
+    enum: [
+      'share.created',
+      'share.revoked',
+      'link.viewed',
+      'response.submitted',
+      'snapshot.regenerated',
+    ],
+  }).notNull(),
+  actorKind: text('actor_kind', { enum: ['owner', 'customer', 'system'] }).notNull(),
+  actorRef: text('actor_ref'),
+  ip: text('ip'),
+  userAgent: text('user_agent'),
+  payload: text('payload', { mode: 'json' }).notNull().$type<Record<string, unknown>>(),
+  prevHash: text('prev_hash').notNull(),
+  rowHash: text('row_hash').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+});
+
 export type User = typeof users.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type Share = typeof shares.$inferSelect;
 export type ShareResponse = typeof shareResponses.$inferSelect;
+export type AuditEvent = typeof auditEvents.$inferSelect;
 
 export type Position = {
   id: string;
@@ -113,6 +146,8 @@ export type ShareSettings = {
   allowChangeRequests: boolean;
   showTotals: boolean;
   showMwst: boolean;
+  /** Bindefrist in Tagen ab Erstellungs-/Snapshot-Zeit. Default 30, per BGB §§ 145 ff. */
+  bindefristDays?: number;
 };
 
 export type ResponsePayload = {

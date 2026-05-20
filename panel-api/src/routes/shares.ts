@@ -4,8 +4,9 @@ import { and, desc, eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { db } from '../db.js';
 import { projects, shares, shareResponses } from '../schema.js';
-import { requireAuth, type AuthVariables } from '../lib/middleware.js';
+import { requireAuth, clientIp, type AuthVariables } from '../lib/middleware.js';
 import { buildShareSnapshot, snapshotHash } from '../lib/snapshot.js';
+import { recordAuditEvent } from '../lib/audit.js';
 
 const createShareSchema = z.object({
   visiblePositionIds: z.array(z.string()).max(1000),
@@ -18,6 +19,7 @@ const createShareSchema = z.object({
     allowChangeRequests: z.boolean().default(true),
     showTotals: z.boolean().default(true),
     showMwst: z.boolean().default(true),
+    bindefristDays: z.number().int().min(1).max(365).optional(),
   }),
 });
 
@@ -69,6 +71,22 @@ export const sharesRoute = new Hono<{ Variables: AuthVariables }>()
       createdAt: now,
       viewCount: 0,
     });
+
+    await recordAuditEvent({
+      shareId: id,
+      projectId,
+      eventType: 'share.created',
+      actorKind: 'owner',
+      actorRef: c.get('userEmail'),
+      ip: clientIp(c),
+      userAgent: (c.req.header('user-agent') || '').slice(0, 500),
+      payload: {
+        positionCount: parsed.data.visiblePositionIds.length,
+        snapshotHash: hash,
+        projectVersionNumber: project.versionNumber,
+      },
+    });
+
     return c.json({
       id,
       token,
@@ -108,10 +126,23 @@ export const sharesRoute = new Hono<{ Variables: AuthVariables }>()
       where: and(eq(projects.id, share.projectId), eq(projects.ownerId, userId)),
     });
     if (!project) return c.json({ error: 'not_found' }, 404);
+    const revokedAt = new Date();
     await db
       .update(shares)
-      .set({ revokedAt: new Date() })
+      .set({ revokedAt })
       .where(eq(shares.id, shareId));
+
+    await recordAuditEvent({
+      shareId: share.id,
+      projectId: share.projectId,
+      eventType: 'share.revoked',
+      actorKind: 'owner',
+      actorRef: c.get('userEmail'),
+      ip: clientIp(c),
+      userAgent: (c.req.header('user-agent') || '').slice(0, 500),
+      payload: { revokedAt: revokedAt.getTime() },
+    });
+
     return c.json({ ok: true });
   })
 

@@ -6,6 +6,7 @@ import { db } from '../db.js';
 import { projects, shares, shareResponses, users } from '../schema.js';
 import { clientIp } from '../lib/middleware.js';
 import { buildLegacySnapshot, snapshotHash } from '../lib/snapshot.js';
+import { recordAuditEvent } from '../lib/audit.js';
 
 const approveSchema = z.object({
   customerName: z.string().trim().min(1).max(200),
@@ -58,6 +59,7 @@ export const publicRoute = new Hono()
 
     const owner = await db.query.users.findFirst({ where: eq(users.id, project.ownerId) });
 
+    const isFirstView = !share.lastViewedAt;
     await db
       .update(shares)
       .set({
@@ -65,6 +67,20 @@ export const publicRoute = new Hono()
         lastViewedAt: new Date(),
       })
       .where(eq(shares.id, share.id));
+
+    await recordAuditEvent({
+      shareId: share.id,
+      projectId: share.projectId,
+      eventType: 'link.viewed',
+      actorKind: 'customer',
+      actorRef: null,
+      ip: clientIp(c),
+      userAgent: (c.req.header('user-agent') || '').slice(0, 500),
+      payload: {
+        isFirstView,
+        viewCount: (share.viewCount || 0) + 1,
+      },
+    });
 
     return c.json({
       shareId: share.id,
@@ -80,9 +96,13 @@ export const publicRoute = new Hono()
         name: owner?.name || '',
         companyName: owner?.companyName || '',
         companyLogoUrl: owner?.companyLogoUrl || '',
-        // owner.email intentionally omitted — login email must not leak to the public.
+        companyPhone: owner?.companyPhone || '',
+        // Public contact email — explicitly different from login email
+        // (which stays private; see P0-2).
+        contactEmail: owner?.companyContactEmail || '',
       },
       positions: snapshot.positions,
+      createdAt: share.createdAt,
     });
   })
 
@@ -98,8 +118,9 @@ export const publicRoute = new Hono()
     if (!share.settings.allowApproval) return c.json({ error: 'not_allowed' }, 403);
 
     const now = new Date();
+    const responseId = nanoid(16);
     await db.insert(shareResponses).values({
-      id: nanoid(16),
+      id: responseId,
       shareId: share.id,
       responseType: 'approve',
       customerName: parsed.data.customerName,
@@ -117,6 +138,23 @@ export const publicRoute = new Hono()
       },
       respondedAt: now,
     });
+
+    await recordAuditEvent({
+      shareId: share.id,
+      projectId: share.projectId,
+      eventType: 'response.submitted',
+      actorKind: 'customer',
+      actorRef: parsed.data.customerEmail || parsed.data.customerName,
+      ip: clientIp(c),
+      userAgent: (c.req.header('user-agent') || '').slice(0, 500),
+      payload: {
+        responseId,
+        responseType: 'approve',
+        snapshotHash: share.snapshotHash,
+        customerName: parsed.data.customerName,
+      },
+    });
+
     return c.json({ ok: true, respondedAt: now, snapshotHash: share.snapshotHash });
   })
 
@@ -132,8 +170,9 @@ export const publicRoute = new Hono()
     if (!share.settings.allowChangeRequests) return c.json({ error: 'not_allowed' }, 403);
 
     const now = new Date();
+    const responseId = nanoid(16);
     await db.insert(shareResponses).values({
-      id: nanoid(16),
+      id: responseId,
       shareId: share.id,
       responseType: 'changes',
       customerName: parsed.data.customerName,
@@ -147,5 +186,23 @@ export const publicRoute = new Hono()
       },
       respondedAt: now,
     });
+
+    await recordAuditEvent({
+      shareId: share.id,
+      projectId: share.projectId,
+      eventType: 'response.submitted',
+      actorKind: 'customer',
+      actorRef: parsed.data.customerEmail || parsed.data.customerName,
+      ip: clientIp(c),
+      userAgent: (c.req.header('user-agent') || '').slice(0, 500),
+      payload: {
+        responseId,
+        responseType: 'changes',
+        changesCount: parsed.data.changes.length,
+        snapshotHash: share.snapshotHash,
+        customerName: parsed.data.customerName,
+      },
+    });
+
     return c.json({ ok: true, respondedAt: now, snapshotHash: share.snapshotHash });
   });

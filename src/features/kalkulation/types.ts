@@ -79,6 +79,7 @@ export type ShareSettings = {
   allowChangeRequests: boolean;
   showTotals: boolean;
   showMwst: boolean;
+  bindefristDays?: number;
 };
 
 export type ShareSummary = {
@@ -134,8 +135,9 @@ export type CustomerViewPayload = {
     name: string;
     companyName: string;
     companyLogoUrl: string;
-    // Login email intentionally not exposed. Owner contact info should live in
-    // the share `settings.message` or a future public contact field.
+    companyPhone: string;
+    /** Public contact email — distinct from the login email (which stays private). */
+    contactEmail: string;
   };
   positions: Array<{
     id: string;
@@ -149,6 +151,8 @@ export type CustomerViewPayload = {
     ep: number;
     gp: number;
   }>;
+  /** ISO timestamp of share creation — anchors the Bindefrist window. */
+  createdAt: string;
 };
 
 export type AuthUser = {
@@ -157,6 +161,8 @@ export type AuthUser = {
   name: string;
   companyName: string;
   companyLogoUrl: string;
+  companyPhone: string;
+  companyContactEmail: string;
   mustChangePassword: boolean;
 };
 

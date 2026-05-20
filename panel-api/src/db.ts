@@ -59,10 +59,15 @@ export function runMigrations() {
 
   // Idempotent column-add for DBs that predate the snapshot columns.
   // SQLite ALTER TABLE ADD COLUMN has no IF NOT EXISTS, so probe pragma first.
-  const cols = sqlite.prepare("PRAGMA table_info(shares)").all() as Array<{ name: string }>;
-  const has = (n: string) => cols.some((c) => c.name === n);
-  if (!has('snapshot_data')) sqlite.exec('ALTER TABLE shares ADD COLUMN snapshot_data TEXT');
-  if (!has('snapshot_hash')) sqlite.exec('ALTER TABLE shares ADD COLUMN snapshot_hash TEXT');
+  const sharesCols = sqlite.prepare("PRAGMA table_info(shares)").all() as Array<{ name: string }>;
+  const sharesHas = (n: string) => sharesCols.some((c) => c.name === n);
+  if (!sharesHas('snapshot_data')) sqlite.exec('ALTER TABLE shares ADD COLUMN snapshot_data TEXT');
+  if (!sharesHas('snapshot_hash')) sqlite.exec('ALTER TABLE shares ADD COLUMN snapshot_hash TEXT');
+
+  const usersCols = sqlite.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
+  const usersHas = (n: string) => usersCols.some((c) => c.name === n);
+  if (!usersHas('company_phone')) sqlite.exec("ALTER TABLE users ADD COLUMN company_phone TEXT NOT NULL DEFAULT ''");
+  if (!usersHas('company_contact_email')) sqlite.exec("ALTER TABLE users ADD COLUMN company_contact_email TEXT NOT NULL DEFAULT ''");
 
   sqlite.exec(`
 
@@ -79,5 +84,23 @@ export function runMigrations() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_responses_share ON share_responses(share_id);
+
+    CREATE TABLE IF NOT EXISTS audit_events (
+      id TEXT PRIMARY KEY,
+      share_id TEXT,
+      project_id TEXT,
+      event_type TEXT NOT NULL,
+      actor_kind TEXT NOT NULL,
+      actor_ref TEXT,
+      ip TEXT,
+      user_agent TEXT,
+      payload TEXT NOT NULL,
+      prev_hash TEXT NOT NULL,
+      row_hash TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_audit_share ON audit_events(share_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_events(created_at);
   `);
 }

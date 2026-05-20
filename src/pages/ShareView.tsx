@@ -10,6 +10,10 @@ import {
   Building2,
   ShieldCheck,
   Calendar,
+  Phone,
+  Mail,
+  Fingerprint,
+  Clock,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api, ApiError } from '@/lib/api';
@@ -57,6 +61,17 @@ export default function ShareView() {
       alive = false;
     };
   }, [token]);
+
+  // Captured once on mount so the render stays pure (lint: react-hooks/purity).
+  const [mountedAtMs] = useState<number>(() => Date.now());
+
+  const bindefrist = useMemo(() => {
+    if (state.kind !== 'ready') return null;
+    const days = state.payload.settings.bindefristDays ?? 30;
+    const createdAt = new Date(state.payload.createdAt);
+    const until = new Date(createdAt.getTime() + days * 24 * 60 * 60 * 1000);
+    return { days, createdAt, until, isExpired: mountedAtMs > until.getTime() };
+  }, [state, mountedAtMs]);
 
   const visibleTotal = useMemo(() => {
     if (state.kind !== 'ready') return { netto: 0, mwst: 0, brutto: 0 };
@@ -146,8 +161,9 @@ export default function ShareView() {
   }
 
   const { payload } = state;
-  const { project, owner, positions, settings } = payload;
+  const { project, owner, positions, settings, snapshotHash } = payload;
   const brandHeader = settings.brandHeader;
+  const shortHash = snapshotHash?.slice(0, 10) || null;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -177,6 +193,22 @@ export default function ShareView() {
             </h1>
             {owner.name && owner.companyName && owner.name !== owner.companyName && (
               <p className="text-xs text-slate-500 truncate">{owner.name}</p>
+            )}
+            {(owner.companyPhone || owner.contactEmail) && (
+              <p className="text-xs text-slate-500 truncate mt-0.5 flex items-center gap-3 flex-wrap">
+                {owner.companyPhone && (
+                  <a href={`tel:${owner.companyPhone.replace(/\s+/g, '')}`} className="inline-flex items-center gap-1 hover:text-slate-800">
+                    <Phone className="w-3 h-3" />
+                    {owner.companyPhone}
+                  </a>
+                )}
+                {owner.contactEmail && (
+                  <a href={`mailto:${owner.contactEmail}`} className="inline-flex items-center gap-1 hover:text-slate-800">
+                    <Mail className="w-3 h-3" />
+                    {owner.contactEmail}
+                  </a>
+                )}
+              </p>
             )}
           </div>
           {brandHeader === 'co-branded' && (
@@ -219,6 +251,29 @@ export default function ShareView() {
               </div>
             )}
           </div>
+
+          {/* Bindefrist indicator — anchors §145 BGB for the customer */}
+          {bindefrist && (
+            <div className="mt-5 pt-4 border-t border-slate-100 flex items-center gap-3 flex-wrap text-xs">
+              <span className="inline-flex items-center gap-1.5 text-slate-600">
+                <Clock className="w-3.5 h-3.5" />
+                Erstellt am <strong className="text-slate-800">{formatDateLong(bindefrist.createdAt)}</strong>
+              </span>
+              <span className="text-slate-300">·</span>
+              <span
+                className={clsx(
+                  'inline-flex items-center gap-1.5',
+                  bindefrist.isExpired ? 'text-red-700 font-medium' : 'text-slate-600',
+                )}
+              >
+                {bindefrist.isExpired ? 'Bindefrist abgelaufen am' : 'Gültig bis'}{' '}
+                <strong className={clsx(bindefrist.isExpired ? 'text-red-700' : 'text-slate-800')}>
+                  {formatDateLong(bindefrist.until)}
+                </strong>
+                <span className="text-slate-400">({bindefrist.days} Tage Bindefrist)</span>
+              </span>
+            </div>
+          )}
 
           {settings.message && (
             <div className="mt-5 pt-5 border-t border-slate-100">
@@ -331,7 +386,18 @@ export default function ShareView() {
           />
         )}
 
-        <footer className="text-xs text-slate-400 text-center py-6">
+        <footer className="text-xs text-slate-400 text-center py-6 space-y-2">
+          {shortHash && (
+            <p className="inline-flex items-center justify-center gap-1.5 text-slate-500">
+              <Fingerprint className="w-3.5 h-3.5" />
+              <span>
+                Dokument-Fingerabdruck:{' '}
+                <code className="font-mono text-[10px] tracking-wider bg-slate-100 px-1.5 py-0.5 rounded">{shortHash}…</code>
+              </span>
+              <span className="text-slate-300">·</span>
+              <span title={snapshotHash || ''} className="cursor-help">SHA-256</span>
+            </p>
+          )}
           {brandHeader === 'co-branded' ? (
             <p>
               Sicher gehostet auf{' '}
@@ -345,6 +411,33 @@ export default function ShareView() {
           )}
         </footer>
       </main>
+
+      {/* Sticky bottom totals bar — shows running brutto while customer scrolls */}
+      {settings.showTotals && !submitted && (
+        <div className="sticky bottom-0 left-0 right-0 bg-white/95 backdrop-blur border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4 text-sm">
+            <div className="flex items-center gap-4 flex-wrap min-w-0">
+              <span className="text-slate-500 hidden sm:inline">Netto <strong className="text-slate-800 tabular-nums">{formatEUR(visibleTotal.netto)}</strong></span>
+              {settings.showMwst && (
+                <span className="text-slate-500 hidden sm:inline">+ MwSt <strong className="text-slate-800 tabular-nums">{formatEUR(visibleTotal.mwst)}</strong></span>
+              )}
+              <span className="text-slate-900 font-bold tabular-nums text-base sm:text-lg">
+                = {formatEUR(visibleTotal.brutto)} <span className="text-xs font-normal text-slate-500">{settings.showMwst ? 'brutto' : 'gesamt'}</span>
+              </span>
+            </div>
+            {settings.allowApproval && (
+              <a
+                href="#approve-form"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs sm:text-sm font-semibold hover:bg-emerald-700 whitespace-nowrap"
+              >
+                <ShieldCheck className="w-4 h-4" />
+                <span className="hidden sm:inline">Angebot annehmen</span>
+                <span className="sm:hidden">Annehmen</span>
+              </a>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -454,7 +547,7 @@ function ActionSection({
   const hasChanges = changes.some((c) => c.text.trim().length > 0) || generalMessage.trim().length > 0;
   const canSubmit = customerName.trim().length > 0;
   return (
-    <section className="bg-white border border-slate-200/80 rounded-2xl p-6 sm:p-8 space-y-5">
+    <section id="approve-form" className="bg-white border border-slate-200/80 rounded-2xl p-6 sm:p-8 space-y-5">
       <div>
         <h3 className="font-semibold text-slate-900">Ihre Rückmeldung</h3>
         <p className="text-sm text-slate-500 mt-1">
@@ -578,4 +671,8 @@ function formatDate(iso: string): string {
   } catch {
     return iso;
   }
+}
+
+function formatDateLong(d: Date): string {
+  return d.toLocaleDateString('de-DE', { day: '2-digit', month: 'long', year: 'numeric' });
 }

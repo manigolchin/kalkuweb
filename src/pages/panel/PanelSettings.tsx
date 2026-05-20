@@ -10,6 +10,8 @@ export default function PanelSettings() {
     name: user?.name || '',
     companyName: user?.companyName || '',
     companyLogoUrl: user?.companyLogoUrl || '',
+    companyPhone: user?.companyPhone || '',
+    companyContactEmail: user?.companyContactEmail || '',
   });
   const [savingProfile, setSavingProfile] = useState(false);
 
@@ -99,6 +101,33 @@ export default function PanelSettings() {
             onChange={(e) => setProfile({ ...profile, companyLogoUrl: e.target.value })}
             placeholder="https://…/logo.png"
           />
+        </label>
+
+        <label className="block">
+          <span className="text-sm font-medium text-slate-700">Telefon (für Kunden-Angebote)</span>
+          <input
+            className="mt-1 input"
+            value={profile.companyPhone}
+            onChange={(e) => setProfile({ ...profile, companyPhone: e.target.value })}
+            placeholder="+49 681 123 45 67"
+          />
+          <span className="block text-xs text-slate-500 mt-1">
+            Wird im Kunden-Angebot unter Ihrem Namen angezeigt. Bleibt leer, wenn Sie nur per E-Mail erreichbar sein wollen.
+          </span>
+        </label>
+
+        <label className="block">
+          <span className="text-sm font-medium text-slate-700">Antwort-E-Mail (für Kunden-Angebote)</span>
+          <input
+            type="email"
+            className="mt-1 input"
+            value={profile.companyContactEmail}
+            onChange={(e) => setProfile({ ...profile, companyContactEmail: e.target.value })}
+            placeholder="kontakt@firma.de"
+          />
+          <span className="block text-xs text-slate-500 mt-1">
+            Öffentlich auf dem Kunden-Angebot — getrennt von Ihrer Login-E-Mail. Empfehlung: ein Postfach wie kontakt@/angebot@…, das mehrere Mitarbeiter lesen können.
+          </span>
         </label>
 
         <div className="pt-2">

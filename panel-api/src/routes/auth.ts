@@ -24,9 +24,11 @@ const changePasswordSchema = z.object({
 });
 
 const updateProfileSchema = z.object({
-  name: z.string().min(1).optional(),
-  companyName: z.string().optional(),
-  companyLogoUrl: z.string().optional(),
+  name: z.string().min(1).max(200).optional(),
+  companyName: z.string().max(200).optional(),
+  companyLogoUrl: z.string().max(2000).optional(),
+  companyPhone: z.string().max(64).optional(),
+  companyContactEmail: z.string().max(200).optional(),
 });
 
 export const authRoute = new Hono<{ Variables: AuthVariables }>()
@@ -61,6 +63,8 @@ export const authRoute = new Hono<{ Variables: AuthVariables }>()
         name: user.name,
         companyName: user.companyName,
         companyLogoUrl: user.companyLogoUrl,
+        companyPhone: user.companyPhone,
+        companyContactEmail: user.companyContactEmail,
         mustChangePassword: user.mustChangePassword,
       },
     });
@@ -82,6 +86,8 @@ export const authRoute = new Hono<{ Variables: AuthVariables }>()
         name: user.name,
         companyName: user.companyName,
         companyLogoUrl: user.companyLogoUrl,
+        companyPhone: user.companyPhone,
+        companyContactEmail: user.companyContactEmail,
         mustChangePassword: user.mustChangePassword,
       },
     });
@@ -115,6 +121,8 @@ export const authRoute = new Hono<{ Variables: AuthVariables }>()
     if (parsed.data.name !== undefined) patch.name = parsed.data.name;
     if (parsed.data.companyName !== undefined) patch.companyName = parsed.data.companyName;
     if (parsed.data.companyLogoUrl !== undefined) patch.companyLogoUrl = parsed.data.companyLogoUrl;
+    if (parsed.data.companyPhone !== undefined) patch.companyPhone = parsed.data.companyPhone;
+    if (parsed.data.companyContactEmail !== undefined) patch.companyContactEmail = parsed.data.companyContactEmail;
     await db.update(users).set(patch).where(eq(users.id, userId));
     const updated = await db.query.users.findFirst({ where: eq(users.id, userId) });
     if (!updated) return c.json({ error: 'not_found' }, 404);
@@ -125,6 +133,8 @@ export const authRoute = new Hono<{ Variables: AuthVariables }>()
         name: updated.name,
         companyName: updated.companyName,
         companyLogoUrl: updated.companyLogoUrl,
+        companyPhone: updated.companyPhone,
+        companyContactEmail: updated.companyContactEmail,
         mustChangePassword: updated.mustChangePassword,
       },
     });
