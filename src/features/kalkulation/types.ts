@@ -159,3 +159,25 @@ export type AuthUser = {
   companyLogoUrl: string;
   mustChangePassword: boolean;
 };
+
+export type InboxEntry = {
+  project: {
+    id: string;
+    name: string;
+    client: string;
+    service: string;
+    versionNumber: number;
+    updatedAt: string;
+  } | null;
+  share: {
+    id: string;
+    token: string;
+    visiblePositionIds: string[];
+    settings: ShareSettings;
+    createdAt: string;
+    lastViewedAt: string | null;
+    viewCount: number;
+    snapshotHash: string | null;
+  };
+  responses: ShareResponse[];
+};

@@ -11,16 +11,10 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '@/lib/api';
-import type { ProjectSummary, ShareResponse, ShareSummary } from './types';
-
-type Entry = {
-  project: ProjectSummary;
-  share: ShareSummary;
-  responses: ShareResponse[];
-};
+import type { InboxEntry } from './types';
 
 export default function FeedbackInbox() {
-  const [entries, setEntries] = useState<Entry[]>([]);
+  const [entries, setEntries] = useState<InboxEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -28,30 +22,8 @@ export default function FeedbackInbox() {
     (async () => {
       setLoading(true);
       try {
-        const { projects } = await api.projects.list();
-        const enriched: Entry[] = [];
-        for (const p of projects) {
-          const detail = await api.projects.get(p.id);
-          for (const s of detail.shares) {
-            if (s.revokedAt) continue;
-            try {
-              const { responses } = await api.shares.responses(s.id);
-              if (responses.length > 0) {
-                enriched.push({ project: p, share: s, responses });
-              } else if (s.viewCount > 0) {
-                enriched.push({ project: p, share: s, responses: [] });
-              }
-            } catch {
-              // skip
-            }
-          }
-        }
-        enriched.sort((a, b) => {
-          const aTime = a.responses[0]?.respondedAt || a.share.lastViewedAt || a.share.createdAt;
-          const bTime = b.responses[0]?.respondedAt || b.share.lastViewedAt || b.share.createdAt;
-          return bTime.localeCompare(aTime);
-        });
-        if (alive) setEntries(enriched);
+        const { entries } = await api.inbox.list();
+        if (alive) setEntries(entries.filter((e) => e.project !== null));
       } finally {
         if (alive) setLoading(false);
       }
@@ -99,8 +71,9 @@ export default function FeedbackInbox() {
   );
 }
 
-function EntryCard({ entry }: { entry: Entry }) {
+function EntryCard({ entry }: { entry: InboxEntry }) {
   const { project, share, responses } = entry;
+  if (!project) return null;
   const approve = responses.find((r) => r.responseType === 'approve');
   const changes = responses.filter((r) => r.responseType === 'changes');
 

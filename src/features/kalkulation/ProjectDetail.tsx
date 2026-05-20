@@ -14,7 +14,7 @@ import {
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { Helmet } from 'react-helmet-async';
-import { api, ApiError } from '@/lib/api';
+import { api, ApiError, VersionConflictError } from '@/lib/api';
 import type {
   CalcParams,
   Position,
@@ -41,6 +41,10 @@ export default function ProjectDetail() {
   const [showSettings, setShowSettings] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedRef = useRef<string>('');
+  // Tracks the latest server `updatedAt` known to this tab. Used for optimistic
+  // locking — read inside the debounced save so rapid edits don't carry a stale
+  // value from when the effect was queued.
+  const updatedAtRef = useRef<number>(0);
 
   useEffect(() => {
     let alive = true;
@@ -53,6 +57,7 @@ export default function ProjectDetail() {
         setProject(detail);
         setData(normalizeProject(detail.data));
         lastSavedRef.current = JSON.stringify(detail.data);
+        updatedAtRef.current = new Date(detail.updatedAt).getTime();
       } catch (err) {
         if (err instanceof ApiError && err.status === 404) {
           setError('Projekt nicht gefunden.');
@@ -68,8 +73,10 @@ export default function ProjectDetail() {
     };
   }, [id]);
 
-  // auto-save: recompute derived EP/GP on every position from cost inputs before persisting,
-  // so the customer-view (which reads stored values) always matches the owner's table.
+  // auto-save: server is now the source of truth for derived EP/GP (P1-2) — it
+  // recomputes on PUT. We still recalc client-side for instant feedback.
+  // P1-4: send expectedUpdatedAt from updatedAtRef (refreshed on every save)
+  // so a concurrent tab can't silently overwrite this tab's work.
   useEffect(() => {
     if (!data) return;
     const toSave: ProjectData = {
@@ -86,14 +93,25 @@ export default function ProjectDetail() {
     saveTimer.current = setTimeout(async () => {
       setSavingState('saving');
       try {
-        const updated = await api.projects.update(id, toSave);
+        const updated = await api.projects.update(id, toSave, {
+          expectedUpdatedAt: updatedAtRef.current || undefined,
+        });
         lastSavedRef.current = JSON.stringify(updated.data);
+        updatedAtRef.current = new Date(updated.updatedAt).getTime();
         setProject((p) => (p ? { ...p, ...updated } : p));
         setSavingState('saved');
         setTimeout(() => setSavingState((s) => (s === 'saved' ? 'idle' : s)), 1200);
-      } catch {
+      } catch (err) {
         setSavingState('error');
-        toast.error('Speichern fehlgeschlagen.');
+        if (err instanceof VersionConflictError) {
+          updatedAtRef.current = err.currentUpdatedAt;
+          toast.error(
+            'Das Projekt wurde in einem anderen Fenster verändert. Bitte die Seite neu laden, um die aktuellen Daten zu sehen.',
+            { duration: 6000 },
+          );
+        } else {
+          toast.error('Speichern fehlgeschlagen.');
+        }
       }
     }, SAVE_DEBOUNCE_MS);
     return () => {
@@ -125,12 +143,21 @@ export default function ProjectDetail() {
         ...data,
         positions: recalcAll(data.positions, data.calcParams),
       };
-      const updated = await api.projects.update(id, toSave, { bumpVersion: true });
+      const updated = await api.projects.update(id, toSave, {
+        bumpVersion: true,
+        expectedUpdatedAt: updatedAtRef.current || undefined,
+      });
       lastSavedRef.current = JSON.stringify(updated.data);
+      updatedAtRef.current = new Date(updated.updatedAt).getTime();
       setProject((p) => (p ? { ...p, ...updated } : p));
       toast.success(`Version ${updated.versionNumber} gespeichert.`);
-    } catch {
-      toast.error('Version konnte nicht erstellt werden.');
+    } catch (err) {
+      if (err instanceof VersionConflictError) {
+        updatedAtRef.current = err.currentUpdatedAt;
+        toast.error('Das Projekt wurde inzwischen geändert. Bitte neu laden.', { duration: 6000 });
+      } else {
+        toast.error('Version konnte nicht erstellt werden.');
+      }
     }
   }
 

@@ -1,7 +1,10 @@
+import { useState, type FormEvent } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
-import { Calculator, LogOut, Settings, FolderClosed, Inbox } from 'lucide-react';
+import { Calculator, LogOut, Settings, FolderClosed, Inbox, Lock, Loader2, ShieldAlert } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { useAuth } from '@/lib/auth';
+import { api, ApiError } from '@/lib/api';
 
 type Tab = {
   to: string;
@@ -18,13 +21,15 @@ const tabs: Tab[] = [
 ];
 
 export default function PanelLayout() {
-  const { user, logout } = useAuth();
+  const { user, logout, setUser } = useAuth();
   const navigate = useNavigate();
 
   async function onLogout() {
     await logout();
     navigate('/login', { replace: true });
   }
+
+  const forceChange = user?.mustChangePassword === true;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -81,6 +86,142 @@ export default function PanelLayout() {
       <main className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6">
         <Outlet />
       </main>
+
+      {forceChange && user && (
+        <ForcePasswordChange
+          onChanged={(updated) => setUser(updated)}
+          onAbort={onLogout}
+        />
+      )}
+    </div>
+  );
+}
+
+function ForcePasswordChange({
+  onChanged,
+  onAbort,
+}: {
+  onChanged: (u: import('@/features/kalkulation/types').AuthUser) => void;
+  onAbort: () => void;
+}) {
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (next.length < 12) {
+      toast.error('Neues Passwort muss mindestens 12 Zeichen haben.');
+      return;
+    }
+    if (next !== confirm) {
+      toast.error('Bestätigung stimmt nicht überein.');
+      return;
+    }
+    if (next === current) {
+      toast.error('Das neue Passwort darf nicht mit dem aktuellen identisch sein.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.auth.changePassword(current, next);
+      // Re-fetch /me so mustChangePassword flips to false.
+      const { user: refreshed } = await api.auth.me();
+      onChanged(refreshed);
+      toast.success('Passwort geändert.');
+    } catch (err) {
+      if (err instanceof ApiError && (err.body as { error?: string })?.error === 'invalid_current_password') {
+        toast.error('Aktuelles Passwort stimmt nicht.');
+      } else {
+        toast.error('Passwort konnte nicht geändert werden.');
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-slate-900/60 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="force-pwd-title"
+    >
+      <form
+        onSubmit={submit}
+        className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 space-y-4"
+      >
+        <header className="flex items-start gap-3">
+          <div className="p-2 rounded-xl bg-amber-50 border border-amber-100 shrink-0">
+            <ShieldAlert className="w-5 h-5 text-amber-600" />
+          </div>
+          <div>
+            <h2 id="force-pwd-title" className="font-semibold text-slate-900">
+              Bitte zuerst ein neues Passwort setzen
+            </h2>
+            <p className="text-sm text-slate-500 mt-1">
+              Sie verwenden noch das Initial-Passwort. Aus Sicherheitsgründen ist das Panel erst
+              nach Vergabe eines eigenen Passworts nutzbar.
+            </p>
+          </div>
+        </header>
+
+        <label className="block">
+          <span className="text-sm font-medium text-slate-700">Aktuelles (Initial-)Passwort</span>
+          <input
+            type="password"
+            autoComplete="current-password"
+            required
+            autoFocus
+            value={current}
+            onChange={(e) => setCurrent(e.target.value)}
+            className="mt-1 input"
+          />
+        </label>
+
+        <label className="block">
+          <span className="text-sm font-medium text-slate-700">Neues Passwort (min. 12 Zeichen)</span>
+          <input
+            type="password"
+            autoComplete="new-password"
+            required
+            value={next}
+            onChange={(e) => setNext(e.target.value)}
+            className="mt-1 input"
+          />
+        </label>
+
+        <label className="block">
+          <span className="text-sm font-medium text-slate-700">Bestätigen</span>
+          <input
+            type="password"
+            autoComplete="new-password"
+            required
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            className="mt-1 input"
+          />
+        </label>
+
+        <div className="flex items-center justify-between gap-3 pt-2">
+          <button
+            type="button"
+            onClick={onAbort}
+            className="text-sm text-slate-500 hover:text-slate-800"
+          >
+            Abmelden
+          </button>
+          <button
+            type="submit"
+            disabled={saving || !current || !next || !confirm}
+            className="btn btn-primary disabled:opacity-50 flex items-center gap-2"
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+            Passwort speichern
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

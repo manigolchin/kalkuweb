@@ -32,8 +32,8 @@ export default function PanelSettings() {
 
   async function changePwd(e: FormEvent) {
     e.preventDefault();
-    if (pwd.next.length < 8) {
-      toast.error('Neues Passwort muss mindestens 8 Zeichen haben.');
+    if (pwd.next.length < 12) {
+      toast.error('Neues Passwort muss mindestens 12 Zeichen haben.');
       return;
     }
     if (pwd.next !== pwd.confirm) {
@@ -130,7 +130,7 @@ export default function PanelSettings() {
         </label>
 
         <label className="block">
-          <span className="text-sm font-medium text-slate-700">Neues Passwort (min. 8 Zeichen)</span>
+          <span className="text-sm font-medium text-slate-700">Neues Passwort (min. 12 Zeichen)</span>
           <input
             type="password"
             autoComplete="new-password"

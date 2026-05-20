@@ -1,6 +1,7 @@
 import type {
   AuthUser,
   CustomerViewPayload,
+  InboxEntry,
   ProjectDetail,
   ProjectData,
   ProjectSummary,
@@ -21,6 +22,16 @@ export class ApiError extends Error {
   }
 }
 
+export class VersionConflictError extends ApiError {
+  currentUpdatedAt: number;
+  currentVersionNumber: number;
+  constructor(body: { currentUpdatedAt: number; currentVersionNumber: number }) {
+    super(409, body, 'version_conflict');
+    this.currentUpdatedAt = body.currentUpdatedAt;
+    this.currentVersionNumber = body.currentVersionNumber;
+  }
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     ...init,
@@ -33,6 +44,15 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const text = await res.text();
   const data = text ? safeJson(text) : null;
   if (!res.ok) {
+    if (
+      res.status === 409 &&
+      data &&
+      typeof data === 'object' &&
+      'currentUpdatedAt' in data &&
+      'currentVersionNumber' in data
+    ) {
+      throw new VersionConflictError(data as { currentUpdatedAt: number; currentVersionNumber: number });
+    }
     const message = (data as { error?: string } | null)?.error || res.statusText;
     throw new ApiError(res.status, data, message);
   }
@@ -72,10 +92,18 @@ export const api = {
     get: (id: string) => request<ProjectDetail>(`/projects/${id}`),
     create: (data: Partial<ProjectData>) =>
       request<ProjectDetail>('/projects', { method: 'POST', body: JSON.stringify(data) }),
-    update: (id: string, data: ProjectData, opts: { bumpVersion?: boolean } = {}) =>
+    update: (
+      id: string,
+      data: ProjectData,
+      opts: { bumpVersion?: boolean; expectedUpdatedAt?: number } = {},
+    ) =>
       request<ProjectDetail>(`/projects/${id}`, {
         method: 'PUT',
-        body: JSON.stringify({ data, bumpVersion: opts.bumpVersion }),
+        body: JSON.stringify({
+          data,
+          bumpVersion: opts.bumpVersion,
+          expectedUpdatedAt: opts.expectedUpdatedAt,
+        }),
       }),
     delete: (id: string) =>
       request<{ ok: true }>(`/projects/${id}`, { method: 'DELETE' }),
@@ -95,6 +123,10 @@ export const api = {
       request<{ ok: true }>(`/shares/${shareId}`, { method: 'DELETE' }),
     responses: (shareId: string) =>
       request<{ responses: ShareResponse[] }>(`/shares/${shareId}/responses`),
+  },
+  inbox: {
+    list: () =>
+      request<{ entries: InboxEntry[]; generatedAt: string }>(`/inbox`),
   },
   public: {
     getShare: (token: string) => request<CustomerViewPayload>(`/share/${token}`),

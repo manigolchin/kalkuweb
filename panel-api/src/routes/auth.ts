@@ -20,7 +20,7 @@ const loginSchema = z.object({
 
 const changePasswordSchema = z.object({
   current: z.string().min(1),
-  next: z.string().min(8),
+  next: z.string().min(12).max(200),
 });
 
 const updateProfileSchema = z.object({
