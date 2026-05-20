@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
+import toast from 'react-hot-toast';
 import {
   Check,
   Loader2,
@@ -108,7 +109,7 @@ export default function ShareView() {
       });
       setSubmitted('approve');
     } catch {
-      window.alert('Annahme konnte nicht gesendet werden. Bitte später erneut versuchen.');
+      toast.error('Annahme konnte nicht gesendet werden. Bitte später erneut versuchen.');
     } finally {
       setSubmitting(false);
     }
@@ -129,7 +130,7 @@ export default function ShareView() {
       });
       setSubmitted('changes');
     } catch {
-      window.alert('Rückmeldung konnte nicht gesendet werden. Bitte später erneut versuchen.');
+      toast.error('Rückmeldung konnte nicht gesendet werden. Bitte später erneut versuchen.');
     } finally {
       setSubmitting(false);
     }
@@ -427,6 +428,7 @@ export default function ShareView() {
             onApprove={submitApprove}
             onSendChanges={submitChanges}
             submitting={submitting}
+            hasPriceableContent={positions.some((p) => !p.isHeader)}
           />
         )}
 
@@ -575,6 +577,7 @@ function ActionSection({
   onApprove,
   onSendChanges,
   submitting,
+  hasPriceableContent,
 }: {
   settings: CustomerViewPayload['settings'];
   customerName: string;
@@ -587,6 +590,7 @@ function ActionSection({
   onApprove: () => void;
   onSendChanges: () => void;
   submitting: boolean;
+  hasPriceableContent: boolean;
 }) {
   const hasChanges = changes.some((c) => c.text.trim().length > 0) || generalMessage.trim().length > 0;
   const canSubmit = customerName.trim().length > 0;
@@ -637,8 +641,9 @@ function ActionSection({
         {settings.allowApproval && (
           <button
             type="button"
-            disabled={!canSubmit || submitting}
+            disabled={!canSubmit || submitting || !hasPriceableContent}
             onClick={onApprove}
+            title={!hasPriceableContent ? 'Dieses Angebot enthält keine bepreisten Positionen.' : undefined}
             className={clsx(
               'inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl',
               'text-base font-semibold text-white',

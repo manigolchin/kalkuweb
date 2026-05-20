@@ -323,7 +323,9 @@ export const publicRoute = new Hono()
         const result = await sendMail({
           to: recipients,
           bcc: parsed.data.customerEmail && archive && archive !== parsed.data.customerEmail ? archive : undefined,
-          replyTo: owner.companyContactEmail || owner.email,
+          // Don't fall back to owner.email — that's the *login* address and is
+          // deliberately not customer-facing (see public-endpoint contract).
+          replyTo: owner.companyContactEmail || undefined,
           subject,
           text,
           attachments: [

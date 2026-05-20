@@ -11,12 +11,13 @@ type Tab = {
   label: string;
   icon: typeof Calculator;
   end?: boolean;
+  badge?: string;
 };
 
 const tabs: Tab[] = [
   { to: '/panel/kalkulation', label: 'Kalkulation', icon: Calculator },
   { to: '/panel/feedback', label: 'Kunden-Feedback', icon: Inbox },
-  { to: '/panel/archiv', label: 'Archiv', icon: FolderClosed },
+  { to: '/panel/archiv', label: 'Archiv', icon: FolderClosed, badge: 'Bald' },
   { to: '/panel/einstellungen', label: 'Einstellungen', icon: Settings },
 ];
 
@@ -72,7 +73,7 @@ export default function PanelLayout() {
           </NavLink>
 
           <nav className="flex-1 flex items-center gap-1 overflow-x-auto -mx-1 px-1">
-            {tabs.map(({ to, label, icon: Icon, end }) => (
+            {tabs.map(({ to, label, icon: Icon, end, badge }) => (
               <NavLink
                 key={to}
                 to={to}
@@ -90,6 +91,11 @@ export default function PanelLayout() {
                 {to === '/panel/feedback' && unreadFeedback > 0 && (
                   <span className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-amber-500 text-white text-xs font-bold tabular-nums">
                     {unreadFeedback > 99 ? '99+' : unreadFeedback}
+                  </span>
+                )}
+                {badge && (
+                  <span className="inline-flex items-center justify-center h-5 px-1.5 rounded-full bg-slate-200 text-slate-600 text-[10px] font-bold uppercase tracking-wider">
+                    {badge}
                   </span>
                 )}
               </NavLink>

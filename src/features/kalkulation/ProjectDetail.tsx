@@ -307,6 +307,7 @@ export default function ProjectDetail() {
           <SharesCard
             shares={activeShares}
             allShares={project.shares}
+            projectUpdatedAt={project.updatedAt}
             onOpenShare={() => setShowShare({})}
           />
         </aside>
@@ -430,12 +431,26 @@ function Row({
 function SharesCard({
   shares,
   allShares,
+  projectUpdatedAt,
   onOpenShare,
 }: {
   shares: ShareSummary[];
   allShares: ShareSummary[];
+  projectUpdatedAt: string;
   onOpenShare: () => void;
 }) {
+  // Heuristic stale detection: if the project was edited after a share's
+  // snapshottedAt, the customer is potentially looking at outdated content.
+  // (False positives are tolerable — banner is advisory, not blocking. Real
+  // diff is computed server-side via /shares/:id/resnapshot-preview.)
+  const projectTs = Date.parse(projectUpdatedAt);
+  const isStale = (s: ShareSummary): boolean => {
+    if (!s.snapshottedAt) return false;
+    const snapTs = Date.parse(s.snapshottedAt);
+    return Number.isFinite(snapTs) && Number.isFinite(projectTs) && projectTs - snapTs > 1000;
+  };
+  const staleCount = shares.filter(isStale).length;
+
   return (
     <div className="bg-white border border-slate-200/80 rounded-2xl p-5">
       <div className="flex items-center justify-between mb-2">
@@ -447,6 +462,24 @@ function SharesCard({
           + Neuer Link
         </button>
       </div>
+      {staleCount > 0 && (
+        <div className="mt-2 mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-amber-600" />
+          <div className="leading-relaxed">
+            <span className="font-semibold">
+              {staleCount === 1 ? '1 Link zeigt einen älteren Stand.' : `${staleCount} Links zeigen einen älteren Stand.`}
+            </span>{' '}
+            Sie haben das Projekt nach dem Teilen bearbeitet.{' '}
+            <button
+              type="button"
+              onClick={onOpenShare}
+              className="underline font-semibold hover:text-amber-700"
+            >
+              Schnappschuss aktualisieren
+            </button>
+          </div>
+        </div>
+      )}
       {shares.length === 0 ? (
         <p className="text-sm text-slate-500 mt-3">
           Noch nicht geteilt. Erstellen Sie einen Link, um das Angebot dem Kunden zugänglich zu
@@ -454,17 +487,25 @@ function SharesCard({
         </p>
       ) : (
         <ul className="mt-2 space-y-2 text-sm">
-          {shares.map((s) => (
-            <li key={s.id} className="flex items-center gap-2">
-              <Eye className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
-              <span className="flex-1 truncate font-mono text-xs text-slate-500">
-                /{s.token.slice(0, 10)}…
-              </span>
-              <span className="text-xs text-slate-400">
-                {s.viewCount}× gesehen
-              </span>
-            </li>
-          ))}
+          {shares.map((s) => {
+            const stale = isStale(s);
+            return (
+              <li key={s.id} className="flex items-center gap-2">
+                <Eye className={`w-3.5 h-3.5 flex-shrink-0 ${stale ? 'text-amber-500' : 'text-emerald-500'}`} />
+                <span className="flex-1 truncate font-mono text-xs text-slate-500">
+                  /{s.token.slice(0, 10)}…
+                </span>
+                {stale && (
+                  <span className="text-[10px] uppercase tracking-wider font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
+                    Veraltet
+                  </span>
+                )}
+                <span className="text-xs text-slate-400">
+                  {s.viewCount}× gesehen
+                </span>
+              </li>
+            );
+          })}
         </ul>
       )}
       {allShares.some((s) => s.revokedAt) && (

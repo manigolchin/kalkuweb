@@ -512,12 +512,11 @@ export default function PositionTable({ positions, params, onChange }: Props) {
                     </td>
                     <td className="px-1 py-1">
                       <div className="flex items-center gap-1">
-                        <input
-                          value={formatNum(p.quantity, p.quantity % 1 === 0 ? 0 : 2)}
-                          onChange={(e) => updateNumber(p.id, 'quantity', e.target.value)}
-                          onFocus={(e) => e.target.select()}
+                        <QuantityInput
+                          value={p.quantity}
                           readOnly={!!p.aufmassFormula?.trim()}
                           title={p.aufmassFormula?.trim() ? 'Menge ergibt sich aus dem Aufmaß. Klicken Sie das Σ-Symbol zum Bearbeiten.' : undefined}
+                          onChange={(v) => updateNumber(p.id, 'quantity', v)}
                           className={clsx(
                             'flex-1 px-1.5 py-1 rounded-md border border-transparent bg-transparent text-right tabular-nums outline-none focus:bg-white focus:border-primary-300 focus:ring-1 focus:ring-primary-200',
                             p.aufmassFormula?.trim() && 'bg-emerald-50/40 text-emerald-900 cursor-default',
@@ -987,6 +986,56 @@ const Cell = memo(function Cell({
   );
 });
 
+function QuantityInput({
+  value,
+  readOnly,
+  title,
+  onChange,
+  className,
+}: {
+  value: number;
+  readOnly: boolean;
+  title: string | undefined;
+  onChange: (v: string) => void;
+  className: string;
+}) {
+  const formatted = value === 0 ? '' : formatNum(value, value % 1 === 0 ? 0 : 2);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  return (
+    <input
+      value={editing ? draft : formatted}
+      placeholder="0"
+      inputMode="decimal"
+      onChange={(e) => setDraft(e.target.value)}
+      onFocus={(e) => {
+        if (readOnly) return;
+        setEditing(true);
+        setDraft(formatted);
+        e.target.select();
+      }}
+      onBlur={(e) => {
+        if (!editing) return;
+        const final = e.currentTarget.value;
+        if (final !== formatted) onChange(final);
+        setEditing(false);
+        setDraft('');
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+        else if (e.key === 'Escape') {
+          setEditing(false);
+          setDraft('');
+          e.currentTarget.blur();
+        }
+      }}
+      readOnly={readOnly}
+      title={title}
+      className={className}
+    />
+  );
+}
+
 const NumCell = memo(function NumCell({
   value,
   onChange,
@@ -995,14 +1044,38 @@ const NumCell = memo(function NumCell({
   onChange: (v: string) => void;
 }) {
   const isZero = value === 0;
+  const formatted = isZero ? '' : formatNum(value, value % 1 === 0 ? 0 : 2);
+  // Local draft string while the cell is focused. Without this, a controlled
+  // input re-renders the parsed numeric value after every keystroke — typing
+  // "1," round-trips to "1" instantly and decimals can't be entered.
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
   return (
     <td className="px-1 py-1">
       <input
-        value={isZero ? '' : formatNum(value, value % 1 === 0 ? 0 : 2)}
+        value={editing ? draft : formatted}
         placeholder="0"
         inputMode="decimal"
-        onChange={(e: ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
-        onFocus={(e) => e.target.select()}
+        onChange={(e: ChangeEvent<HTMLInputElement>) => setDraft(e.target.value)}
+        onFocus={(e) => {
+          setEditing(true);
+          setDraft(formatted);
+          e.target.select();
+        }}
+        onBlur={(e) => {
+          const final = e.currentTarget.value;
+          if (final !== formatted) onChange(final);
+          setEditing(false);
+          setDraft('');
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+          else if (e.key === 'Escape') {
+            setEditing(false);
+            setDraft('');
+            e.currentTarget.blur();
+          }
+        }}
         className={clsx(
           'w-full px-1.5 py-1 rounded-md border text-right tabular-nums outline-none transition-colors',
           'placeholder:text-slate-300 cursor-text',

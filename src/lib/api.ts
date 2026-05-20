@@ -83,7 +83,11 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ current, next }),
       }),
-    updateProfile: (patch: Partial<Pick<AuthUser, 'name' | 'companyName' | 'companyLogoUrl'>>) =>
+    updateProfile: (
+      patch: Partial<
+        Pick<AuthUser, 'name' | 'companyName' | 'companyLogoUrl' | 'companyPhone' | 'companyContactEmail'>
+      >,
+    ) =>
       request<{ user: AuthUser }>('/auth/profile', {
         method: 'PUT',
         body: JSON.stringify(patch),

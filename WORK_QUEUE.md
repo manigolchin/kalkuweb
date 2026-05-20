@@ -140,6 +140,61 @@ Phase 2 (static audit) — one feature per iteration, priority order:
 - [ ] src/data/blog.tsx:205, 873 — hardcoded phone numbers in two article bodies. Match the NAP constant currently but won't auto-update if NAP changes. Replace with `{NAP.phone}` expression or pull into a small `<PhoneLink />` helper.
 - [ ] All legal pages (Impressum, Datenschutz, AGB) — agent reports no `og:title`/`og:description`. Add `<meta property="og:..."`> via Helmet for share-preview consistency. Verify before fixing — agent didn't enumerate which tags Helmet currently sets.
 
+## Active — Kalkulation / Panel audit (2026-05-20)
+
+End-to-end review of the Bülent-login → panel → share-link → approve/changes flow.
+P0 + the cheapest P1s shipped same-day; the rest are queued here. Findings are
+verified against `panel-api/src/routes/*.ts`, `src/features/kalkulation/*`, and
+`src/pages/ShareView.tsx`.
+
+### Shipped in this audit (reference)
+
+- [x] P0 — PositionTable decimal input. `src/features/kalkulation/PositionTable.tsx` NumCell + Menge cell now use editing-mode local draft string; commits on blur/Enter, escape reverts.
+- [x] P1 — `replyTo` no longer falls back to owner login email. `panel-api/src/routes/public.ts:326` drops the `|| owner.email` fallback.
+- [x] P1 — `api.auth.updateProfile` type extended to `companyPhone | companyContactEmail`. `src/lib/api.ts:86`.
+- [x] P1 — `ShareView` replaced `window.alert` with `react-hot-toast.error` and disables Approve when `positions.filter(!isHeader).length === 0`.
+- [x] P1 — Snapshot-divergence banner in `SharesCard` (heuristic: `project.updatedAt > share.snapshottedAt`).
+- [x] P1 — Archiv tab labeled "Bald" so the placeholder page is obvious before clicking.
+
+### P1 — server, must do before opening shares to real customers
+
+- [ ] **Approve / changes idempotency.** `panel-api/src/routes/public.ts:192-393` accept unlimited duplicate POSTs (N rows, N audit events, N confirmation emails). Add `requestId TEXT` column on `share_responses`, client generates a UUID once per submit, server `INSERT OR IGNORE` against `UNIQUE(share_id, request_id)`. Add equivalent on `ShareView.submitApprove` / `submitChanges`.
+- [ ] **Email-abuse on `/share/:token/approve`.** Customer-supplied `customerEmail` is the primary recipient of an "Annahmebestätigung" email from KALKU's reputable SMTP. No rate limit on this endpoint. Either restrict to `settings.customerEmail` (set by owner at share creation) OR add per-token + per-IP rate limiting to all `/share/:token/*` POST routes (10/hour/token feels right).
+- [ ] **Audit-chain fork on concurrent inserts.** `panel-api/src/lib/audit.ts:50-89` reads tip then inserts without a transaction. Two parallel `recordAuditEvent` calls can produce identical `prev_hash`, silently forking the chain. Fix: wrap SELECT+INSERT in `db.transaction()` using better-sqlite3's `IMMEDIATE` mode + add `UNIQUE(prev_hash)` constraint on `audit_events`. Add a test case (`panel-api/test/audit.test.ts`) that spawns 10 concurrent inserts and verifies linear chain.
+- [ ] **`X-Forwarded-For` blindly trusted.** `panel-api/src/lib/middleware.ts:31-35`, `lib/ratelimit.ts:20-21`. If the API is ever reachable without nginx (port leak, alt vhost), attacker rotates XFF per-request to evade login rate-limit and poison audit IPs. Add `TRUSTED_PROXY_CIDRS` env var; only honor XFF when request source matches.
+- [ ] **Inbox: render position context not opaque ID slice.** `src/features/kalkulation/FeedbackInbox.tsx:163-165` shows `c.positionId.slice(0,8)`. Server should include `snapshotData.positions.filter(p => referenced)` in the inbox list endpoint; client should resolve `positionId → oz + shortText + gp` so the owner sees what the customer was commenting on. Touches `panel-api/src/routes/inbox.ts` shape + UI.
+
+### P2 — server
+
+- [ ] **`mustChangePassword` not enforced server-side.** `panel-api/src/lib/middleware.ts:13-29` returns the flag but `requireAuth` doesn't block other routes. Attacker with the initial admin-set password retains full API access. Fix: in `requireAuth`, when `user.mustChangePassword` and path is not `/auth/change-password|me|logout`, return `403 password_change_required`.
+- [ ] **Login email-enumeration timing.** `panel-api/src/routes/auth.ts:42-49` — unknown email ~1ms, valid email ~80ms bcrypt. Run a dummy `bcrypt.compare(password, DUMMY_HASH)` when user is null to equalize latency.
+- [ ] **Approve / revoke race.** `routes/public.ts:198-223` reads share, checks `revokedAt`, then inserts outside a transaction. Revoke landing between SELECT and INSERT still records the approval. Wrap in `db.transaction` with re-SELECT inside.
+- [ ] **Digest secret timing-safe compare.** `panel-api/src/routes/notifications.ts:75-78` uses `!==`. Switch to `crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(expected))` with length-padding.
+
+### P2 — client UX
+
+- [ ] **Inbox loading-error silent.** `FeedbackInbox.tsx:20-34` — API failure renders the "Noch keine Aktivität" empty state. Add a toast on catch and an inline "Erneut laden" affordance.
+- [ ] **Auto-save state-machine race.** `ProjectDetail.tsx:96-103` — `setSavingState('saved')` + setTimeout to `idle`. New edit landing in the window flips state back to `idle` prematurely. Track saves with a monotonic generation counter; only clear "saved" if the gen at clear-time matches the gen that set it.
+- [ ] **Version conflict has no "Neu laden" action.** `ProjectDetail.tsx:109-111` toasts but doesn't offer re-fetch. Add a toast action.
+- [ ] **`ShareDialog` revoke uses `existing!` non-null assertion.** `ShareDialog.tsx:218`. Defensive null-check + remove the assertion.
+- [ ] **`ShareDialog` resnapshot success diverges from server.** `ShareDialog.tsx:594` `onCreated({ ...resnapTarget, snapshotHash, snapshottedAt })` drops the new `snapshotVersion` / `viewCount` / other server fields. Refetch the share instead of locally merging.
+- [ ] **`ShareDialog` line label `v2026-05-19`.** `ShareDialog.tsx:543` — rephrase to e.g. `Snapshot 19.05.2026` (German date order) or drop the "v" prefix.
+- [ ] **`PositionTable` decorative drag handle.** `GripVertical` icon rendered but no DnD wiring. Either implement (recommended: `@dnd-kit/core`) or remove the handle so users don't try.
+- [ ] **`Login.tsx` swallows network errors as 401.** `src/lib/auth.tsx:43-48` — distinguish 401 from 5xx/network and surface a banner.
+- [ ] **`ShareView` Bindefrist crosses-midnight bug.** `ShareView.tsx:67-75` — `mountedAtMs` captured once. Re-compute via state + interval, or just compute on every render (no perf concern).
+
+### P2 — calc / semantics
+
+- [ ] **`zeitabzug` naming vs sign.** `src/features/kalkulation/calc.ts:42` — formula is `timeMinutes + (timeMinutes/100)*zeitabzug`. Positive `zeitabzug` *increases* time, but the German word "Abzug" means deduction. Either rename to `zeitZuschlag` (semantically positive=more time, default 0) or invert the formula to `-` and document. Default 0 hides the issue but it's a footgun.
+- [ ] **`geraeteZuschlagPct` declared but unused.** `calc.ts:8` and `panel-api/src/schema.ts:173`. Either wire it into the formula (likely intended as a markup on geräte-stundensatz) or remove the field across schema + DEFAULT_CALC_PARAMS + ProjectDetail SettingsPanel.
+
+### Backlog — bigger refactors / features
+
+- [ ] **Real snapshot-staleness check** (replaces the heuristic banner shipped in this audit). Server endpoint `/api/panel/projects/:id/shares/:shareId/staleness` returns `{ stale: boolean, addedCount, removedCount, changedCount, netDelta }` based on `diffSnapshots` against current project. Client renders a richer banner with the delta.
+- [ ] **Customer self-service: download the snapshot PDF without approving.** Currently `/share/:token/pdf` works but isn't surfaced before approval. Add a "Als PDF speichern" link in `ShareView` so the customer can keep a copy before deciding.
+- [ ] **PDF visual proofread.** `panel-api/src/lib/pdf.ts` (`renderQuotePdf` + `renderCertificatePdf`) — eyebrow/heading baseline overlap was a problem in the marketing whitepaper PDF generator; check that the same y-advance bug isn't lurking here on long LVs.
+- [ ] **Math: position-level rounding vs sum-then-round.** Current approach rounds `gp` per line then sums. Standard for invoicing, but if a project has many low-value lines the cumulative rounding error can be visible to customers comparing the sum manually. Optionally add a tooltip or footnote on the totals card.
+
 ## Backlog
 
 (longer-term ideas, lower priority)
