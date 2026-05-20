@@ -38,6 +38,9 @@ export type Position = {
   visibleToCustomer: boolean;
   internalNote?: string;
   positionType?: PositionType;
+  /** REB-23.003-lite Aufmaß formula. When non-empty, quantity is computed
+   *  from it (client preview + server-authoritative re-parse on save). */
+  aufmassFormula?: string;
 };
 
 export type CalcParams = {

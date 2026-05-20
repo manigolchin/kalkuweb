@@ -6,6 +6,7 @@ import { db } from '../db.js';
 import { projects, shares, type ProjectData } from '../schema.js';
 import { requireAuth, type AuthVariables } from '../lib/middleware.js';
 import { recomputePositions } from '../lib/snapshot.js';
+import { evaluateAufmass } from '../lib/aufmass.js';
 
 const DEFAULT_CALC_PARAMS = {
   mittellohn: 30.0,
@@ -69,6 +70,7 @@ const positionSchema = z.object({
   visibleToCustomer: z.boolean().default(true),
   internalNote: z.string().max(4000).optional(),
   positionType: z.enum(POSITION_TYPES).default('standard'),
+  aufmassFormula: z.string().max(20000).optional(),
 });
 
 const calcParamsSchema = z.object({
@@ -233,11 +235,21 @@ export const projectsRoute = new Hono<{ Variables: AuthVariables }>()
       }
     }
 
+    // Aufmaß formula is authoritative when present: parse it and overwrite
+    // quantity so the LV total and the customer view always agree with the
+    // measurement audit trail.
+    const positionsWithAufmass = parsed.data.data.positions.map((p) => {
+      if (!p.aufmassFormula || p.aufmassFormula.trim() === '') return p;
+      const r = evaluateAufmass(p.aufmassFormula);
+      if (r.hasErrors || !Number.isFinite(r.total)) return p;
+      return { ...p, quantity: r.total };
+    });
+
     // Server is the source of truth for derived EP/GP values. Recompute from
     // cost inputs before persisting so a buggy or malicious client can't pin
     // wrong totals into the DB.
     const recomputedPositions = recomputePositions(
-      parsed.data.data.positions,
+      positionsWithAufmass,
       parsed.data.data.calcParams,
     ).map((p) => ({
       // Default-deny: internal position-types are force-hidden from customer

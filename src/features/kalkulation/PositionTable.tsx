@@ -1,5 +1,5 @@
-import { memo, useCallback, useMemo, type ChangeEvent, type ClipboardEvent } from 'react';
-import { Eye, EyeOff, Plus, Trash2, GripVertical, Lock } from 'lucide-react';
+import { memo, useCallback, useMemo, useState, type ChangeEvent, type ClipboardEvent } from 'react';
+import { Eye, EyeOff, Plus, Trash2, GripVertical, Lock, Sigma, X, AlertCircle } from 'lucide-react';
 import clsx from 'clsx';
 import {
   POSITION_TYPES,
@@ -10,6 +10,7 @@ import {
   type PositionType,
 } from './types';
 import { calculatePosition, formatEUR, formatNum, makeBlankPosition } from './calc';
+import { evaluateAufmass } from './aufmass';
 import { nanoid } from 'nanoid';
 
 type Col = { key: keyof Position; label: string; width: string; align?: 'right' };
@@ -31,6 +32,8 @@ type Props = {
 };
 
 export default function PositionTable({ positions, params, onChange }: Props) {
+  const [aufmassOpen, setAufmassOpen] = useState<string | null>(null);
+
   const calculatedRows = useMemo(
     () =>
       positions.map((p) => ({
@@ -74,6 +77,37 @@ export default function PositionTable({ positions, params, onChange }: Props) {
   const toggleHeader = useCallback(
     (id: string) => {
       onChange(positions.map((p) => (p.id === id ? { ...p, isHeader: !p.isHeader } : p)));
+    },
+    [positions, onChange],
+  );
+
+  const setAufmassFormula = useCallback(
+    (id: string, formula: string) => {
+      const r = evaluateAufmass(formula);
+      const newQty =
+        formula.trim() === '' || r.hasErrors || !Number.isFinite(r.total)
+          ? undefined
+          : r.total;
+      onChange(
+        positions.map((p) =>
+          p.id === id
+            ? {
+                ...p,
+                aufmassFormula: formula,
+                ...(newQty !== undefined ? { quantity: newQty } : {}),
+              }
+            : p,
+        ),
+      );
+    },
+    [positions, onChange],
+  );
+
+  const clearAufmassFormula = useCallback(
+    (id: string) => {
+      onChange(
+        positions.map((p) => (p.id === id ? { ...p, aufmassFormula: '' } : p)),
+      );
     },
     [positions, onChange],
   );
@@ -189,8 +223,8 @@ export default function PositionTable({ positions, params, onChange }: Props) {
               </tr>
             )}
             {calculatedRows.map(({ position: p, calc }) => (
+              <FragmentRow key={p.id}>
               <tr
-                key={p.id}
                 className={clsx(
                   'border-t border-slate-100 group',
                   p.isHeader && 'bg-primary-50/40',
@@ -261,7 +295,33 @@ export default function PositionTable({ positions, params, onChange }: Props) {
                         />
                       </div>
                     </td>
-                    <NumCell value={p.quantity} onChange={(v) => updateNumber(p.id, 'quantity', v)} />
+                    <td className="px-1 py-1">
+                      <div className="flex items-center gap-1">
+                        <input
+                          value={formatNum(p.quantity, p.quantity % 1 === 0 ? 0 : 2)}
+                          onChange={(e) => updateNumber(p.id, 'quantity', e.target.value)}
+                          onFocus={(e) => e.target.select()}
+                          readOnly={!!p.aufmassFormula?.trim()}
+                          title={p.aufmassFormula?.trim() ? 'Menge ergibt sich aus dem Aufmaß. Klicken Sie das Σ-Symbol zum Bearbeiten.' : undefined}
+                          className={clsx(
+                            'flex-1 px-1.5 py-1 rounded-md border border-transparent bg-transparent text-right tabular-nums outline-none focus:bg-white focus:border-primary-300 focus:ring-1 focus:ring-primary-200',
+                            p.aufmassFormula?.trim() && 'bg-emerald-50/40 text-emerald-900 cursor-default',
+                          )}
+                        />
+                        <button
+                          onClick={() => setAufmassOpen(aufmassOpen === p.id ? null : p.id)}
+                          title={p.aufmassFormula?.trim() ? 'Aufmaß bearbeiten' : 'Aufmaß-Formel hinzufügen'}
+                          className={clsx(
+                            'p-1 rounded transition-colors',
+                            p.aufmassFormula?.trim()
+                              ? 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100'
+                              : 'text-slate-300 hover:text-slate-600 hover:bg-slate-100',
+                          )}
+                        >
+                          <Sigma className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
                     <Cell value={p.unit} onChange={(v) => updateRow(p.id, { unit: v })} small />
                     <NumCell value={p.materialCost} onChange={(v) => updateNumber(p.id, 'materialCost', v)} />
                     <NumCell value={p.timeMinutes} onChange={(v) => updateNumber(p.id, 'timeMinutes', v)} />
@@ -286,6 +346,23 @@ export default function PositionTable({ positions, params, onChange }: Props) {
                   </button>
                 </td>
               </tr>
+              {aufmassOpen === p.id && !p.isHeader && (
+                <tr className="bg-emerald-50/30 border-t border-emerald-100">
+                  <td colSpan={12} className="px-4 py-3">
+                    <AufmassEditor
+                      formula={p.aufmassFormula || ''}
+                      unit={p.unit}
+                      onChange={(v) => setAufmassFormula(p.id, v)}
+                      onClear={() => {
+                        clearAufmassFormula(p.id);
+                        setAufmassOpen(null);
+                      }}
+                      onClose={() => setAufmassOpen(null)}
+                    />
+                  </td>
+                </tr>
+              )}
+              </FragmentRow>
             ))}
           </tbody>
         </table>
@@ -340,6 +417,110 @@ function parseDeNumber(s: string): number {
   const cleaned = String(s).replace(/\./g, '').replace(',', '.').trim();
   const n = parseFloat(cleaned);
   return Number.isFinite(n) ? n : 0;
+}
+
+function FragmentRow({ children }: { children: React.ReactNode }) {
+  // <></> would be cleaner but we need a stable key on the wrapper above,
+  // and React.Fragment doesn't accept keyed children patterns that play well
+  // with our render structure. A `display:contents`-equivalent is what we want:
+  // since this lives inside <tbody>, returning the fragment is correct.
+  return <>{children}</>;
+}
+
+function AufmassEditor({
+  formula,
+  unit,
+  onChange,
+  onClear,
+  onClose,
+}: {
+  formula: string;
+  unit: string;
+  onChange: (v: string) => void;
+  onClear: () => void;
+  onClose: () => void;
+}) {
+  const result = useMemo(() => evaluateAufmass(formula), [formula]);
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-[1fr_280px] gap-4">
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="text-xs font-semibold text-slate-700 uppercase tracking-wider inline-flex items-center gap-1">
+            <Sigma className="w-3 h-3" />
+            Aufmaß-Formel (REB-23.003-lite)
+          </label>
+          <div className="flex items-center gap-1">
+            {formula.trim() && (
+              <button
+                onClick={onClear}
+                className="text-xs text-slate-500 hover:text-red-600 inline-flex items-center gap-1"
+              >
+                <X className="w-3 h-3" /> Verwerfen
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="text-xs text-slate-500 hover:text-slate-800 px-2"
+              title="Schließen"
+            >
+              Schließen
+            </button>
+          </div>
+        </div>
+        <textarea
+          autoFocus
+          value={formula}
+          onChange={(e) => onChange(e.target.value)}
+          rows={5}
+          placeholder={`Wand 1  4.50 * 2.80\n- Tür   2.10 * 1.00\nWand 2  3.20 * 2.80`}
+          className="w-full font-mono text-sm bg-white border border-slate-200 rounded-lg px-3 py-2 outline-none focus:border-emerald-300 focus:ring-1 focus:ring-emerald-200"
+        />
+        <p className="text-xs text-slate-500 mt-1.5">
+          Eine Messung pro Zeile. Annotation (Wand, Bauteil…) optional, gefolgt vom Ausdruck. Ein vorangestelltes "-" am Zeilenanfang subtrahiert (z. B. <code className="font-mono">- Tür 2.10 * 1.00</code>).
+        </p>
+      </div>
+      <div className="bg-white border border-slate-200 rounded-lg p-3 text-xs">
+        <p className="font-semibold text-slate-700 uppercase tracking-wider mb-2">Vorschau</p>
+        {result.lines.length === 0 ? (
+          <p className="text-slate-400">Noch keine Zeilen.</p>
+        ) : (
+          <ul className="space-y-1">
+            {result.lines.map((l, i) => (
+              <li key={i} className="flex items-center gap-2">
+                <span className="flex-1 truncate text-slate-500">{l.annotation || '—'}</span>
+                {l.error ? (
+                  <span className="text-red-600 inline-flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" />
+                    {l.error}
+                  </span>
+                ) : l.value === null ? (
+                  <span className="text-slate-300">—</span>
+                ) : (
+                  <span className={clsx('tabular-nums', l.signedValue < 0 ? 'text-red-700' : 'text-slate-700')}>
+                    {l.signedValue < 0 ? '−' : ''}
+                    {formatNum(Math.abs(l.signedValue), Math.abs(l.signedValue) % 1 === 0 ? 0 : 2)}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="border-t border-slate-200 mt-2 pt-2 flex items-center justify-between">
+          <span className="font-semibold text-slate-700">Summe</span>
+          <span className={clsx('tabular-nums font-bold text-base', result.hasErrors ? 'text-red-700' : 'text-emerald-700')}>
+            {formatNum(result.total, result.total % 1 === 0 ? 0 : 2)} {unit}
+          </span>
+        </div>
+        {result.hasErrors && (
+          <p className="text-red-600 mt-1 inline-flex items-center gap-1">
+            <AlertCircle className="w-3 h-3" />
+            Eine Zeile konnte nicht ausgewertet werden — Menge wird nicht aktualisiert.
+          </p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function PositionTypeSelect({

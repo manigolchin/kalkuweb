@@ -111,6 +111,9 @@ export type Position = {
   visibleToCustomer: boolean;
   internalNote?: string;
   positionType?: PositionType;
+  /** REB-23.003-lite Aufmaß formula. When non-empty, server overwrites `quantity`
+   *  with the parsed total before persistence. See lib/aufmass.ts. */
+  aufmassFormula?: string;
 };
 
 export type CalcParams = {
