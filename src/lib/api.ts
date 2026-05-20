@@ -8,6 +8,7 @@ import type {
   ShareResponse,
   ShareSettings,
   ShareSummary,
+  ViewPreset,
 } from '@/features/kalkulation/types';
 
 const BASE = '/api/panel';
@@ -157,6 +158,20 @@ export const api = {
     unread: () => request<{ count: number }>(`/notifications/unread`),
     markViewed: () =>
       request<{ ok: true }>(`/notifications/mark-viewed`, { method: 'POST' }),
+  },
+  presets: {
+    list: (projectId: string) =>
+      request<{ presets: ViewPreset[] }>(`/projects/${projectId}/presets`),
+    create: (
+      projectId: string,
+      input: { name: string; visiblePositionIds: string[]; settings: Partial<ShareSettings> },
+    ) =>
+      request<ViewPreset>(`/projects/${projectId}/presets`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    delete: (presetId: string) =>
+      request<{ ok: true }>(`/presets/${presetId}`, { method: 'DELETE' }),
   },
   public: {
     getShare: (token: string) => request<CustomerViewPayload>(`/share/${token}`),

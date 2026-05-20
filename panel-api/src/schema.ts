@@ -68,6 +68,20 @@ export const shareResponses = sqliteTable('share_responses', {
  * mutated. The API role's GRANTS deliberately omit UPDATE/DELETE on this
  * table — only INSERT is exposed.
  */
+/**
+ * Saved "Kunden-Ansicht" presets per project. Lets the owner reuse a
+ * (visible-positions + share-settings) combo across multiple shares — useful
+ * when the same Inhaber sends "Privatkunden-Ansicht" or "AG-Ansicht" repeatedly.
+ */
+export const viewPresets = sqliteTable('view_presets', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  visiblePositionIds: text('visible_position_ids', { mode: 'json' }).notNull().$type<string[]>(),
+  settings: text('settings', { mode: 'json' }).notNull().$type<Partial<ShareSettings>>(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+});
+
 export const auditEvents = sqliteTable('audit_events', {
   id: text('id').primaryKey(),
   shareId: text('share_id'),
@@ -96,6 +110,7 @@ export type Project = typeof projects.$inferSelect;
 export type Share = typeof shares.$inferSelect;
 export type ShareResponse = typeof shareResponses.$inferSelect;
 export type AuditEvent = typeof auditEvents.$inferSelect;
+export type ViewPreset = typeof viewPresets.$inferSelect;
 
 export type PositionType = 'standard' | 'wagnis' | 'reserve' | 'nu_marge' | 'lohn_puffer';
 

@@ -190,6 +190,15 @@ export type AuthUser = {
   mustChangePassword: boolean;
 };
 
+export type ViewPreset = {
+  id: string;
+  projectId: string;
+  name: string;
+  visiblePositionIds: string[];
+  settings: Partial<ShareSettings>;
+  createdAt: string;
+};
+
 export type InboxEntry = {
   project: {
     id: string;

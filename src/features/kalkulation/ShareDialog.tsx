@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  X, Eye, EyeOff, Link2, Copy, Check, Loader2, AlertTriangle, RefreshCw, ArrowRight, FilePlus,
+  X, Eye, EyeOff, Link2, Copy, Check, Loader2, AlertTriangle, RefreshCw, ArrowRight, FilePlus, Bookmark, Save, Trash2,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -11,6 +11,7 @@ import {
   type PositionType,
   type ShareSettings,
   type ShareSummary,
+  type ViewPreset,
 } from './types';
 import { calcTotals, calculatePosition, formatEUR } from './calc';
 import { api } from '@/lib/api';
@@ -94,6 +95,77 @@ export default function ShareDialog({
   const [createdShare, setCreatedShare] = useState<ShareSummary | null>(null);
   const [copied, setCopied] = useState(false);
   const [resnapTarget, setResnapTarget] = useState<ShareSummary | null>(null);
+  const [presets, setPresets] = useState<ViewPreset[]>([]);
+  const [savingPreset, setSavingPreset] = useState(false);
+  const [presetNameDraft, setPresetNameDraft] = useState('');
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const { presets } = await api.presets.list(projectId);
+        if (alive) setPresets(presets);
+      } catch {
+        // ignore
+      }
+    })();
+    return () => { alive = false; };
+  }, [projectId]);
+
+  function applyPreset(p: ViewPreset) {
+    setSelected(new Set(p.visiblePositionIds.filter((id) => positions.some((pos) => pos.id === id))));
+    setSettings((prev) => ({
+      ...prev,
+      ...(p.settings.brandHeader !== undefined ? { brandHeader: p.settings.brandHeader } : {}),
+      ...(p.settings.allowApproval !== undefined ? { allowApproval: p.settings.allowApproval } : {}),
+      ...(p.settings.allowChangeRequests !== undefined ? { allowChangeRequests: p.settings.allowChangeRequests } : {}),
+      ...(p.settings.showTotals !== undefined ? { showTotals: p.settings.showTotals } : {}),
+      ...(p.settings.showMwst !== undefined ? { showMwst: p.settings.showMwst } : {}),
+      ...(p.settings.bindefristDays !== undefined ? { bindefristDays: p.settings.bindefristDays } : {}),
+      ...(p.settings.message ? { message: p.settings.message } : {}),
+    }));
+    toast.success(`Voreinstellung "${p.name}" angewendet.`);
+  }
+
+  async function saveAsPreset() {
+    if (!presetNameDraft.trim()) {
+      toast.error('Bitte einen Namen für die Voreinstellung angeben.');
+      return;
+    }
+    setSavingPreset(true);
+    try {
+      const created = await api.presets.create(projectId, {
+        name: presetNameDraft.trim(),
+        visiblePositionIds: Array.from(selected),
+        settings: {
+          brandHeader: settings.brandHeader,
+          allowApproval: settings.allowApproval,
+          allowChangeRequests: settings.allowChangeRequests,
+          showTotals: settings.showTotals,
+          showMwst: settings.showMwst,
+          bindefristDays: settings.bindefristDays,
+          message: settings.message,
+        },
+      });
+      setPresets((arr) => [...arr, created]);
+      setPresetNameDraft('');
+      toast.success(`Voreinstellung "${created.name}" gespeichert.`);
+    } catch {
+      toast.error('Konnte nicht speichern.');
+    } finally {
+      setSavingPreset(false);
+    }
+  }
+
+  async function deletePreset(id: string) {
+    try {
+      await api.presets.delete(id);
+      setPresets((arr) => arr.filter((p) => p.id !== id));
+      toast.success('Voreinstellung entfernt.');
+    } catch {
+      toast.error('Löschen fehlgeschlagen.');
+    }
+  }
 
   const visiblePositions = useMemo(
     () => positions.filter((p) => selected.has(p.id)),
@@ -205,6 +277,66 @@ export default function ShareDialog({
             />
           ) : (
             <>
+              {(presets.length > 0 || !isNachtragMode) && (
+                <section>
+                  <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+                    <h3 className="text-sm font-semibold text-slate-900 inline-flex items-center gap-1.5">
+                      <Bookmark className="w-3.5 h-3.5 text-slate-500" />
+                      Voreinstellung (optional)
+                    </h3>
+                    <span className="text-xs text-slate-500">
+                      Spart Zeit bei wiederkehrenden Kunden-Ansichten ("Privatkunde", "AG", "Sub").
+                    </span>
+                  </div>
+                  {presets.length > 0 && (
+                    <ul className="mb-3 space-y-1.5">
+                      {presets.map((p) => (
+                        <li key={p.id} className="flex items-center gap-2">
+                          <button
+                            onClick={() => applyPreset(p)}
+                            className="flex-1 text-left px-3 py-2 rounded-lg border border-slate-200 hover:border-primary-300 hover:bg-primary-50/40 text-sm"
+                          >
+                            <span className="font-medium text-slate-900">{p.name}</span>
+                            <span className="text-xs text-slate-500 ml-2">
+                              {p.visiblePositionIds.length} Position{p.visiblePositionIds.length === 1 ? '' : 'en'}
+                            </span>
+                          </button>
+                          <button
+                            onClick={() => deletePreset(p.id)}
+                            className="p-1.5 rounded text-slate-400 hover:bg-red-50 hover:text-red-600"
+                            title="Voreinstellung löschen"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={presetNameDraft}
+                      onChange={(e) => setPresetNameDraft(e.target.value)}
+                      placeholder="Aktuelle Auswahl speichern als …"
+                      className="flex-1 input text-sm"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          saveAsPreset();
+                        }
+                      }}
+                    />
+                    <button
+                      onClick={saveAsPreset}
+                      disabled={savingPreset || !presetNameDraft.trim() || selected.size === 0}
+                      className="inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-sm text-slate-700 disabled:opacity-50"
+                    >
+                      {savingPreset ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                      Speichern
+                    </button>
+                  </div>
+                </section>
+              )}
+
               <section>
                 <h3 className="text-sm font-semibold text-slate-900 mb-2">
                   1. Welche Positionen sieht der Kunde?
@@ -393,11 +525,20 @@ export default function ShareDialog({
                   <ul className="border border-slate-200/80 rounded-xl divide-y divide-slate-100">
                     {existingShares
                       .filter((s) => !s.revokedAt)
-                      .map((s) => (
+                      .map((s) => {
+                        const nachtragChildren = existingShares.filter((other) => other.parentShareId === s.id && !other.revokedAt).length;
+                        const isNachtragChild = (s.nachtragNumber ?? 0) > 0;
+                        return (
                         <li key={s.id} className="px-3 py-2 flex items-center gap-3 text-sm">
-                          <Link2 className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                          <Link2 className={clsx('w-3.5 h-3.5 flex-shrink-0', isNachtragChild ? 'text-amber-500' : 'text-slate-400')} />
                           <span className="font-mono text-xs text-slate-500 flex-1 truncate">
+                            {isNachtragChild && <span className="text-amber-700 font-semibold uppercase mr-1.5">N{s.nachtragNumber}</span>}
                             /share/{s.token.slice(0, 12)}…
+                            {nachtragChildren > 0 && (
+                              <span className="ml-1.5 text-[10px] uppercase tracking-wider text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
+                                {nachtragChildren} Nachtrag{nachtragChildren === 1 ? '' : '-Kette'}
+                              </span>
+                            )}
                           </span>
                           <span className="text-xs text-slate-400 hidden sm:inline">
                             v{s.snapshotHash ? s.snapshottedAt?.slice(0, 10) || '' : '—'}
@@ -436,7 +577,8 @@ export default function ShareDialog({
                             <X className="w-3.5 h-3.5" />
                           </button>
                         </li>
-                      ))}
+                        );
+                      })}
                   </ul>
                 </section>
               )}

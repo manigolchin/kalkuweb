@@ -107,5 +107,15 @@ export function runMigrations() {
 
     CREATE INDEX IF NOT EXISTS idx_audit_share ON audit_events(share_id);
     CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_events(created_at);
+
+    CREATE TABLE IF NOT EXISTS view_presets (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      visible_position_ids TEXT NOT NULL,
+      settings TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_view_presets_project ON view_presets(project_id);
   `);
 }
