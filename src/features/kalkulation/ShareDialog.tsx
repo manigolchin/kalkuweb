@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  X, Eye, EyeOff, Link2, Copy, Check, Loader2, AlertTriangle, RefreshCw, ArrowRight,
+  X, Eye, EyeOff, Link2, Copy, Check, Loader2, AlertTriangle, RefreshCw, ArrowRight, FilePlus,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -21,8 +21,10 @@ type Props = {
   positions: Position[];
   calcParams: import('./types').CalcParams;
   existingShares: ShareSummary[];
+  parentShareId?: string;
   onClose: () => void;
   onCreated: (share: ShareSummary) => void;
+  onRequestNachtrag?: (parentShareId: string) => void;
 };
 
 export default function ShareDialog({
@@ -31,9 +33,15 @@ export default function ShareDialog({
   positions,
   calcParams,
   existingShares,
+  parentShareId,
   onClose,
   onCreated,
+  onRequestNachtrag,
 }: Props) {
+  const parentShare = parentShareId
+    ? existingShares.find((s) => s.id === parentShareId)
+    : undefined;
+  const isNachtragMode = !!parentShare;
   const [selected, setSelected] = useState<Set<string>>(
     () =>
       new Set(
@@ -61,15 +69,26 @@ export default function ShareDialog({
       ),
     [positions],
   );
-  const [settings, setSettings] = useState<ShareSettings>({
-    brandHeader: 'co-branded',
-    customerName: '',
-    customerEmail: '',
-    message: '',
-    allowApproval: true,
-    allowChangeRequests: true,
-    showTotals: true,
-    showMwst: true,
+  const [settings, setSettings] = useState<ShareSettings>(() => {
+    const base: ShareSettings = {
+      brandHeader: 'co-branded',
+      customerName: parentShare?.settings.customerName || '',
+      customerEmail: parentShare?.settings.customerEmail || '',
+      message: '',
+      allowApproval: true,
+      allowChangeRequests: true,
+      showTotals: true,
+      showMwst: true,
+    };
+    if (parentShare) {
+      const created = new Date(parentShare.createdAt).toLocaleDateString('de-DE', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+      });
+      base.message = `Nachtrag zum Angebot vom ${created}.`;
+    }
+    return base;
   });
   const [creating, setCreating] = useState(false);
   const [createdShare, setCreatedShare] = useState<ShareSummary | null>(null);
@@ -108,10 +127,11 @@ export default function ShareDialog({
       const share = await api.shares.create(projectId, {
         visiblePositionIds: Array.from(selected),
         settings,
+        ...(parentShareId ? { parentShareId } : {}),
       });
       onCreated(share);
       setCreatedShare(share);
-      toast.success('Link erstellt.');
+      toast.success(isNachtragMode ? `Nachtrag N${share.nachtragNumber} erstellt.` : 'Link erstellt.');
     } catch {
       toast.error('Link konnte nicht erstellt werden.');
     } finally {
@@ -148,12 +168,25 @@ export default function ShareDialog({
       <div className="relative bg-white rounded-2xl shadow-2xl border border-slate-200/80 w-full max-w-4xl max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-primary-50 text-primary-600">
+            <div className={clsx(
+              'p-2 rounded-lg',
+              isNachtragMode ? 'bg-amber-50 text-amber-700' : 'bg-primary-50 text-primary-600',
+            )}>
               <Link2 className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="font-semibold text-slate-900">Mit Kunde teilen</h2>
-              <p className="text-xs text-slate-500">{projectName || 'Projekt'}</p>
+              <h2 className="font-semibold text-slate-900">
+                {isNachtragMode ? 'Nachtrag erstellen' : 'Mit Kunde teilen'}
+              </h2>
+              <p className="text-xs text-slate-500">
+                {projectName || 'Projekt'}
+                {isNachtragMode && parentShare && (
+                  <>
+                    {' · '}
+                    Nachtrag zu /share/{parentShare.token.slice(0, 10)}…
+                  </>
+                )}
+              </p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 rounded-lg text-slate-400 hover:bg-slate-100">
@@ -379,6 +412,15 @@ export default function ShareDialog({
                           >
                             <RefreshCw className="w-3.5 h-3.5" />
                           </button>
+                          {onRequestNachtrag && !s.parentShareId && (
+                            <button
+                              onClick={() => onRequestNachtrag(s.id)}
+                              className="p-1.5 rounded text-slate-500 hover:bg-amber-50 hover:text-amber-700"
+                              title="Nachtrag zu diesem Angebot erstellen"
+                            >
+                              <FilePlus className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           <button
                             onClick={() => copy(shareUrl(s.token))}
                             className="p-1.5 rounded text-slate-500 hover:bg-slate-100"

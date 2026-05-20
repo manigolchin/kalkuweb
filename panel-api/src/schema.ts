@@ -32,6 +32,11 @@ export const shares = sqliteTable('shares', {
   snapshotData: text('snapshot_data', { mode: 'json' }).$type<ShareSnapshot | null>(),
   snapshotHash: text('snapshot_hash'),
   snapshotVersion: integer('snapshot_version').notNull().default(1),
+  /** If non-null, this share is a Nachtrag (VOB §2 Nr.3/5/6 addendum) chained
+   *  to a previously-approved parent share. nachtragNumber starts at 1 and
+   *  increments per sibling so a chain reads N1, N2, N3 to the customer. */
+  parentShareId: text('parent_share_id'),
+  nachtragNumber: integer('nachtrag_number').notNull().default(0),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
   revokedAt: integer('revoked_at', { mode: 'timestamp_ms' }),
   lastViewedAt: integer('last_viewed_at', { mode: 'timestamp_ms' }),

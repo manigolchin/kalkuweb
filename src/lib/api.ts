@@ -113,7 +113,7 @@ export const api = {
       request<{ shares: ShareSummary[] }>(`/projects/${projectId}/shares`),
     create: (
       projectId: string,
-      input: { visiblePositionIds: string[]; settings: ShareSettings },
+      input: { visiblePositionIds: string[]; settings: ShareSettings; parentShareId?: string },
     ) =>
       request<ShareSummary>(`/projects/${projectId}/shares`, {
         method: 'POST',

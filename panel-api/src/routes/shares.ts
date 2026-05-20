@@ -10,6 +10,7 @@ import { recordAuditEvent } from '../lib/audit.js';
 
 const createShareSchema = z.object({
   visiblePositionIds: z.array(z.string()).max(1000),
+  parentShareId: z.string().max(64).optional(),
   settings: z.object({
     brandHeader: z.enum(['own', 'co-branded', 'minimal']).default('co-branded'),
     customerName: z.string().max(200).optional(),
@@ -36,6 +37,24 @@ export const sharesRoute = new Hono<{ Variables: AuthVariables }>()
       where: and(eq(projects.id, projectId), eq(projects.ownerId, userId)),
     });
     if (!project) return c.json({ error: 'not_found' }, 404);
+
+    // Nachtrag chain: if a parent share is referenced, validate ownership and
+    // assign the next nachtragNumber in the chain.
+    let nachtragNumber = 0;
+    let parentShareId: string | null = null;
+    if (parsed.data.parentShareId) {
+      const parent = await db.query.shares.findFirst({ where: eq(shares.id, parsed.data.parentShareId) });
+      if (!parent) return c.json({ error: 'parent_not_found' }, 400);
+      if (parent.projectId !== projectId) return c.json({ error: 'parent_wrong_project' }, 400);
+      // Find the highest existing nachtragNumber for this parent chain.
+      const siblings = await db
+        .select({ n: shares.nachtragNumber })
+        .from(shares)
+        .where(eq(shares.parentShareId, parent.id));
+      const maxN = siblings.reduce((m, s) => Math.max(m, s.n), 0);
+      nachtragNumber = maxN + 1;
+      parentShareId = parent.id;
+    }
 
     const id = nanoid(16);
     const token = nanoid(32);
@@ -69,6 +88,8 @@ export const sharesRoute = new Hono<{ Variables: AuthVariables }>()
       snapshotData: snapshot,
       snapshotHash: hash,
       snapshotVersion: 1,
+      parentShareId,
+      nachtragNumber,
       createdAt: now,
       viewCount: 0,
     });
@@ -85,6 +106,8 @@ export const sharesRoute = new Hono<{ Variables: AuthVariables }>()
         positionCount: parsed.data.visiblePositionIds.length,
         snapshotHash: hash,
         projectVersionNumber: project.versionNumber,
+        parentShareId,
+        nachtragNumber,
       },
     });
 
@@ -96,6 +119,8 @@ export const sharesRoute = new Hono<{ Variables: AuthVariables }>()
       settings: parsed.data.settings,
       snapshotHash: hash,
       snapshottedAt: snapshot.snapshottedAt,
+      parentShareId,
+      nachtragNumber,
       createdAt: now,
       revokedAt: null,
       lastViewedAt: null,

@@ -163,6 +163,14 @@ export default function ShareView() {
   const { payload } = state;
   const { project, owner, positions, settings, snapshotHash } = payload;
   const brandHeader = settings.brandHeader;
+  const isNachtrag = (payload.nachtragNumber ?? 0) > 0;
+  const parentDate = payload.parent?.createdAt
+    ? new Date(payload.parent.createdAt).toLocaleDateString('de-DE', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+      })
+    : null;
   const shortHash = snapshotHash?.slice(0, 10) || null;
 
   return (
@@ -229,8 +237,15 @@ export default function ShareView() {
         <div className="bg-white border border-slate-200/80 rounded-2xl p-6 sm:p-8">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wider text-primary-600 mb-1">
-                Angebot {project.versionNumber > 1 ? `· Version ${project.versionNumber}` : ''}
+              <p
+                className={clsx(
+                  'text-xs font-semibold uppercase tracking-wider mb-1',
+                  isNachtrag ? 'text-amber-700' : 'text-primary-600',
+                )}
+              >
+                {isNachtrag
+                  ? `Nachtrag N${payload.nachtragNumber}${parentDate ? ' · zum Angebot vom ' + parentDate : ''}`
+                  : `Angebot${project.versionNumber > 1 ? ' · Version ' + project.versionNumber : ''}`}
               </p>
               <h2 className="text-2xl font-bold text-slate-900">
                 {project.name || 'Bauleistung'}

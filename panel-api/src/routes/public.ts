@@ -82,12 +82,27 @@ export const publicRoute = new Hono()
       },
     });
 
+    // For Nachtrag shares, surface parent metadata so the customer page can
+    // render "Nachtrag N1 zum Angebot vom DD.MM.YYYY".
+    let parentMeta: { createdAt: string; snapshotHash: string | null } | null = null;
+    if (share.parentShareId) {
+      const parent = await db.query.shares.findFirst({ where: eq(shares.id, share.parentShareId) });
+      if (parent) {
+        parentMeta = {
+          createdAt: parent.createdAt.toISOString(),
+          snapshotHash: parent.snapshotHash,
+        };
+      }
+    }
+
     return c.json({
       shareId: share.id,
       token: share.token,
       settings: share.settings,
       snapshotHash: share.snapshotHash,
       snapshottedAt: snapshot.snapshottedAt,
+      nachtragNumber: share.nachtragNumber,
+      parent: parentMeta,
       project: {
         ...snapshot.project,
         versionNumber: snapshot.projectVersionNumber,

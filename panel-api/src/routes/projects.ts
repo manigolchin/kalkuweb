@@ -191,6 +191,8 @@ export const projectsRoute = new Hono<{ Variables: AuthVariables }>()
         lastViewedAt: s.lastViewedAt,
         viewCount: s.viewCount,
         snapshotHash: s.snapshotHash,
+        parentShareId: s.parentShareId,
+        nachtragNumber: s.nachtragNumber,
       })),
     });
   })

@@ -113,6 +113,8 @@ export type ShareSummary = {
   viewCount: number;
   snapshotHash?: string | null;
   snapshottedAt?: string;
+  parentShareId?: string | null;
+  nachtragNumber?: number;
 };
 
 export type ShareResponse = {
@@ -141,6 +143,8 @@ export type CustomerViewPayload = {
   settings: ShareSettings;
   snapshotHash: string | null;
   snapshottedAt: string;
+  nachtragNumber?: number;
+  parent?: { createdAt: string; snapshotHash: string | null } | null;
   project: {
     name: string;
     client: string;

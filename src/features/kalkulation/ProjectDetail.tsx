@@ -37,7 +37,7 @@ export default function ProjectDetail() {
   const [savingState, setSavingState] = useState<'idle' | 'pending' | 'saving' | 'saved' | 'error'>(
     'idle',
   );
-  const [showShare, setShowShare] = useState(false);
+  const [showShare, setShowShare] = useState<{ parentShareId?: string } | false>(false);
   const [showSettings, setShowSettings] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedRef = useRef<string>('');
@@ -276,7 +276,7 @@ export default function ProjectDetail() {
             Excel
           </button>
           <button
-            onClick={() => setShowShare(true)}
+            onClick={() => setShowShare({})}
             className="btn btn-primary flex items-center gap-2"
           >
             <Share2 className="w-4 h-4" />
@@ -307,7 +307,7 @@ export default function ProjectDetail() {
           <SharesCard
             shares={activeShares}
             allShares={project.shares}
-            onOpenShare={() => setShowShare(true)}
+            onOpenShare={() => setShowShare({})}
           />
         </aside>
       </div>
@@ -319,8 +319,10 @@ export default function ProjectDetail() {
           positions={data.positions}
           calcParams={data.calcParams}
           existingShares={project.shares}
+          parentShareId={showShare.parentShareId}
           onClose={() => setShowShare(false)}
           onCreated={onShareCreated}
+          onRequestNachtrag={(parentShareId) => setShowShare({ parentShareId })}
         />
       )}
     </div>

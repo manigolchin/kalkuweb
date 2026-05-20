@@ -64,6 +64,8 @@ export function runMigrations() {
   if (!sharesHas('snapshot_data')) sqlite.exec('ALTER TABLE shares ADD COLUMN snapshot_data TEXT');
   if (!sharesHas('snapshot_hash')) sqlite.exec('ALTER TABLE shares ADD COLUMN snapshot_hash TEXT');
   if (!sharesHas('snapshot_version')) sqlite.exec('ALTER TABLE shares ADD COLUMN snapshot_version INTEGER NOT NULL DEFAULT 1');
+  if (!sharesHas('parent_share_id')) sqlite.exec('ALTER TABLE shares ADD COLUMN parent_share_id TEXT');
+  if (!sharesHas('nachtrag_number')) sqlite.exec('ALTER TABLE shares ADD COLUMN nachtrag_number INTEGER NOT NULL DEFAULT 0');
 
   const usersCols = sqlite.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
   const usersHas = (n: string) => usersCols.some((c) => c.name === n);
