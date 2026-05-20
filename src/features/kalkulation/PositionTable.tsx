@@ -1,8 +1,9 @@
-import { memo, useCallback, useEffect, useMemo, useState, type ChangeEvent, type ClipboardEvent } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ClipboardEvent } from 'react';
 import {
   Eye, EyeOff, Plus, Trash2, GripVertical, Lock, Sigma, X, AlertCircle,
-  Bookmark, BookmarkPlus, Search,
+  Bookmark, BookmarkPlus, Search, FileUp, Loader2,
 } from 'lucide-react';
+import { parseGaebFile, type Position as GaebPosition, type ParsedGaeb } from '@/lib/gaeb';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import {
@@ -42,6 +43,8 @@ export default function PositionTable({ positions, params, onChange }: Props) {
   const [templates, setTemplates] = useState<PositionTemplate[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerFilter, setPickerFilter] = useState('');
+  const [gaebImporting, setGaebImporting] = useState(false);
+  const gaebFileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -113,6 +116,85 @@ export default function PositionTable({ positions, params, onChange }: Props) {
       toast.error('Löschen fehlgeschlagen.');
     }
   }, []);
+
+  /** Suggest a price from the user's Vorlagen library for a freshly-imported
+   *  GAEB position. Strategy: exact OZ match first (most reliable), then
+   *  case-insensitive prefix match on shortText. Returns the matched template
+   *  or null. */
+  const matchTemplate = useCallback((oz: string, shortText: string): PositionTemplate | null => {
+    if (templates.length === 0) return null;
+    if (oz) {
+      const exact = templates.find((t) => t.oz && t.oz === oz);
+      if (exact) return exact;
+      // OZ prefix (e.g. template "01.01.10" matches imported "01.01.10.0001")
+      const prefix = templates.find((t) => t.oz && oz.startsWith(t.oz));
+      if (prefix) return prefix;
+    }
+    if (shortText) {
+      const q = shortText.toLowerCase();
+      // Prefer templates whose shortText is contained in the imported text
+      const match = templates.find((t) => q.includes(t.shortText.toLowerCase()) || t.shortText.toLowerCase().includes(q));
+      if (match) return match;
+    }
+    return null;
+  }, [templates]);
+
+  const onGaebFileSelected = useCallback(async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // reset so re-uploading the same file fires onChange
+    if (!file) return;
+    setGaebImporting(true);
+    try {
+      const parsed: ParsedGaeb = await parseGaebFile(file);
+      if (parsed.positions.length === 0) {
+        toast.error(`Keine Positionen in ${file.name} gefunden (${parsed.formatLabel}).`);
+        return;
+      }
+      const startSort = (positions[positions.length - 1]?.sortOrder ?? 0) + 1;
+      let matched = 0;
+      const imported: Position[] = parsed.positions.map((g: GaebPosition, idx) => {
+        const id = nanoid(12);
+        const isHeader = g.type === 'group';
+        if (isHeader) {
+          return {
+            ...makeBlankPosition(id, startSort + idx),
+            oz: g.oz,
+            shortText: g.kurztext || `Gruppe ${g.oz}`,
+            longText: g.langtext || '',
+            isHeader: true,
+            sectionPath: g.oz,
+          };
+        }
+        const t = matchTemplate(g.oz, g.kurztext);
+        if (t) matched += 1;
+        return {
+          ...makeBlankPosition(id, startSort + idx),
+          oz: g.oz,
+          shortText: g.kurztext || '(ohne Kurztext)',
+          longText: g.langtext || '',
+          unit: g.einheit || '',
+          quantity: g.menge ?? 0,
+          // Price-suggest from Vorlagen library; if GAEB had an EP we'd
+          // ignore it (D83 typically has none, D84 has the bidder's prior
+          // price which we don't want to anchor on).
+          materialCost: t?.defaultMaterialCost ?? 0,
+          timeMinutes: t?.defaultTimeMinutes ?? 0,
+          nuCost: t?.defaultNuCost ?? 0,
+          sectionPath: g.oz,
+        };
+      });
+      onChange([...positions, ...imported]);
+      const summary = matched > 0
+        ? `${imported.length} Positionen aus ${parsed.formatLabel} importiert — davon ${matched} mit Preis-Vorschlag aus Ihrer Bibliothek.`
+        : `${imported.length} Positionen aus ${parsed.formatLabel} importiert. Preise per Hand oder über die Vorlagen-Bibliothek setzen.`;
+      toast.success(summary, { duration: 6000 });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`GAEB-Import fehlgeschlagen: ${msg}`);
+    } finally {
+      setGaebImporting(false);
+    }
+  }, [positions, onChange, matchTemplate]);
 
   const filteredTemplates = useMemo(() => {
     const q = pickerFilter.trim().toLowerCase();
@@ -496,6 +578,23 @@ export default function PositionTable({ positions, params, onChange }: Props) {
             </span>
           )}
         </button>
+        <button
+          onClick={() => gaebFileInputRef.current?.click()}
+          disabled={gaebImporting}
+          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary-50 border border-primary-200 text-sm font-medium text-primary-700 hover:bg-primary-100 disabled:opacity-50"
+          title="GAEB-Datei (D81/D83/XML/ÖNorm) hochladen — Positionen + Mengen werden automatisch übernommen, Preise schlagen wir aus Ihrer Vorlagen-Bibliothek vor"
+        >
+          {gaebImporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileUp className="w-3.5 h-3.5" />}
+          GAEB hochladen
+        </button>
+        <input
+          ref={gaebFileInputRef}
+          type="file"
+          accept=".x81,.x82,.x83,.x84,.x85,.x86,.x87,.x89,.d81,.d82,.d83,.d84,.d85,.d86,.d87,.d89,.p81,.p82,.p83,.p84,.p85,.p86,.p87,.p89,.xml,.X83,.X84"
+          onChange={onGaebFileSelected}
+          className="hidden"
+          aria-hidden
+        />
         <button
           onClick={() => {
             const yes = positions.some((p) => !p.visibleToCustomer);
