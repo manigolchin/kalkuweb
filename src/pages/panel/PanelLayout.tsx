@@ -1,38 +1,75 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
-import { Calculator, LogOut, Settings, FolderClosed, Inbox, Lock, Loader2, ShieldAlert } from 'lucide-react';
+import {
+  Calculator,
+  LogOut,
+  Settings,
+  FolderClosed,
+  Inbox,
+  Lock,
+  Loader2,
+  ShieldAlert,
+  LayoutDashboard,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Moon,
+  Sun,
+  Rows3,
+  Rows,
+  Menu,
+  X,
+} from 'lucide-react';
+import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/lib/auth';
 import { api, ApiError } from '@/lib/api';
+import { usePanelTheme, usePanelDensity, StatusBadge, Kbd } from './ui';
+import CommandPalette from './CommandPalette';
 
-type Tab = {
+type NavItem = {
   to: string;
   label: string;
   icon: typeof Calculator;
   end?: boolean;
-  badge?: string;
+  comingSoon?: boolean;
 };
 
-const tabs: Tab[] = [
+const NAV: NavItem[] = [
+  { to: '/panel', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/panel/kalkulation', label: 'Kalkulation', icon: Calculator },
   { to: '/panel/feedback', label: 'Kunden-Feedback', icon: Inbox },
-  { to: '/panel/archiv', label: 'Archiv', icon: FolderClosed, badge: 'Bald' },
+  { to: '/panel/archiv', label: 'Archiv', icon: FolderClosed, comingSoon: true },
   { to: '/panel/einstellungen', label: 'Einstellungen', icon: Settings },
 ];
+
+const SIDEBAR_KEY = 'kalku.panel.sidebarCollapsed';
 
 export default function PanelLayout() {
   const { user, logout, setUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const { theme, toggle: toggleTheme } = usePanelTheme();
+  const { density, toggle: toggleDensity } = usePanelDensity();
   const [unreadFeedback, setUnreadFeedback] = useState<number>(0);
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem(SIDEBAR_KEY) === '1';
+  });
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  function setCollapsedAndPersist(next: boolean) {
+    setCollapsed(next);
+    window.localStorage.setItem(SIDEBAR_KEY, next ? '1' : '0');
+  }
 
   async function onLogout() {
     await logout();
     navigate('/login', { replace: true });
   }
 
-  // Refresh the unread-count whenever the panel route changes — cheap, no polling.
+  // Refresh unread-count on every route change — cheap, no polling.
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -40,99 +77,360 @@ export default function PanelLayout() {
         const { count } = await api.notifications.unread();
         if (alive) setUnreadFeedback(count);
       } catch {
-        // Ignore — badge stays at last known value.
+        /* badge keeps last value */
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [location.pathname]);
 
-  // When the user navigates INTO the feedback inbox, mark as viewed so the
-  // badge clears on next pathname change.
+  // Mark inbox as viewed when user enters it.
   useEffect(() => {
     if (location.pathname.startsWith('/panel/feedback')) {
       api.notifications.markViewed().catch(() => {});
     }
   }, [location.pathname]);
 
+  // Close mobile drawer on route change.
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [location.pathname]);
+
+  // Global hotkeys: ⌘K / Ctrl+K open palette; g+i / g+p / g+s navigate.
+  useEffect(() => {
+    let leader = false;
+    let leaderTimer: number | null = null;
+    function clearLeader() {
+      leader = false;
+      if (leaderTimer) {
+        window.clearTimeout(leaderTimer);
+        leaderTimer = null;
+      }
+    }
+    function isTyping(target: EventTarget | null) {
+      const el = target as HTMLElement | null;
+      if (!el) return false;
+      const tag = el.tagName;
+      return (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        el.isContentEditable === true
+      );
+    }
+    function onKey(e: KeyboardEvent) {
+      // ⌘K / Ctrl+K — palette
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+        clearLeader();
+        return;
+      }
+      if (isTyping(e.target)) {
+        clearLeader();
+        return;
+      }
+      // Forward-slash to focus the palette as a search box
+      if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        setPaletteOpen(true);
+        clearLeader();
+        return;
+      }
+      // `c` — quick create (Kalkulation list handles this on its own page,
+      // but we route to the list with a query so the modal opens).
+      if (e.key === 'c' && !leader && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        navigate('/panel/kalkulation?new=1');
+        return;
+      }
+      // `g` enters leader mode for two-key navigation.
+      if (e.key === 'g' && !leader) {
+        leader = true;
+        leaderTimer = window.setTimeout(clearLeader, 1200);
+        return;
+      }
+      if (leader) {
+        const k = e.key.toLowerCase();
+        clearLeader();
+        if (k === 'p') {
+          e.preventDefault();
+          navigate('/panel/kalkulation');
+        } else if (k === 'i') {
+          e.preventDefault();
+          navigate('/panel/feedback');
+        } else if (k === 's') {
+          e.preventDefault();
+          navigate('/panel/einstellungen');
+        } else if (k === 'd') {
+          e.preventDefault();
+          navigate('/panel');
+        }
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [navigate]);
+
   const forceChange = user?.mustChangePassword === true;
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div
+      className={clsx(
+        'min-h-screen flex bg-slate-50 text-slate-900',
+        'dark:bg-slate-950 dark:text-slate-100',
+        density === 'dense' && 'panel-dense',
+      )}
+    >
       <Helmet>
         <title>KALKU Panel</title>
         <meta name="robots" content="noindex,nofollow" />
       </Helmet>
 
-      <header className="sticky top-0 z-30 bg-white border-b border-slate-200/80">
-        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 h-14 flex items-center gap-4">
-          <NavLink to="/panel" className="flex items-center gap-2">
-            <img
-              src="/logo.png"
-              alt="KALKU"
-              className="w-7 h-7 rounded-lg object-cover"
-            />
-            <span className="font-semibold text-slate-900 hidden sm:inline">KALKU Panel</span>
-          </NavLink>
+      {/* ─── Sidebar (desktop) ─────────────────────────────────────── */}
+      <Sidebar
+        collapsed={collapsed}
+        unreadFeedback={unreadFeedback}
+        user={user}
+        onLogout={onLogout}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        onToggleCollapsed={() => setCollapsedAndPersist(!collapsed)}
+        className="hidden lg:flex"
+      />
 
-          <nav className="flex-1 flex items-center gap-1 overflow-x-auto -mx-1 px-1">
-            {tabs.map(({ to, label, icon: Icon, end, badge }) => (
-              <NavLink
-                key={to}
-                to={to}
-                end={end}
-                className={({ isActive }) =>
-                  `inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-                    isActive
-                      ? 'bg-primary-50 text-primary-700'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                  }`
-                }
-              >
-                <Icon className="w-4 h-4" />
-                {label}
-                {to === '/panel/feedback' && unreadFeedback > 0 && (
-                  <span className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-amber-500 text-white text-xs font-bold tabular-nums">
-                    {unreadFeedback > 99 ? '99+' : unreadFeedback}
-                  </span>
-                )}
-                {badge && (
-                  <span className="inline-flex items-center justify-center h-5 px-1.5 rounded-full bg-slate-200 text-slate-600 text-[10px] font-bold uppercase tracking-wider">
-                    {badge}
-                  </span>
-                )}
-              </NavLink>
-            ))}
-          </nav>
+      {/* ─── Sidebar (mobile drawer) ───────────────────────────────── */}
+      {mobileOpen && (
+        <>
+          <div
+            onClick={() => setMobileOpen(false)}
+            className="fixed inset-0 z-30 bg-slate-900/60 backdrop-blur-sm lg:hidden"
+            aria-hidden
+          />
+          <Sidebar
+            collapsed={false}
+            unreadFeedback={unreadFeedback}
+            user={user}
+            onLogout={onLogout}
+            theme={theme}
+            onToggleTheme={toggleTheme}
+            onToggleCollapsed={() => setMobileOpen(false)}
+            mobile
+            className="fixed inset-y-0 left-0 z-40 lg:hidden"
+          />
+        </>
+      )}
 
-          <div className="flex items-center gap-3">
-            <div className="hidden md:flex flex-col items-end leading-tight">
-              <span className="text-sm font-medium text-slate-900">{user?.name}</span>
-              <span className="text-xs text-slate-500">{user?.companyName || user?.email}</span>
-            </div>
+      {/* ─── Main column ───────────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Top bar */}
+        <header className="sticky top-0 z-20 h-14 flex items-center gap-3 px-4 sm:px-6 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm border-b border-slate-200 dark:border-slate-800">
+          <button
+            type="button"
+            onClick={() => setMobileOpen(true)}
+            className="lg:hidden p-2 -ml-2 rounded-lg text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+            aria-label="Menü öffnen"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+
+          {/* Command-palette opener (Cmd+K) */}
+          <button
+            type="button"
+            onClick={() => setPaletteOpen(true)}
+            className="flex items-center gap-2 h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-sm text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors w-full max-w-md"
+          >
+            <SearchIcon />
+            <span className="flex-1 text-left">Suchen oder Befehl</span>
+            <span className="hidden sm:inline-flex items-center gap-1">
+              <Kbd>⌘</Kbd>
+              <Kbd>K</Kbd>
+            </span>
+          </button>
+
+          <div className="flex items-center gap-1 ml-auto">
             <button
-              onClick={onLogout}
-              className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900"
-              title="Abmelden"
+              type="button"
+              onClick={toggleDensity}
+              title={density === 'dense' ? 'Komfortable Ansicht' : 'Dichte Ansicht'}
+              aria-label={density === 'dense' ? 'Komfortable Ansicht aktivieren' : 'Dichte Ansicht aktivieren'}
+              className="hidden sm:inline-flex items-center justify-center w-9 h-9 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-800"
             >
-              <LogOut className="w-4 h-4" />
+              {density === 'dense' ? <Rows3 className="w-4 h-4" /> : <Rows className="w-4 h-4" />}
             </button>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6">
-        <Outlet />
-      </main>
+        <main className="flex-1 px-4 sm:px-6 py-6 max-w-[1600px] w-full mx-auto">
+          <Outlet />
+        </main>
+      </div>
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onNavigate={(to) => {
+          setPaletteOpen(false);
+          navigate(to);
+        }}
+      />
 
       {forceChange && user && (
-        <ForcePasswordChange
-          onChanged={(updated) => setUser(updated)}
-          onAbort={onLogout}
-        />
+        <ForcePasswordChange onChanged={(updated) => setUser(updated)} onAbort={onLogout} />
       )}
     </div>
   );
 }
+
+/* ─── Sidebar ────────────────────────────────────────────────────────── */
+
+function Sidebar({
+  collapsed,
+  unreadFeedback,
+  user,
+  onLogout,
+  theme,
+  onToggleTheme,
+  onToggleCollapsed,
+  mobile = false,
+  className,
+}: {
+  collapsed: boolean;
+  unreadFeedback: number;
+  user: ReturnType<typeof useAuth>['user'];
+  onLogout: () => void;
+  theme: 'light' | 'dark';
+  onToggleTheme: () => void;
+  onToggleCollapsed: () => void;
+  mobile?: boolean;
+  className?: string;
+}) {
+  return (
+    <aside
+      className={clsx(
+        'flex flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 transition-[width] duration-200 ease-out',
+        collapsed ? 'w-16' : 'w-60',
+        className,
+      )}
+      aria-label="Hauptnavigation"
+    >
+      {/* Brand */}
+      <div className={clsx('h-14 flex items-center gap-2 border-b border-slate-200 dark:border-slate-800', collapsed ? 'justify-center px-2' : 'px-4')}>
+        <NavLink to="/panel" className="flex items-center gap-2 min-w-0">
+          <img src="/logo.png" alt="KALKU" className="w-7 h-7 rounded-lg object-cover flex-shrink-0" />
+          {!collapsed && (
+            <span className="font-semibold text-slate-900 dark:text-slate-100 truncate">KALKU Panel</span>
+          )}
+        </NavLink>
+        {mobile && (
+          <button
+            onClick={onToggleCollapsed}
+            className="ml-auto p-2 rounded-lg text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+            aria-label="Menü schließen"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+
+      {/* Nav */}
+      <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
+        {NAV.map(({ to, label, icon: Icon, end, comingSoon }) => (
+          <NavLink
+            key={to}
+            to={to}
+            end={end}
+            className={({ isActive }) =>
+              clsx(
+                'group relative flex items-center gap-3 rounded-lg text-sm font-medium transition-colors',
+                collapsed ? 'justify-center h-10' : 'px-3 h-10',
+                isActive
+                  ? 'bg-primary-50 text-primary-700 dark:bg-primary-500/15 dark:text-primary-200'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100',
+              )
+            }
+            title={collapsed ? label : undefined}
+          >
+            <Icon className="w-4 h-4 flex-shrink-0" />
+            {!collapsed && (
+              <>
+                <span className="flex-1 truncate">{label}</span>
+                {to === '/panel/feedback' && unreadFeedback > 0 && (
+                  <span className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-amber-500 text-white text-[11px] font-bold tabular-nums">
+                    {unreadFeedback > 99 ? '99+' : unreadFeedback}
+                  </span>
+                )}
+                {comingSoon && <StatusBadge kind="soon" size="xs" />}
+              </>
+            )}
+            {/* Collapsed: tiny dot indicator for unread */}
+            {collapsed && to === '/panel/feedback' && unreadFeedback > 0 && (
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-amber-500" />
+            )}
+          </NavLink>
+        ))}
+      </nav>
+
+      {/* Footer */}
+      <div className={clsx('border-t border-slate-200 dark:border-slate-800', collapsed ? 'px-2 py-2 space-y-1' : 'px-3 py-3 space-y-2')}>
+        {!collapsed && user && (
+          <div className="flex items-center gap-2.5 px-1 py-1.5">
+            <div className="w-8 h-8 rounded-full bg-primary-500 dark:bg-primary-500/30 grid place-items-center text-white dark:text-primary-100 text-xs font-bold flex-shrink-0">
+              {(user.name || user.email).slice(0, 1).toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0 leading-tight">
+              <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{user.name || 'Inhaber'}</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{user.companyName || user.email}</p>
+            </div>
+          </div>
+        )}
+
+        <div className={clsx('flex items-center gap-1', collapsed ? 'flex-col' : 'flex-row')}>
+          <button
+            onClick={onToggleTheme}
+            className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-800"
+            title={theme === 'dark' ? 'Hell-Modus' : 'Dunkel-Modus'}
+            aria-label={theme === 'dark' ? 'Hell-Modus aktivieren' : 'Dunkel-Modus aktivieren'}
+          >
+            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </button>
+          {!mobile && (
+            <button
+              onClick={onToggleCollapsed}
+              className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-800"
+              title={collapsed ? 'Seitenleiste ausklappen' : 'Seitenleiste einklappen'}
+              aria-label={collapsed ? 'Seitenleiste ausklappen' : 'Seitenleiste einklappen'}
+            >
+              {collapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+            </button>
+          )}
+          <button
+            onClick={onLogout}
+            className={clsx(
+              'inline-flex items-center justify-center w-9 h-9 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 dark:text-slate-400 dark:hover:text-rose-300 dark:hover:bg-rose-950/40',
+              !collapsed && 'ml-auto',
+            )}
+            title="Abmelden"
+            aria-label="Abmelden"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m21 21-4.35-4.35M17 11a6 6 0 1 1-12 0 6 6 0 0 1 12 0Z" />
+    </svg>
+  );
+}
+
+/* ─── Force-password-change modal (unchanged behaviour) ─────────────────── */
 
 function ForcePasswordChange({
   onChanged,
@@ -163,7 +461,6 @@ function ForcePasswordChange({
     setSaving(true);
     try {
       await api.auth.changePassword(current, next);
-      // Re-fetch /me so mustChangePassword flips to false.
       const { user: refreshed } = await api.auth.me();
       onChanged(refreshed);
       toast.success('Passwort geändert.');
@@ -187,17 +484,17 @@ function ForcePasswordChange({
     >
       <form
         onSubmit={submit}
-        className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 space-y-4"
+        className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4"
       >
         <header className="flex items-start gap-3">
-          <div className="p-2 rounded-xl bg-amber-50 border border-amber-100 shrink-0">
-            <ShieldAlert className="w-5 h-5 text-amber-600" />
+          <div className="p-2 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-100 dark:border-amber-900 shrink-0">
+            <ShieldAlert className="w-5 h-5 text-amber-600 dark:text-amber-400" />
           </div>
           <div>
-            <h2 id="force-pwd-title" className="font-semibold text-slate-900">
+            <h2 id="force-pwd-title" className="font-semibold text-slate-900 dark:text-slate-100">
               Bitte zuerst ein neues Passwort setzen
             </h2>
-            <p className="text-sm text-slate-500 mt-1">
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
               Sie verwenden noch das Initial-Passwort. Aus Sicherheitsgründen ist das Panel erst
               nach Vergabe eines eigenen Passworts nutzbar.
             </p>
@@ -205,7 +502,7 @@ function ForcePasswordChange({
         </header>
 
         <label className="block">
-          <span className="text-sm font-medium text-slate-700">Aktuelles (Initial-)Passwort</span>
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Aktuelles (Initial-)Passwort</span>
           <input
             type="password"
             autoComplete="current-password"
@@ -218,7 +515,7 @@ function ForcePasswordChange({
         </label>
 
         <label className="block">
-          <span className="text-sm font-medium text-slate-700">Neues Passwort (min. 12 Zeichen)</span>
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Neues Passwort (min. 12 Zeichen)</span>
           <input
             type="password"
             autoComplete="new-password"
@@ -230,7 +527,7 @@ function ForcePasswordChange({
         </label>
 
         <label className="block">
-          <span className="text-sm font-medium text-slate-700">Bestätigen</span>
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Bestätigen</span>
           <input
             type="password"
             autoComplete="new-password"
@@ -245,7 +542,7 @@ function ForcePasswordChange({
           <button
             type="button"
             onClick={onAbort}
-            className="text-sm text-slate-500 hover:text-slate-800"
+            className="text-sm text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
           >
             Abmelden
           </button>

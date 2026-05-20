@@ -15,6 +15,10 @@ const TRADE_COLORS = [
 
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
+  // The marketing site stays light. The panel opts in via a `dark` class on
+  // <html> driven by usePanelTheme(). All `dark:` variants below are scoped
+  // by usage to panel components only.
+  darkMode: 'class',
   // Trade-color quintet is composed dynamically from TRADES config — JIT can't see it, so safelist it.
   safelist: TRADE_COLORS.flatMap((c) => [
     `bg-${c}-50`,

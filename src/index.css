@@ -371,6 +371,13 @@
   }
 }
 
+/* Panel skeleton-loader shimmer. Used by Skeleton in src/pages/panel/ui.tsx. */
+@keyframes shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
 /* === Global a11y / typography hardening === */
 
 /* Honor OS-level reduced-motion preference for every animation & transition */
