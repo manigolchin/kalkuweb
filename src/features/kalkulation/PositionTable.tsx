@@ -452,17 +452,29 @@ export default function PositionTable({ positions, params, onChange }: Props) {
                 ) : (
                   <>
                     <Cell value={p.oz} onChange={(v) => updateRow(p.id, { oz: v })} />
-                    <td className="px-1 py-1">
-                      <div className="flex items-center gap-1">
+                    <td className="px-1 py-1 min-w-0">
+                      <div className="flex items-center gap-1 min-w-0">
                         <input
                           value={p.shortText}
                           onChange={(e) => updateRow(p.id, { shortText: e.target.value })}
-                          className="flex-1 px-1.5 py-1 rounded-md border border-transparent bg-transparent outline-none focus:bg-white focus:border-primary-300 focus:ring-1 focus:ring-primary-200"
+                          title={p.shortText}
+                          className="flex-1 min-w-0 px-1.5 py-1 rounded-md border border-transparent bg-transparent outline-none focus:bg-white focus:border-primary-300 focus:ring-1 focus:ring-primary-200"
                         />
-                        <PositionTypeSelect
-                          value={(p.positionType || 'standard') as PositionType}
-                          onChange={(t) => setPositionType(p.id, t)}
-                        />
+                        {(() => {
+                          const pt = (p.positionType || 'standard') as PositionType;
+                          const isInternal = INTERNAL_POSITION_TYPES.has(pt);
+                          // Internal types: always visible (so the warning pill never
+                          // hides). Standard rows: dropdown only renders on row-hover so
+                          // it doesn't eat the Kurztext column the other 95% of the time.
+                          return (
+                            <div className={isInternal ? 'inline-flex shrink-0' : 'hidden group-hover:inline-flex shrink-0'}>
+                              <PositionTypeSelect
+                                value={pt}
+                                onChange={(t) => setPositionType(p.id, t)}
+                              />
+                            </div>
+                          );
+                        })()}
                       </div>
                     </td>
                     <td className="px-1 py-1">
