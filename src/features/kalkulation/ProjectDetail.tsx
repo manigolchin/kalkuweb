@@ -5,6 +5,7 @@ import {
   Loader2,
   Share2,
   Download,
+  Upload,
   Eye,
   Settings2,
   History,
@@ -26,6 +27,7 @@ import { calcTotals, formatEUR, formatNum, DEFAULT_CALC_PARAMS, recalcAll } from
 import { Breadcrumb } from '@/pages/panel/ui';
 import PositionTable from './PositionTable';
 import ShareDialog from './ShareDialog';
+import ImportDialog from './ImportDialog';
 
 const SAVE_DEBOUNCE_MS = 800;
 
@@ -39,6 +41,7 @@ export default function ProjectDetail() {
     'idle',
   );
   const [showShare, setShowShare] = useState<{ parentShareId?: string } | false>(false);
+  const [showImport, setShowImport] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedRef = useRef<string>('');
@@ -283,6 +286,14 @@ export default function ProjectDetail() {
             <History className="w-4 h-4" />
             v{project.versionNumber}
           </button>
+          <button
+            onClick={() => setShowImport(true)}
+            className="btn btn-secondary flex items-center gap-2"
+            title="GAEB · Excel · CSV importieren"
+          >
+            <Upload className="w-4 h-4" />
+            Importieren
+          </button>
           <button onClick={exportToExcel} className="btn btn-secondary flex items-center gap-2">
             <Download className="w-4 h-4" />
             Excel
@@ -338,6 +349,21 @@ export default function ProjectDetail() {
           onRequestNachtrag={(parentShareId) => setShowShare({ parentShareId })}
         />
       )}
+
+      <ImportDialog
+        open={showImport}
+        onClose={() => setShowImport(false)}
+        existingCount={data.positions.length}
+        onImport={(rows, mode) => {
+          const merged = mode === 'append' ? [...data.positions, ...rows] : rows;
+          updatePositions(merged);
+          toast.success(
+            mode === 'append'
+              ? `${rows.length} Position${rows.length === 1 ? '' : 'en'} hinzugefügt.`
+              : `${rows.length} Position${rows.length === 1 ? '' : 'en'} importiert (Projekt ersetzt).`,
+          );
+        }}
+      />
     </div>
   );
 }
