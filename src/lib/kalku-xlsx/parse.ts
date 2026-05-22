@@ -117,14 +117,30 @@ const ROW13_EXPECTED: Record<string, string> = {
 /**
  * Parse a Kalkulation-template .xlsx. Lazy-imports the SheetJS library so
  * the importer's own bundle doesn't carry the xlsx weight.
+ *
+ * Accepts a File (browser), an ArrayBuffer (browser/Node), or a Uint8Array
+ * (which is what Node's `fs.readFileSync` returns and what tests use).
  */
 export async function parseKalkulationWorkbook(
-  input: File | ArrayBuffer,
+  input: File | ArrayBuffer | Uint8Array,
 ): Promise<ParseResult> {
   const XLSX = await import('xlsx');
 
-  const buf = input instanceof ArrayBuffer ? input : await input.arrayBuffer();
-  const wb = XLSX.read(buf, { cellFormula: true, cellNF: true, cellStyles: false });
+  // Normalize to something xlsx.read() can ingest. SheetJS handles
+  // Uint8Array and ArrayBuffer directly via the 'array'/'buffer' types,
+  // and File via .arrayBuffer().
+  let buf: ArrayBuffer | Uint8Array;
+  if (input instanceof Uint8Array) {
+    buf = input;
+  } else if (input instanceof ArrayBuffer) {
+    buf = input;
+  } else if (typeof (input as Blob).arrayBuffer === 'function') {
+    buf = await (input as Blob).arrayBuffer();
+  } else {
+    // Last-ditch — assume it's an array-like we can pass through.
+    buf = input as unknown as Uint8Array;
+  }
+  const wb = XLSX.read(buf, { cellFormula: true, cellNF: true, cellStyles: false, type: 'array' });
 
   const issues: ImportIssue[] = [];
 
