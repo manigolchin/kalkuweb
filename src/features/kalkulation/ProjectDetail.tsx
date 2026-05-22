@@ -213,25 +213,17 @@ export default function ProjectDetail() {
 
   async function exportToExcel() {
     if (!data) return;
-    const xlsx = await import('xlsx');
-    const rows = data.positions.map((p) => ({
-      OZ: p.oz,
-      Kurztext: p.shortText,
-      Menge: p.quantity,
-      EH: p.unit,
-      'Material €/EH': p.materialCost,
-      'Zeit min/EH': p.timeMinutes,
-      'NU €/EH': p.nuCost,
-      'EP €/EH': p.ep,
-      'GP €': p.gp,
-      'Sichtbar Kunde': p.visibleToCustomer ? 'Ja' : 'Nein',
-      Typ: p.isHeader ? 'Titel' : 'Position',
-    }));
-    const ws = xlsx.utils.json_to_sheet(rows);
-    const wb = xlsx.utils.book_new();
-    xlsx.utils.book_append_sheet(wb, ws, 'Kalkulation');
-    const blob = xlsx.write(wb, { type: 'array', bookType: 'xlsx' });
-    const url = URL.createObjectURL(new Blob([blob], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    // PART N: emit the canonical Kalkulation-Vorlage layout (header block +
+    // ZSCHLG matrix + row-13 column headers + position rows) so the exported
+    // .xlsx matches the example files in ~/Desktop/Claude/example {1-4}/
+    // AND round-trips back through the kalku-xlsx importer cleanly.
+    const { exportToKalkulationVorlage } = await import('@/lib/kalku-xlsx/export');
+    const bytes = await exportToKalkulationVorlage(data);
+    const url = URL.createObjectURL(
+      new Blob([bytes as BlobPart], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }),
+    );
     const a = document.createElement('a');
     a.href = url;
     a.download = `${(data.name || 'kalkulation').replace(/[^a-zA-Z0-9_-]+/g, '_')}.xlsx`;
