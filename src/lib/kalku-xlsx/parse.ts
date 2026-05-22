@@ -218,11 +218,16 @@ export async function parseKalkulationWorkbook(
       const cell = ws[c + r];
       if (!cell) continue;
       if (isErrorCell(cell)) {
+        // Round 2 policy: ALL formula errors are blocking (severity='error').
+        // Reasoning: even though Faktoren-Lookup cells are not directly shown
+        // to the customer, the user explicitly asked for a hard gate. They
+        // can fix the file in Excel and re-import, OR (escape hatch) use the
+        // generic mapping wizard which doesn't trip on these cells.
         issues.push({
-          severity: 'warning',
+          severity: 'error',
           location: `${sheetName}!${c}${r}`,
           code: 'formula_error',
-          message: `Faktoren-Lookup Zelle ${c}${r} liefert Formelfehler${cell.f ? ` (Formel: ${cell.f})` : ''}. Lookup-Wert nicht verlässlich.`,
+          message: `Faktoren-Lookup Zelle ${c}${r} liefert Formelfehler${cell.f ? ` (Formel: ${cell.f})` : ''}. Bitte in Excel reparieren.`,
         });
         rowFactor.cells[c] = (cell.v != null ? String(cell.v) : '#ERR');
       } else {
@@ -237,7 +242,21 @@ export async function parseKalkulationWorkbook(
   const range = XLSX.utils.decode_range(ref);
   const positions: Position[] = [];
   let nextSort = 1;
+  const CUSTOMER_ZONE = ['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const;
   for (let r = 14; r <= range.e.r + 1; r++) {
+    // Defensive sweep: customer-zone formula errors are CRITICAL — they
+    // could put garbage into the EP/GP the customer sees. Block import.
+    for (const c of CUSTOMER_ZONE) {
+      const cell = ws[c + r];
+      if (isErrorCell(cell)) {
+        issues.push({
+          severity: 'error',
+          location: `${sheetName}!${c}${r}`,
+          code: 'formula_error',
+          message: `Kunden-Spalte ${c}${r} liefert Formelfehler${cell.f ? ` (Formel: ${cell.f})` : ''} — würde dem Kunden gezeigt. Bitte unbedingt reparieren.`,
+        });
+      }
+    }
     const cells = {
       oz: ws['A' + r]?.v ?? '',
       A: ws['A' + r]?.v ?? null,

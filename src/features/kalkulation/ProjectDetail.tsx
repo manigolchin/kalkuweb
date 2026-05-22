@@ -406,6 +406,37 @@ export default function ProjectDetail() {
               : `${rows.length} Position${rows.length === 1 ? '' : 'en'} importiert (Projekt ersetzt).`,
           );
         }}
+        onImportKalku={(parsed, mode) => {
+          if (!parsed.project) return;
+          const rows = parsed.project.positions;
+          const merged = mode === 'append' ? [...data.positions, ...rows] : rows;
+          // Kalkulation-template import also lifts meta + CalcParams from
+          // the file. We replace those on 'replace' mode; on 'append' we
+          // keep the existing project's meta but adopt the new CalcParams
+          // if they differ (most useful when the user re-imports a freshly
+          // edited template).
+          if (mode === 'replace') {
+            setData({
+              ...parsed.project,
+              positions: rows,
+              notes: data.notes,
+            });
+          } else {
+            setData({
+              ...data,
+              positions: merged,
+              calcParams: parsed.derivedCalcParams,
+            });
+          }
+          // Auto-flip to v2 — the user just imported a Kalkulation-template,
+          // they get the new layout to enjoy it (per Round 2 spec PART F.3).
+          switchTableVersion('v2');
+          toast.success(
+            mode === 'append'
+              ? `${rows.length} Position${rows.length === 1 ? '' : 'en'} aus Vorlage angehängt — neue Ansicht aktiviert.`
+              : `${rows.length} Position${rows.length === 1 ? '' : 'en'} aus Vorlage importiert (ersetzt) — neue Ansicht aktiviert.`,
+          );
+        }}
       />
     </div>
   );
