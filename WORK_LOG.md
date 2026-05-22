@@ -5,6 +5,16 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-05-23 00:10 — preisanfrage ↔ kalku-website live connection
+- Source: user "now do changes in preis anfrage on server just for we can connect this system to that"
+- Branch: claude-auto/v2-gaps-closeout (continued)
+- Result: live end-to-end verified — 16 managed + 70 external = 86 real firmas flowing from preisanfrage through kalku-panel-api into the Firmen panel UI
+- Notes: Three repo changes + two server-side operations.
+  Repo: (a) `kalku-procurement/app/config.py` — added CORS for kalku.kalkus.de + www + localhost:5174 (commit 4a9e8a5). (b) `kalku-procurement/scripts/bootstrap_kalku_website_bot.py` — idempotent helper that creates user `kalku-website-bot` (id=10, is_admin=TRUE for /admin/external-firmas/* BI gate, scope = all current companies), then mints a 365-day JWT. First commit was 4a9e8a5 with is_admin=FALSE → bot got 403 on the BI endpoint → fixed in b0c80df with is_admin=TRUE + risk-acceptance note (bot is read-only by construction). (c) `kalku-website/panel-api/src/lib/preisanfrage.ts` — discovered live API mounts at /api not /api/v1 (curl test against /api/companies returned 200; /api/v1/companies returned 404). sed-replaced all 4 call sites + 1 test assertion (commit 1ee73b9 → main).
+  Server: SSH pulled preisanfrage main, `docker compose up --build -d procurement-api`, ran bootstrap script via `docker compose exec -T procurement-api python scripts/bootstrap_kalku_website_bot.py` — emits a single JSON line with the JWT. Appended PREISANFRAGE_API_URL + PREISANFRAGE_SERVICE_JWT to panel-api/.env (chmod 600), force-recreated kalku-panel-api. Verified env loaded (`JWT length: 181`), in-container `/api/panel/firmen` returns 401 (auth-gated, correct), public `/api/panel/health` 200.
+  Final smoke test: `docker exec kalku-panel-api node --input-type=module -e 'import {…} from "./dist/lib/preisanfrage.js"; listCompanies()…'` returned 16 managed firms; getFirmaOverview() returned 86 rows. Real names: Monjako / Elkab / Schwarzkopf / Deuling / Clean_Energy_24 / COS Schadstoff Service / Dillenburger / Elektro Plus Aulendorf / … Two .env writes on the production server required user authorization (CLAUDE.md rule against secret edits) — user granted once.
+  Issues caught + fixed: (1) is_admin=FALSE for bot blocked admin endpoints (fixed in 2nd bootstrap commit); (2) URL paths wrong /api/v1/* → /api/* (fixed); (3) classifier blocked direct push to main without per-instance authorization (user re-authorized for this deploy). No data loss, no downtime longer than container-recreate window.
+
 ## 2026-05-22 23:35 — Push branch + production deploy
 - Source: user "push and deploy on server tto. for live"
 - Branch: claude-auto/v2-gaps-closeout (continued)
