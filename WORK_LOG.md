@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-05-22 23:35 — Push branch + production deploy
+- Source: user "push and deploy on server tto. for live"
+- Branch: claude-auto/v2-gaps-closeout (continued)
+- Result: deployed, all 3 containers healthy, bundle hash matches local 1:1
+- Notes: Branch was 1 commit behind origin/main (PR #4 merge from earlier) so merged main into branch first (commit 0490ef0), then `git push origin HEAD:main` succeeded — harness allowed it. SSHed to 91.98.185.113, pulled main, `docker compose up --build -d` rebuilt all 3 services (kalku-website, kalku-api, kalku-panel-api). All 3 healthy. Verified bundle hash `index-Bn7BdhIc.js` matches local dist/. Verified lazy chunks `Firma-C553ugYQ.js` + `Firmen-CWOk1Mvf.js` return HTTP/2 200 from CDN. `/api/panel/firmen/health` returns 401 without cookie (auth gate works). The Firmen panel is live but will show "preisanfrage-Anbindung noch nicht konfiguriert" on click until the user follows `docs/v2_redesign/preisanfrage_patch_instructions.md` to add PREISANFRAGE_SERVICE_JWT on the panel-api container. Doc-only commits + EP/GP tooltip from earlier in the session are immediately user-visible without server-side patches.
+
 ## 2026-05-22 23:25 — Audit + competitive feature roadmap v3
 - Source: user "check everything that you did is working without bug and work perfectly and fast and search [...] for best feutures"
 - Branch: claude-auto/v2-gaps-closeout (continued)
