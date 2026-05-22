@@ -100,6 +100,16 @@ export type ShareSettings = {
   showTotals: boolean;
   showMwst: boolean;
   bindefristDays?: number;
+  /** PART H: optional plaintext password set by the calculator at share-create
+   *  time. The server hashes it; the client never sees the hash back. The
+   *  public CustomerViewPayload only carries a boolean `passwordRequired`
+   *  flag so the gate UI can decide whether to prompt. */
+  password?: string;
+  /** PART H: optional ISO 8601 timestamp at which the share link expires.
+   *  After this point, getShare returns 410 Gone with reason 'expired'.
+   *  Distinct from bindefristDays which is a non-blocking offer-validity
+   *  hint displayed to the customer. */
+  expiresAt?: string;
 };
 
 export type ShareSummary = {
@@ -182,6 +192,20 @@ export type CustomerViewPayload = {
   }>;
   /** ISO timestamp of share creation — anchors the Bindefrist window. */
   createdAt: string;
+  /** PART H: server-stripped settings flags relevant to the customer view.
+   *  `passwordRequired` lets the gate UI render without ever shipping the
+   *  hash. `expiresAt` is the literal ISO timestamp of expiry (informational —
+   *  if the share is already expired, the server returns 410 instead). */
+  passwordRequired?: boolean;
+  expiresAt?: string;
+  /** PART H: revision tracking. Set by the server when the project's
+   *  `versionNumber` is greater than the snapshot the customer is currently
+   *  viewing — i.e. the calculator has edited or re-imported since this
+   *  share was last resnapshotted. The ShareView renders a banner. */
+  hasNewerVersion?: boolean;
+  /** PART H: latest project version-number known to the server, exposed so
+   *  the customer's banner can name a version. */
+  latestVersionNumber?: number;
 };
 
 export type AuthUser = {

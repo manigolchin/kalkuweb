@@ -199,7 +199,29 @@ export const api = {
       request<{ ok: true }>(`/templates/${id}`, { method: 'DELETE' }),
   },
   public: {
-    getShare: (token: string) => request<CustomerViewPayload>(`/share/${token}`),
+    /**
+     * PART H: getShare now accepts an optional `password` arg. If the share
+     * is password-protected and no/wrong password is sent, the server
+     * responds 401 and the caller (ShareView) renders the password gate.
+     * On success the server flips `passwordRequired` to false in the
+     * response so the gate stops rendering.
+     *
+     * Passwords go in a header (NOT a query string) so they don't appear
+     * in server access logs or browser history.
+     */
+    getShare: (token: string, password?: string) =>
+      request<CustomerViewPayload>(`/share/${token}`, {
+        headers: password ? { 'X-Share-Password': password } : undefined,
+      }),
+    /**
+     * PART H: optional dedicated unlock endpoint. Calls the same path as
+     * getShare; exists for clarity at call sites and so the future server
+     * can rate-limit failed unlock attempts separately from regular reads.
+     */
+    unlockShare: (token: string, password: string) =>
+      request<CustomerViewPayload>(`/share/${token}`, {
+        headers: { 'X-Share-Password': password },
+      }),
     approve: (
       token: string,
       input: { customerName: string; customerEmail?: string; message?: string },

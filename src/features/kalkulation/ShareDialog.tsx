@@ -517,6 +517,78 @@ export default function ShareDialog({
                 </div>
               </section>
 
+              {/* PART H — security & expiry */}
+              <section>
+                <h3 className="text-sm font-semibold text-slate-900 mb-2">
+                  4. Sicherheit &amp; Ablauf <span className="text-xs font-normal text-slate-400">(optional)</span>
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="block">
+                    <span className="text-xs font-medium text-slate-600">
+                      Mit Passwort schützen
+                    </span>
+                    <input
+                      type="text"
+                      autoComplete="off"
+                      data-testid="share-password-input"
+                      className="mt-1 input font-mono text-sm"
+                      placeholder="leer = ohne Passwort"
+                      value={settings.password || ''}
+                      onChange={(e) => setSettings({ ...settings, password: e.target.value })}
+                    />
+                    <span className="text-[10px] text-slate-400 mt-1 block">
+                      Der Kunde muss dieses Passwort beim Öffnen des Links eingeben.
+                    </span>
+                  </label>
+                  <label className="block">
+                    <span className="text-xs font-medium text-slate-600">
+                      Ablaufdatum
+                    </span>
+                    <input
+                      type="date"
+                      data-testid="share-expires-input"
+                      className="mt-1 input"
+                      min={new Date().toISOString().slice(0, 10)}
+                      value={settings.expiresAt ? settings.expiresAt.slice(0, 10) : ''}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          // Store as end-of-day ISO so a chosen date stays valid through that day.
+                          expiresAt: e.target.value
+                            ? new Date(e.target.value + 'T23:59:59').toISOString()
+                            : undefined,
+                        })
+                      }
+                    />
+                    <span className="text-[10px] text-slate-400 mt-1 block">
+                      Nach diesem Datum wird der Link automatisch gesperrt.
+                    </span>
+                  </label>
+                </div>
+                {(settings.password || settings.expiresAt) && (
+                  <p className="text-xs text-slate-500 mt-3 px-3 py-2 rounded-lg bg-slate-50 border border-slate-200">
+                    {settings.password && (
+                      <span className="block">
+                        🔒 Kunde sieht das Angebot erst nach Eingabe des Passworts.
+                      </span>
+                    )}
+                    {settings.expiresAt && (
+                      <span className="block">
+                        ⏱ Link läuft am{' '}
+                        <strong>
+                          {new Date(settings.expiresAt).toLocaleDateString('de-DE', {
+                            day: '2-digit',
+                            month: 'long',
+                            year: 'numeric',
+                          })}
+                        </strong>{' '}
+                        ab.
+                      </span>
+                    )}
+                  </p>
+                )}
+              </section>
+
               {existingShares.filter((s) => !s.revokedAt).length > 0 && (
                 <section>
                   <h3 className="text-sm font-semibold text-slate-900 mb-2">
