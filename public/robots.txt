@@ -15,4 +15,3 @@ Disallow: /*?fbclid=*
 Disallow: /*?gclid=*
 
 Sitemap: https://kalku.de/sitemap.xml
-# preview-pipeline-test-20260522T113113Z
