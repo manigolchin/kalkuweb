@@ -43,7 +43,7 @@ const TRADE_TILE_CLASSES: Record<string, string> = {
 
 const TITLE = 'KALKU Baukalkulationen — Wir kalkulieren Ihre Ausschreibung. Sie unterschreiben.';
 const DESCRIPTION =
-  'Outsourced Baukalkulation für GU und Bauunternehmen. Spezialisiert auf öffentliche Ausschreibungen (VOB/A, VgV) in 10 Gewerken. LV in 24 h bepreist. Festpreis ab 200 €. Saarbrücken.';
+  'Outsourced Baukalkulation für GU und Bauunternehmen. Spezialisiert auf öffentliche Ausschreibungen (VOB/A, VgV) in 10 Gewerken. LV in 12 h bepreist. Festpreis ab 200 €. Saarbrücken.';
 
 export default function Home() {
   return (
@@ -97,7 +97,7 @@ export default function Home() {
               </div>
               <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mt-9 text-sm text-gray-600">
                 <span className="inline-flex items-center gap-1.5">
-                  <Clock className="w-4 h-4 text-primary-600" /> LV in 24 h bepreist
+                  <Clock className="w-4 h-4 text-primary-600" /> LV in 12 h bepreist
                 </span>
                 <span className="inline-flex items-center gap-1.5">
                   <Layers3 className="w-4 h-4 text-primary-600" /> 10 Gewerke
