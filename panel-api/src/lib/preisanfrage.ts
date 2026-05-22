@@ -19,6 +19,14 @@
  * Architecture context: docs/v2_redesign/multi_company_integration_architecture.md
  */
 
+import {
+  getMockCompanies,
+  getMockExternalProjects,
+  getMockManagedProjects,
+  getMockOverview,
+  isMockMode,
+} from './preisanfrage-fixture.js';
+
 const DEFAULT_BASE_URL = 'https://preisanfrage.kalkus.de';
 const CACHE_TTL_MS = 60_000; // 60 s — absorbs UI burst, doesn't mask 5-min n8n cadence.
 
@@ -146,10 +154,16 @@ function serviceToken(): string | null {
 }
 
 /** Returns false when the integration is intentionally disabled (no token
- *  configured). Use this in routes to short-circuit with a clear message
- *  instead of a 500. */
+ *  configured AND mock mode is off). Use this in routes to short-circuit
+ *  with a clear message instead of a 500. */
 export function isPreisanfrageEnabled(): boolean {
-  return serviceToken() !== null;
+  return isMockMode() || serviceToken() !== null;
+}
+
+/** Exposed so the panel UI can render a "Demo data" chip when running
+ *  against the fixture. */
+export function isPreisanfrageMock(): boolean {
+  return isMockMode();
 }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -187,6 +201,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 /* ─── Public client API (the ONLY exports route code should use) ─── */
 
 export async function listCompanies(): Promise<PreisanfrageCompany[]> {
+  if (isMockMode()) return getMockCompanies();
   const key = 'companies';
   const hit = cached<PreisanfrageCompany[]>(key);
   if (hit) return hit;
@@ -200,6 +215,7 @@ export async function listCompanies(): Promise<PreisanfrageCompany[]> {
 export async function getFirmaOverview(opts?: {
   period?: 'month' | 'quarter' | 'year' | 'last_12m' | 'all';
 }): Promise<PreisanfrageOverview> {
+  if (isMockMode()) return getMockOverview();
   const period = opts?.period ?? 'all';
   const key = `overview:${period}`;
   const hit = cached<PreisanfrageOverview>(key);
@@ -252,6 +268,7 @@ export async function listManagedProjects(companyId: number, opts?: {
   status?: string;
   limit?: number;
 }): Promise<PreisanfrageProject[]> {
+  if (isMockMode()) return getMockManagedProjects(companyId);
   const limit = opts?.limit ?? 50;
   const status = opts?.status ?? '';
   const key = `projects:${companyId}:${status}:${limit}`;
@@ -300,6 +317,7 @@ export async function listManagedProjects(companyId: number, opts?: {
 }
 
 export async function listExternalProjects(externalFirmaId: number): Promise<PreisanfrageExternalProject[]> {
+  if (isMockMode()) return getMockExternalProjects(externalFirmaId);
   const key = `external-projects:${externalFirmaId}`;
   const hit = cached<PreisanfrageExternalProject[]>(key);
   if (hit) return hit;

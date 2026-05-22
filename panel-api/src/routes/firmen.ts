@@ -23,6 +23,7 @@ import {
   listManagedProjects,
   listExternalProjects,
   isPreisanfrageEnabled,
+  isPreisanfrageMock,
   PreisanfrageError,
 } from '../lib/preisanfrage.js';
 
@@ -83,11 +84,16 @@ function handleUpstreamError(err: unknown): {
 export const firmenRoute = new Hono<{ Variables: AuthVariables }>()
   /** Liveness probe — does the panel know how to talk to preisanfrage? */
   .get('/firmen/health', requireAuth, async (c) => {
+    const enabled = isPreisanfrageEnabled();
+    const mock = isPreisanfrageMock();
     return c.json({
-      enabled: isPreisanfrageEnabled(),
-      hint: isPreisanfrageEnabled()
-        ? 'preisanfrage service token is configured'
-        : 'set PREISANFRAGE_SERVICE_JWT env var on the panel-api server',
+      enabled,
+      mock,
+      hint: mock
+        ? 'running in MOCK mode — using preisanfrage-fixture.ts'
+        : enabled
+          ? 'preisanfrage service token is configured'
+          : 'set PREISANFRAGE_SERVICE_JWT (or PREISANFRAGE_MOCK=fixture for demo) on the panel-api server',
     });
   })
 
@@ -126,6 +132,7 @@ export const firmenRoute = new Hono<{ Variables: AuthVariables }>()
         totalProjects: overview.totalProjects,
         lastScanAt: overview.lastScanAt,
         generatedAt: new Date().toISOString(),
+        isMock: isPreisanfrageMock(),
       });
     } catch (err) {
       const { status, body } = handleUpstreamError(err);

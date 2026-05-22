@@ -210,7 +210,7 @@ export const api = {
     /** Liveness — tells the UI whether to render the Firmen page or
      *  the "integration disabled" placeholder. */
     health: () =>
-      request<{ enabled: boolean; hint: string }>(`/firmen/health`),
+      request<{ enabled: boolean; mock: boolean; hint: string }>(`/firmen/health`),
     /** Big list — all 98 firmas from preisanfrage (managed + external)
      *  + a `hasCustomDefaults` flag per row. */
     list: () =>
@@ -233,6 +233,7 @@ export const api = {
         totalProjects: number;
         lastScanAt: string | null;
         generatedAt: string;
+        isMock: boolean;
       }>(`/firmen`),
     /** Per-Firma detail page payload: master row + defaults + projects. */
     detail: (kind: 'managed' | 'external', id: number) =>

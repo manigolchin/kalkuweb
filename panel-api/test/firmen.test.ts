@@ -114,9 +114,13 @@ test('preisanfrage: getFirmaOverview merges managed + external counts', async ()
   assert.equal(r.rows[1].kind, 'external');
 });
 
-test('preisanfrage: 503 when service-jwt is missing', async () => {
+test('preisanfrage: 503 when service-jwt is missing AND mock is explicitly off', async () => {
+  // Simulate "production without token configured" — the path where we want
+  // a loud failure instead of silently using fixtures.
   const oldJwt = process.env.PREISANFRAGE_SERVICE_JWT;
+  const oldMock = process.env.PREISANFRAGE_MOCK;
   delete process.env.PREISANFRAGE_SERVICE_JWT;
+  process.env.PREISANFRAGE_MOCK = '0';
   try {
     const { listCompanies, _clearPreisanfrageCache, isPreisanfrageEnabled, PreisanfrageError } =
       await import('../src/lib/preisanfrage.js');
@@ -128,6 +132,68 @@ test('preisanfrage: 503 when service-jwt is missing', async () => {
     );
   } finally {
     process.env.PREISANFRAGE_SERVICE_JWT = oldJwt;
+    if (oldMock === undefined) {
+      delete process.env.PREISANFRAGE_MOCK;
+    } else {
+      process.env.PREISANFRAGE_MOCK = oldMock;
+    }
+  }
+});
+
+test('preisanfrage MOCK: auto-enabled in dev when no JWT is set', async () => {
+  const oldJwt = process.env.PREISANFRAGE_SERVICE_JWT;
+  const oldMock = process.env.PREISANFRAGE_MOCK;
+  const oldNodeEnv = process.env.NODE_ENV;
+  delete process.env.PREISANFRAGE_SERVICE_JWT;
+  delete process.env.PREISANFRAGE_MOCK;
+  process.env.NODE_ENV = 'development';
+  try {
+    const { listCompanies, getFirmaOverview, _clearPreisanfrageCache, isPreisanfrageEnabled, isPreisanfrageMock } =
+      await import('../src/lib/preisanfrage.js');
+    _clearPreisanfrageCache();
+    assert.equal(isPreisanfrageEnabled(), true);
+    assert.equal(isPreisanfrageMock(), true);
+    // Network NEVER hit — the mock returns synchronously.
+    mockFetch(async () => {
+      throw new Error('network must not be called in mock mode');
+    });
+    const cs = await listCompanies();
+    assert.ok(cs.length >= 3, 'expected at least 3 mock managed firmas');
+    assert.ok(
+      cs.some((c) => c.name.toLowerCase().includes('gesellchen')),
+      'Gesellchen GmbH should appear in mock fixture',
+    );
+    const ov = await getFirmaOverview();
+    assert.ok(ov.rows.length >= 10, 'expected at least 10 mock firmas in overview');
+  } finally {
+    process.env.PREISANFRAGE_SERVICE_JWT = oldJwt;
+    if (oldMock === undefined) delete process.env.PREISANFRAGE_MOCK;
+    else process.env.PREISANFRAGE_MOCK = oldMock;
+    if (oldNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = oldNodeEnv;
+  }
+});
+
+test('preisanfrage MOCK: explicit PREISANFRAGE_MOCK=0 disables auto-mock even in dev', async () => {
+  const oldJwt = process.env.PREISANFRAGE_SERVICE_JWT;
+  const oldMock = process.env.PREISANFRAGE_MOCK;
+  const oldNodeEnv = process.env.NODE_ENV;
+  delete process.env.PREISANFRAGE_SERVICE_JWT;
+  process.env.PREISANFRAGE_MOCK = '0';
+  process.env.NODE_ENV = 'development';
+  try {
+    const { isPreisanfrageEnabled, isPreisanfrageMock, _clearPreisanfrageCache } = await import(
+      '../src/lib/preisanfrage.js'
+    );
+    _clearPreisanfrageCache();
+    assert.equal(isPreisanfrageMock(), false);
+    assert.equal(isPreisanfrageEnabled(), false, 'no token + mock=0 → disabled, loud failure');
+  } finally {
+    process.env.PREISANFRAGE_SERVICE_JWT = oldJwt;
+    if (oldMock === undefined) delete process.env.PREISANFRAGE_MOCK;
+    else process.env.PREISANFRAGE_MOCK = oldMock;
+    if (oldNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = oldNodeEnv;
   }
 });
 

@@ -135,7 +135,15 @@ export default function Firmen() {
             um deren Ausschreibungen zu kalkulieren.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {data?.isMock && (
+            <span
+              className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 font-semibold"
+              title="Demo-Daten — preisanfrage-Anbindung läuft im MOCK-Modus. Für Echtdaten PREISANFRAGE_SERVICE_JWT setzen."
+            >
+              DEMO
+            </span>
+          )}
           {data && (
             <span className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
               {data.managedCount} verwaltet + {data.externalCount} extern = {data.rows.length} Firmen

@@ -28,6 +28,7 @@ import {
   Calendar,
   MapPin,
   CalendarDays,
+  Calculator,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -148,7 +149,12 @@ export default function Firma() {
               })
             }
           />
-          <ProjectsCard projects={data.projects} firmaKind={kind} />
+          <ProjectsCard
+            projects={data.projects}
+            firmaKind={kind}
+            firmaDisplayName={data.firma.displayName}
+            defaults={data.defaults}
+          />
         </>
       )}
     </div>
@@ -412,10 +418,17 @@ function NumberField({
 function ProjectsCard({
   projects,
   firmaKind,
+  firmaDisplayName,
+  defaults,
 }: {
   projects: FirmaDetail['projects'];
   firmaKind: 'managed' | 'external';
+  firmaDisplayName: string;
+  defaults: FirmaDetail['defaults'];
 }) {
+  const navigate = useNavigate();
+  const [starting, setStarting] = useState<string | null>(null);
+
   const sorted = useMemo(() => {
     return [...projects].sort((a, b) => {
       const at = a.submissionDate ? new Date(a.submissionDate).getTime() : 0;
@@ -423,6 +436,50 @@ function ProjectsCard({
       return bt - at;
     });
   }, [projects]);
+
+  async function startKalkulation(p: FirmaDetail['projects'][number]) {
+    const key = `${p.source}:${p.id}`;
+    setStarting(key);
+    try {
+      // Pre-fill the new project with everything we already know:
+      //  - bidder = Firma name (so the Excel export header is correct from minute 1)
+      //  - calcParams = Firma defaults cascaded into globals
+      //  - client / service / tenderNumber / deadline from the Ausschreibung
+      //  - name = the Ausschreibung title
+      // Empty positions[] — the calculator imports the GAEB/PDF in a follow-up
+      // step (Phase 1c will wire "Positionen aus preisanfrage holen").
+      const submissionIso = p.submissionDate
+        ? (p.submissionTime ? `${p.submissionDate}T${p.submissionTime}` : p.submissionDate)
+        : '';
+      const created = await api.projects.create({
+        name: p.name ?? p.baumassnahme ?? p.folderName ?? `Ausschreibung ${p.projectNumber ?? ''}`,
+        client: p.auftraggeberName ?? '',
+        service: '',
+        tenderNumber: p.projectNumber ?? '',
+        deadline: submissionIso,
+        bidder: firmaDisplayName,
+        calcParams: {
+          mittellohn: 30,
+          verrechnungslohn: defaults.verrechnungslohn,
+          materialZuschlag: defaults.materialZuschlag,
+          nuZuschlag: defaults.nuZuschlag,
+          geraeteZuschlagPct: 0.1,
+          geraeteStundensatz: defaults.geraeteStundensatz,
+          zeitabzug: 0,
+          tagesstunden: 8,
+          personaleinsatz: 3,
+          mwst: 0.19,
+        },
+        positions: [],
+        notes: `Aus preisanfrage importiert — Firma: ${firmaDisplayName} (${firmaKind}), Ref: ${p.source}:${p.id}`,
+      });
+      toast.success('Kalkulation angelegt — jetzt GAEB importieren oder Positionen einpflegen.');
+      navigate(`/panel/kalkulation/${created.id}`);
+    } catch (e) {
+      toast.error(`Konnte Kalkulation nicht starten: ${String(e)}`);
+      setStarting(null);
+    }
+  }
 
   return (
     <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
@@ -432,9 +489,7 @@ function ProjectsCard({
           Ausschreibungen ({sorted.length})
         </h2>
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          {firmaKind === 'external'
-            ? 'Aus OneDrive entdeckt — Klick zur Kalkulation kommt in Phase 1b'
-            : 'Aus preisanfrage — Klick zur Kalkulation kommt in Phase 1b'}
+          Klick auf <strong>Kalkulation starten</strong> legt ein neues Projekt mit den Firma-Defaults an.
         </p>
       </header>
       {sorted.length === 0 ? (
@@ -446,7 +501,7 @@ function ProjectsCard({
           {sorted.map((p) => (
             <li key={`${p.source}:${p.id}`} className="px-5 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/40">
               <div className="flex items-start justify-between gap-3 flex-wrap">
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
                     {p.name ?? p.baumassnahme ?? p.folderName ?? p.projectNumber ?? '(ohne Titel)'}
                   </div>
@@ -484,16 +539,31 @@ function ProjectsCard({
                     )}
                   </div>
                 </div>
-                {p.oneDriveShareUrl && (
-                  <a
-                    href={p.oneDriveShareUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-primary-600 dark:text-primary-300 hover:underline shrink-0"
+                <div className="flex items-center gap-2 shrink-0">
+                  {p.oneDriveShareUrl && (
+                    <a
+                      href={p.oneDriveShareUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400 hover:text-primary-600 hover:underline"
+                    >
+                      OneDrive <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => startKalkulation(p)}
+                    disabled={starting !== null}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50"
                   >
-                    OneDrive <ExternalLink className="w-3 h-3" />
-                  </a>
-                )}
+                    {starting === `${p.source}:${p.id}` ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Calculator className="w-3 h-3" />
+                    )}
+                    Kalkulation starten
+                  </button>
+                </div>
               </div>
             </li>
           ))}
