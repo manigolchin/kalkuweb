@@ -162,7 +162,12 @@ export const sharesRoute = new Hono<{ Variables: AuthVariables }>()
       token,
       projectId,
       visiblePositionIds: parsed.data.visiblePositionIds,
-      settings: parsed.data.settings,
+      // SECURITY: return the SANITISED settings (plaintext password removed
+      // by the same path that built `settingsToStore`), NOT `parsed.data.settings`
+      // which still carries the plaintext from the request body. A plaintext
+      // echo would land in HTTP / reverse-proxy access logs.
+      // Caught by panel-api/test/round9-shares-public.test.ts (Round 9).
+      settings: settingsToStore,
       snapshotHash: hash,
       snapshottedAt: snapshot.snapshottedAt,
       parentShareId,

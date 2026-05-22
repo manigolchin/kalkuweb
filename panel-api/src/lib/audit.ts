@@ -45,63 +45,93 @@ function canonical(obj: Record<string, unknown>): string {
   return JSON.stringify(sorted);
 }
 
-/** Insert one event, chained to the previous tip-hash. Single-process safe; for a
- *  multi-instance deploy we'd want a SELECT … FOR UPDATE around the tip read. */
+/**
+ * In-process async mutex. The audit chain's correctness depends on the
+ * tip read + the insert being one atomic operation per logical writer.
+ * Without a lock, two concurrent `recordAuditEvent` calls can race:
+ *
+ *   T1: read tip → prevHash = A
+ *   T2: read tip → prevHash = A     ← same tip!
+ *   T1: insert {prevHash: A, rowHash: B}
+ *   T2: insert {prevHash: A, rowHash: C}   ← chain forks
+ *
+ * `verifyAuditChain` then sees row 2's prevHash (A) ≠ row 1's rowHash (B)
+ * and flags the chain as tampered. Single-process Node serialises with
+ * a chained-promise lock; multi-instance deploys would need a row-level
+ * lock or `BEGIN IMMEDIATE` in sqlite (better-sqlite3 doesn't expose
+ * transactions over drizzle's async API cleanly).
+ *
+ * Caught by panel-api/test/round9-shares-public.test.ts (Round 9).
+ */
+let auditChainTail: Promise<unknown> = Promise.resolve();
+function withAuditLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = auditChainTail.then(fn, fn);
+  // Keep the chain alive even if a particular caller rejects.
+  auditChainTail = run.catch(() => undefined);
+  return run;
+}
+
+/** Insert one event, chained to the previous tip-hash. Serialised in-process
+ *  by `withAuditLock` so concurrent callers can't race on the tip read. For
+ *  a multi-instance deploy this needs a row-level lock (e.g. `BEGIN IMMEDIATE`
+ *  in sqlite, or `SELECT … FOR UPDATE` in Postgres). */
 export async function recordAuditEvent(input: AuditInsert): Promise<AuditEvent> {
-  const id = nanoid(16);
-  const createdAt = new Date(nextMonotonicMs());
-  const payload = input.payload ?? {};
+  return withAuditLock(async () => {
+    const id = nanoid(16);
+    const createdAt = new Date(nextMonotonicMs());
+    const payload = input.payload ?? {};
 
-  const tip = await db
-    .select({ rowHash: auditEvents.rowHash })
-    .from(auditEvents)
-    .orderBy(desc(auditEvents.createdAt), desc(auditEvents.id))
-    .limit(1);
-  const prevHash = tip[0]?.rowHash || GENESIS_PREV_HASH;
+    const tip = await db
+      .select({ rowHash: auditEvents.rowHash })
+      .from(auditEvents)
+      .orderBy(desc(auditEvents.createdAt), desc(auditEvents.id))
+      .limit(1);
+    const prevHash = tip[0]?.rowHash || GENESIS_PREV_HASH;
 
-  const canonicalBody = canonical({
-    id,
-    shareId: input.shareId ?? null,
-    projectId: input.projectId ?? null,
-    eventType: input.eventType,
-    actorKind: input.actorKind,
-    actorRef: input.actorRef ?? null,
-    ip: input.ip ?? null,
-    userAgent: input.userAgent ?? null,
-    payload,
-    createdAtMs: createdAt.getTime(),
+    const canonicalBody = canonical({
+      id,
+      shareId: input.shareId ?? null,
+      projectId: input.projectId ?? null,
+      eventType: input.eventType,
+      actorKind: input.actorKind,
+      actorRef: input.actorRef ?? null,
+      ip: input.ip ?? null,
+      userAgent: input.userAgent ?? null,
+      payload,
+      createdAtMs: createdAt.getTime(),
+    });
+    const rowHash = createHash('sha256').update(prevHash + canonicalBody).digest('hex');
+
+    await db.insert(auditEvents).values({
+      id,
+      shareId: input.shareId ?? null,
+      projectId: input.projectId ?? null,
+      eventType: input.eventType,
+      actorKind: input.actorKind,
+      actorRef: input.actorRef ?? null,
+      ip: input.ip ?? null,
+      userAgent: input.userAgent ?? null,
+      payload,
+      prevHash,
+      rowHash,
+      createdAt,
+    });
+
+    return {
+      id,
+      shareId: input.shareId ?? null,
+      projectId: input.projectId ?? null,
+      eventType: input.eventType,
+      actorKind: input.actorKind,
+      actorRef: input.actorRef ?? null,
+      ip: input.ip ?? null,
+      userAgent: input.userAgent ?? null,
+      payload,
+      prevHash,
+      rowHash,
+      createdAt,
+    };
   });
-  const rowHash = createHash('sha256').update(prevHash + canonicalBody).digest('hex');
-
-  await db.insert(auditEvents).values({
-    id,
-    shareId: input.shareId ?? null,
-    projectId: input.projectId ?? null,
-    eventType: input.eventType,
-    actorKind: input.actorKind,
-    actorRef: input.actorRef ?? null,
-    ip: input.ip ?? null,
-    userAgent: input.userAgent ?? null,
-    payload,
-    prevHash,
-    rowHash,
-    createdAt,
-  });
-
-  return {
-    id,
-    shareId: input.shareId ?? null,
-    projectId: input.projectId ?? null,
-    eventType: input.eventType,
-    actorKind: input.actorKind,
-    actorRef: input.actorRef ?? null,
-    ip: input.ip ?? null,
-    userAgent: input.userAgent ?? null,
-    payload,
-    prevHash,
-    rowHash,
-    createdAt,
-  };
 }
 
 /** Verify the chain end-to-end. Returns the index of the first tampered row, or null. */
