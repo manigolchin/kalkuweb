@@ -7,7 +7,7 @@ import {
   Loader2,
   AlertCircle,
   MessageSquarePlus,
-  X,
+  MessageSquare,
   Building2,
   ShieldCheck,
   Calendar,
@@ -16,11 +16,13 @@ import {
   Fingerprint,
   Clock,
   Download,
+  ChevronRight,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api, ApiError } from '@/lib/api';
 import type { CustomerViewPayload } from '@/features/kalkulation/types';
 import { formatEUR } from '@/features/kalkulation/calc';
+import PositionCommentPanel from '@/pages/share/PositionCommentPanel';
 
 type ChangeDraft = { positionId: string; type: 'modify' | 'remove' | 'comment'; text: string };
 type ViewState =
@@ -37,6 +39,9 @@ export default function ShareView() {
   const [changes, setChanges] = useState<Record<string, ChangeDraft>>({});
   const [submitted, setSubmitted] = useState<'approve' | 'changes' | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // PART G: per-position side-panel state. `panelPositionId` holds the id of
+  // the position whose comment panel is currently open (null = closed).
+  const [panelPositionId, setPanelPositionId] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -353,11 +358,11 @@ export default function ShareView() {
                       </div>
                     </div>
                     {!submitted && settings.allowChangeRequests && (
-                      <PositionFeedback
-                        position={p}
+                      <PositionCommentTrigger
+                        positionId={p.id}
+                        positionShortText={p.shortText}
                         draft={changes[p.id]}
-                        onSet={(patch) => setChange(p.id, patch)}
-                        onClear={() => removeChange(p.id)}
+                        onOpen={() => setPanelPositionId(p.id)}
                       />
                     )}
                   </>
@@ -485,84 +490,81 @@ export default function ShareView() {
           </div>
         </div>
       )}
+
+      {/* PART G: side-panel for per-position comments. Renders absolutely
+          fixed; doesn't share the document flow. */}
+      <PositionCommentPanel
+        open={panelPositionId !== null}
+        position={panelPositionId ? positions.find((p) => p.id === panelPositionId) ?? null : null}
+        draft={panelPositionId ? changes[panelPositionId] : undefined}
+        customerName={customerName}
+        customerEmail={customerEmail}
+        onClose={() => setPanelPositionId(null)}
+        onSet={(patch) => panelPositionId && setChange(panelPositionId, patch)}
+        onClear={() => panelPositionId && removeChange(panelPositionId)}
+        onSetCustomerName={setCustomerName}
+        onSetCustomerEmail={setCustomerEmail}
+      />
     </div>
   );
 }
 
-function PositionFeedback({
-  position,
+/**
+ * Inline trigger that opens the side-panel for a given position. If a
+ * draft already exists, surfaces a chip-style indicator showing the intent
+ * + a snippet of the comment so the customer remembers what they wrote.
+ * Click anywhere on the trigger → opens the panel.
+ */
+function PositionCommentTrigger({
+  positionId: _positionId,
+  positionShortText,
   draft,
-  onSet,
-  onClear,
+  onOpen,
 }: {
-  position: { id: string; shortText: string };
+  positionId: string;
+  positionShortText: string;
   draft: ChangeDraft | undefined;
-  onSet: (patch: Partial<ChangeDraft>) => void;
-  onClear: () => void;
+  onOpen: () => void;
 }) {
-  if (!draft) {
+  if (draft && draft.text.trim().length > 0) {
+    const intentLabel =
+      draft.type === 'modify' ? 'Änderung' : draft.type === 'remove' ? 'Streichen' : 'Frage';
+    const intentColor =
+      draft.type === 'modify'
+        ? 'border-amber-300 bg-amber-50/80 text-amber-900'
+        : draft.type === 'remove'
+          ? 'border-rose-300 bg-rose-50/80 text-rose-900'
+          : 'border-sky-300 bg-sky-50/80 text-sky-900';
     return (
       <button
         type="button"
-        onClick={() => onSet({ type: 'modify', text: '' })}
-        className="mt-2 text-xs inline-flex items-center gap-1 text-slate-500 hover:text-primary-600"
+        onClick={onOpen}
+        data-testid="position-comment-trigger-active"
+        className={clsx(
+          'mt-2 w-full text-left inline-flex items-start gap-2 px-3 py-2 rounded-lg border text-xs',
+          intentColor,
+          'hover:brightness-95',
+        )}
       >
-        <MessageSquarePlus className="w-3.5 h-3.5" />
-        Anmerkung / Änderung zu „{position.shortText.slice(0, 28)}{position.shortText.length > 28 ? '…' : ''}"
+        <MessageSquare className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+        <span className="flex-1 min-w-0">
+          <strong className="font-semibold">{intentLabel}: </strong>
+          <span className="line-clamp-2 break-words">{draft.text}</span>
+        </span>
+        <ChevronRight className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 opacity-60" />
       </button>
     );
   }
   return (
-    <div className="mt-3 p-3 rounded-xl border border-amber-200 bg-amber-50/60">
-      <div className="flex items-center gap-2 mb-2 flex-wrap">
-        <label className="inline-flex items-center gap-1 text-xs">
-          <input
-            type="radio"
-            checked={draft.type === 'modify'}
-            onChange={() => onSet({ type: 'modify' })}
-            className="text-primary-600"
-          />
-          <span className="text-slate-700">Änderung wünschen</span>
-        </label>
-        <label className="inline-flex items-center gap-1 text-xs">
-          <input
-            type="radio"
-            checked={draft.type === 'remove'}
-            onChange={() => onSet({ type: 'remove' })}
-            className="text-primary-600"
-          />
-          <span className="text-slate-700">Streichen</span>
-        </label>
-        <label className="inline-flex items-center gap-1 text-xs">
-          <input
-            type="radio"
-            checked={draft.type === 'comment'}
-            onChange={() => onSet({ type: 'comment' })}
-            className="text-primary-600"
-          />
-          <span className="text-slate-700">Nur Frage</span>
-        </label>
-        <button
-          onClick={onClear}
-          className="ml-auto text-xs text-slate-400 hover:text-slate-600 inline-flex items-center gap-1"
-        >
-          <X className="w-3 h-3" /> Verwerfen
-        </button>
-      </div>
-      <textarea
-        autoFocus
-        placeholder={
-          draft.type === 'modify'
-            ? 'z. B. Bitte 8 m² statt 10 m². Oder: lieber Fliesen 60×60 statt 30×30.'
-            : draft.type === 'remove'
-              ? 'z. B. Diese Position nicht beauftragen.'
-              : 'z. B. Welches Material ist hier vorgesehen?'
-        }
-        value={draft.text}
-        onChange={(e) => onSet({ text: e.target.value })}
-        className="w-full text-sm bg-white border border-amber-200 rounded-lg px-3 py-2 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-200 min-h-[56px]"
-      />
-    </div>
+    <button
+      type="button"
+      onClick={onOpen}
+      data-testid="position-comment-trigger"
+      className="mt-2 text-xs inline-flex items-center gap-1 text-slate-500 hover:text-primary-600"
+    >
+      <MessageSquarePlus className="w-3.5 h-3.5" />
+      Anmerkung zu „{positionShortText.slice(0, 28)}{positionShortText.length > 28 ? '…' : ''}"
+    </button>
   );
 }
 
