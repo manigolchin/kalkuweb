@@ -53,7 +53,7 @@ test('preisanfrage: listCompanies returns mapped rows from upstream snake_case',
   const { listCompanies, _clearPreisanfrageCache } = await import('../src/lib/preisanfrage.js');
   _clearPreisanfrageCache();
   mockFetch(async (url) => {
-    assert.match(String(url), /\/api\/v1\/companies$/);
+    assert.match(String(url), /\/api\/companies$/);
     return jsonResponse([
       { id: 5, name: 'Gesellchen GmbH', trade_type: 'galabau' },
       { id: 6, name: 'MPB Bau', trade_type: 'tiefbau' },

@@ -42,7 +42,7 @@ export class PreisanfrageError extends Error {
   }
 }
 
-/** Subset of preisanfrage's `/api/v1/companies` response. We deliberately
+/** Subset of preisanfrage's `/api/companies` response. We deliberately
  *  don't pull SMTP/SharePoint config — that's preisanfrage's concern. */
 export type PreisanfrageCompany = {
   id: number;
@@ -51,7 +51,7 @@ export type PreisanfrageCompany = {
   tradeType: string;
 };
 
-/** Subset of `/api/v1/admin/external-firmas/overview` — the BI view that
+/** Subset of `/api/admin/external-firmas/overview` — the BI view that
  *  unions managed + OneDrive-discovered firmas. This is what powers the
  *  Firmen-Liste in the panel (all 98 visible, per user decision). */
 export type PreisanfrageFirmaRow = {
@@ -80,7 +80,7 @@ export type PreisanfrageOverview = {
   lastScanAt: string | null;
 };
 
-/** Subset of `/api/v1/projects` (the Ausschreibungen for a managed firma). */
+/** Subset of `/api/projects` (the Ausschreibungen for a managed firma). */
 export type PreisanfrageProject = {
   id: number;
   companyId: number;
@@ -118,7 +118,7 @@ export type PreisanfragePosition = {
   pageNumber?: number | null;
 };
 
-/** Subset of `/api/v1/admin/external-firmas/{id}/projects` — projects for
+/** Subset of `/api/admin/external-firmas/{id}/projects` — projects for
  *  external (non-adopted) firmas, with submission-result enrichment. */
 export type PreisanfrageExternalProject = {
   id: number;
@@ -224,7 +224,7 @@ export async function listCompanies(): Promise<PreisanfrageCompany[]> {
   const hit = cached<PreisanfrageCompany[]>(key);
   if (hit) return hit;
   type Row = { id: number; name: string; trade_type: string };
-  const rows = await call<Row[]>('/api/v1/companies');
+  const rows = await call<Row[]>('/api/companies');
   return cache(key, rows.map((r) => ({ id: r.id, name: r.name, tradeType: r.trade_type })));
 }
 
@@ -259,7 +259,7 @@ export async function getFirmaOverview(opts?: {
     total_projects: number;
     last_scan_at: string | null;
   };
-  const raw = await call<RawResp>(`/api/v1/admin/external-firmas/overview?period=${period}`);
+  const raw = await call<RawResp>(`/api/admin/external-firmas/overview?period=${period}`);
   return cache(key, {
     rows: raw.rows.map((r) => ({
       kind: r.kind,
@@ -311,7 +311,7 @@ export async function listManagedProjects(companyId: number, opts?: {
     created_at: string;
     updated_at: string;
   };
-  const rows = await call<Raw[]>(`/api/v1/projects?${qs.toString()}`);
+  const rows = await call<Raw[]>(`/api/projects?${qs.toString()}`);
   return cache(
     key,
     rows.map((r) => ({
@@ -336,7 +336,7 @@ export async function listManagedProjects(companyId: number, opts?: {
 
 /** Fetch the GAEB-parsed positions for a managed-firma project. Returns
  *  what we need to seed a kalku-website Position[] — calls upstream
- *  `GET /api/v1/projects/{id}` (which includes positions[]) and projects
+ *  `GET /api/projects/{id}` (which includes positions[]) and projects
  *  the shape down to the kalku-website Position fields. */
 export async function getProjectPositions(projectId: number): Promise<PreisanfragePosition[]> {
   if (isMockMode()) return getMockProjectPositions(projectId);
@@ -352,7 +352,7 @@ export async function getProjectPositions(projectId: number): Promise<Preisanfra
     page_number?: number | null;
   };
   type RawProject = { positions: RawPos[] };
-  const raw = await call<RawProject>(`/api/v1/projects/${projectId}`);
+  const raw = await call<RawProject>(`/api/projects/${projectId}`);
   const rows = (raw.positions ?? []).map((p) => ({
     oz: p.oz ?? '',
     shortText: p.short_text ?? '',
@@ -390,7 +390,7 @@ export async function listExternalProjects(externalFirmaId: number): Promise<Pre
     our_brutto: number | null;
     parsed_at: string | null;
   };
-  const rows = await call<Raw[]>(`/api/v1/admin/external-firmas/${externalFirmaId}/projects`);
+  const rows = await call<Raw[]>(`/api/admin/external-firmas/${externalFirmaId}/projects`);
   return cache(
     key,
     rows.map((r) => ({
