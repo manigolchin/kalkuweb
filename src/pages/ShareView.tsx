@@ -412,17 +412,27 @@ export default function ShareView() {
                 )}
               >
                 {p.isHeader ? (
-                  <h4 className="font-semibold text-primary-700">{p.shortText}</h4>
+                  /* PART N: KG/Titel heading wraps in full. */
+                  <h4 className="font-semibold text-primary-700 whitespace-pre-wrap break-words leading-[1.45]">
+                    {p.shortText}
+                  </h4>
                 ) : (
                   <>
                     <div className="flex items-start gap-4 flex-wrap sm:flex-nowrap">
-                      <span className="text-xs font-mono text-slate-400 w-12 mt-0.5 flex-shrink-0">
+                      <span className="text-xs font-mono text-slate-400 w-16 mt-0.5 flex-shrink-0 whitespace-pre">
                         {p.oz || '–'}
                       </span>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-900">{p.shortText}</p>
+                        {/* PART N: full Bezeichnung wraps; no truncation, no
+                            line-clamp. Customer always sees the complete text. */}
+                        <p
+                          data-testid={`share-bezeichnung-${p.id}`}
+                          className="text-sm font-medium text-slate-900 whitespace-pre-wrap break-words leading-[1.45]"
+                        >
+                          {p.shortText}
+                        </p>
                         {p.longText && (
-                          <p className="text-xs text-slate-600 mt-1 whitespace-pre-wrap leading-relaxed">
+                          <p className="text-xs text-slate-600 mt-1 whitespace-pre-wrap break-words leading-[1.45]">
                             {p.longText}
                           </p>
                         )}

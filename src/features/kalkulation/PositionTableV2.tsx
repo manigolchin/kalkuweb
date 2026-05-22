@@ -1,9 +1,7 @@
 import {
-  memo,
   useCallback,
   useMemo,
   useState,
-  type ChangeEvent,
 } from 'react';
 import {
   ChevronDown,
@@ -486,15 +484,17 @@ function GroupRows({
             {isCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </button>
         </td>
-        <td colSpan={5} className="bg-primary-50/60 border-t border-slate-200 px-2 py-1.5">
-          <div className="flex items-center gap-2">
-            <input
-              value={group.header.shortText}
-              onChange={(e) => updateRow(group.header.id, { shortText: e.target.value })}
-              placeholder="Titel / Abschnittsüberschrift"
-              className="flex-1 bg-transparent font-semibold text-primary-800 px-1 py-0.5 outline-none focus:bg-white focus:ring-1 focus:ring-primary-300 rounded"
-            />
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-primary-700/70 tabular-nums whitespace-nowrap">
+        <td colSpan={5} className="bg-primary-50/60 border-t border-slate-200 px-2 py-2">
+          <div className="flex items-start gap-2">
+            {/* PART N: group/KG headings wrap. PART O: read-only. */}
+            <div
+              data-readonly="group-name"
+              data-testid={`v2-group-name-${group.header.id}`}
+              className="flex-1 font-semibold text-primary-800 px-1 py-0.5 whitespace-pre-wrap break-words leading-[1.45]"
+            >
+              {group.header.shortText || '—'}
+            </div>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-primary-700/70 tabular-nums whitespace-nowrap shrink-0 mt-1">
               {group.rows.length} Pos
               {group.visibleRowCount !== group.rows.length && (
                 <span className="ml-1 text-amber-700">
@@ -556,8 +556,12 @@ type PositionRowProps = {
 function PositionRow({
   position: p,
   params,
-  updateRow,
-  updateNumber,
+  // updateRow + updateNumber + setPositionType retained in the type so
+  // GroupRows + the parent still pass them, but PART O made LV-position
+  // fields read-only — these handlers are now unreferenced inside this
+  // component. Underscore-prefix tells TS+lint to allow the unused param.
+  updateRow: _updateRow,
+  updateNumber: _updateNumber,
   removeRow,
   toggleVisibility,
   setPositionType,
@@ -582,7 +586,7 @@ function PositionRow({
           !p.visibleToCustomer && !internal && 'opacity-70',
         )}
       >
-        <td className="bg-white border-t border-slate-100 px-1 py-1 align-middle">
+        <td className="bg-white border-t border-slate-100 px-1 py-[10px] align-top">
           <button
             onClick={() =>
               internal ? setPositionType(p.id, 'standard') : toggleVisibility(p.id)
@@ -614,22 +618,31 @@ function PositionRow({
           </button>
         </td>
 
-        <td className="bg-white border-t border-slate-100 px-2 py-1 align-middle">
-          <input
-            value={p.oz}
-            onChange={(e) => updateRow(p.id, { oz: e.target.value })}
-            placeholder="—"
-            className="w-full font-mono text-[12px] text-slate-700 px-1 py-1 rounded bg-transparent outline-none focus:bg-slate-50 focus:ring-1 focus:ring-primary-200"
-          />
+        {/* OZ — read-only display, whitespace preserved so " 1. 4. 1.  .   1"
+            renders exactly as imported. Top-aligned so a multi-line
+            Bezeichnung doesn't push the OZ off the row. */}
+        <td className="bg-white border-t border-slate-100 px-2 py-[10px] align-top">
+          <div
+            data-readonly="oz"
+            className="w-full font-mono text-[12px] text-slate-700 px-1 py-1 whitespace-pre"
+            title={p.oz}
+          >
+            {p.oz || '—'}
+          </div>
         </td>
 
-        <td className="bg-white border-t border-slate-100 px-2 py-1 align-middle">
-          <div className="flex items-center gap-1 min-w-0">
+        {/* Bezeichnung — read-only display, FULL text always rendered.
+            white-space: pre-wrap respects newlines + spaces; break-words
+            breaks overlong tokens (e.g. cable specs without spaces).
+            line-height 1.45 + py-[10px] gives breathing room when the
+            row grows past a single line. */}
+        <td className="bg-white border-t border-slate-100 px-2 py-[10px] align-top">
+          <div className="flex items-start gap-1 min-w-0">
             {hasLong ? (
               <button
                 onClick={() => toggleLongText(p.id)}
                 className={clsx(
-                  'p-0.5 rounded text-slate-400 hover:text-primary-600 hover:bg-primary-50 shrink-0',
+                  'p-0.5 mt-0.5 rounded text-slate-400 hover:text-primary-600 hover:bg-primary-50 shrink-0',
                   isLongExpanded && 'text-primary-700 bg-primary-50',
                 )}
                 title={isLongExpanded ? 'Langtext einklappen' : 'Langtext anzeigen'}
@@ -639,13 +652,13 @@ function PositionRow({
             ) : (
               <span className="w-4 shrink-0" aria-hidden />
             )}
-            <input
-              value={p.shortText}
-              onChange={(e) => updateRow(p.id, { shortText: e.target.value })}
-              placeholder="Kurztext"
-              title={p.shortText}
-              className="flex-1 min-w-0 px-1 py-1 rounded bg-transparent outline-none focus:bg-slate-50 focus:ring-1 focus:ring-primary-200"
-            />
+            <div
+              data-readonly="bezeichnung"
+              data-testid={`v2-bezeichnung-${p.id}`}
+              className="flex-1 min-w-0 px-1 py-1 whitespace-pre-wrap break-words leading-[1.45] text-slate-900"
+            >
+              {p.shortText}
+            </div>
             {/* PART K: customer-comment badge. Shows only when count > 0.
                 Amber if any unresolved, slate if all resolved. Click → fires
                 onOpenComments(positionOz) so the parent can open the
@@ -674,25 +687,23 @@ function PositionRow({
           </div>
         </td>
 
-        <NumCell
-          value={p.quantity}
-          onChange={(v) => updateNumber(p.id, 'quantity', v)}
-        />
-
-        <td className="bg-white border-t border-slate-100 px-2 py-1 align-middle">
-          <input
-            value={p.unit}
-            onChange={(e) => updateRow(p.id, { unit: e.target.value })}
-            placeholder="—"
-            className="w-full text-xs text-slate-500 px-1 py-1 rounded bg-transparent outline-none focus:bg-slate-50 focus:ring-1 focus:ring-primary-200"
-          />
+        {/* Menge — read-only (PART O). Top-aligned so a multi-line Bezeichnung
+            doesn't push the price off the row. */}
+        <td className="bg-white border-t border-slate-100 px-2 py-[10px] align-top text-right tabular-nums text-slate-700">
+          <div data-readonly="menge">{formatNum(p.quantity, p.quantity % 1 === 0 ? 0 : 2)}</div>
         </td>
 
-        <td className="bg-white border-t border-slate-100 px-2 py-1 align-middle text-right tabular-nums text-slate-700">
+        <td className="bg-white border-t border-slate-100 px-2 py-[10px] align-top">
+          <div data-readonly="einheit" className="w-full text-xs text-slate-500 px-1 py-1">
+            {p.unit || '—'}
+          </div>
+        </td>
+
+        <td className="bg-white border-t border-slate-100 px-2 py-[10px] align-top text-right tabular-nums text-slate-700">
           {formatNum(calc.ep, 2)}
         </td>
 
-        <td className="bg-white border-t border-slate-100 px-2 py-1 align-middle text-right tabular-nums font-semibold text-slate-900">
+        <td className="bg-white border-t border-slate-100 px-2 py-[10px] align-top text-right tabular-nums font-semibold text-slate-900">
           {formatEUR(calc.gp)}
         </td>
 
@@ -700,30 +711,27 @@ function PositionRow({
           <div className="h-full w-px bg-slate-200 mx-auto" aria-hidden />
         </td>
 
-        <NumCell
-          intern
-          value={p.materialCost}
-          onChange={(v) => updateNumber(p.id, 'materialCost', v)}
-        />
-        <NumCell
-          intern
-          value={p.timeMinutes}
-          onChange={(v) => updateNumber(p.id, 'timeMinutes', v)}
-        />
-        <NumCell
-          intern
-          value={p.nuCost}
-          onChange={(v) => updateNumber(p.id, 'nuCost', v)}
-        />
+        {/* PART O: EK per cost type is LOCKED. Edit the Excel and re-import
+            to change. Top-aligned so a multi-line Bezeichnung doesn't push
+            these off-row. */}
+        <td className="bg-slate-50/70 border-t border-slate-100 px-2 py-[10px] align-top text-right tabular-nums text-slate-700">
+          <div data-readonly="materialCost">{p.materialCost ? formatNum(p.materialCost, p.materialCost % 1 === 0 ? 0 : 2) : ''}</div>
+        </td>
+        <td className="bg-slate-50/70 border-t border-slate-100 px-2 py-[10px] align-top text-right tabular-nums text-slate-700">
+          <div data-readonly="timeMinutes">{p.timeMinutes ? formatNum(p.timeMinutes, p.timeMinutes % 1 === 0 ? 0 : 2) : ''}</div>
+        </td>
+        <td className="bg-slate-50/70 border-t border-slate-100 px-2 py-[10px] align-top text-right tabular-nums text-slate-700">
+          <div data-readonly="nuCost">{p.nuCost ? formatNum(p.nuCost, p.nuCost % 1 === 0 ? 0 : 2) : ''}</div>
+        </td>
 
-        <td className="bg-slate-50/70 border-t border-slate-100 px-1 py-1 align-middle">
+        <td className="bg-slate-50/70 border-t border-slate-100 px-1 py-[10px] align-top">
           <PositionTypeSelect
             value={pt}
             onChange={(t) => setPositionType(p.id, t)}
           />
         </td>
 
-        <td className="bg-slate-50/70 border-t border-slate-100 px-1 py-1 align-middle">
+        <td className="bg-slate-50/70 border-t border-slate-100 px-1 py-[10px] align-top">
           {hasLong && (
             <span
               className="inline-flex items-center justify-center w-6 h-6 rounded text-slate-400"
@@ -734,7 +742,7 @@ function PositionRow({
           )}
         </td>
 
-        <td className="bg-slate-50/70 border-t border-slate-100 px-1 py-1 align-middle">
+        <td className="bg-slate-50/70 border-t border-slate-100 px-1 py-[10px] align-top">
           <button
             onClick={() => removeRow(p.id)}
             className="p-1 rounded text-slate-300 hover:bg-red-50 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -752,13 +760,16 @@ function PositionRow({
           <td colSpan={5} className="bg-slate-50/40 border-t border-slate-100 px-2 py-2">
             <div className="flex items-start gap-2">
               <FileText className="w-3.5 h-3.5 text-slate-400 mt-1.5 shrink-0" />
-              <textarea
-                value={p.longText}
-                onChange={(e) => updateRow(p.id, { longText: e.target.value })}
-                rows={Math.min(Math.max(3, (p.longText ?? '').split(/\r?\n/).length), 12)}
-                className="flex-1 text-sm bg-white border border-slate-200 rounded p-2 outline-none focus:border-primary-300 focus:ring-1 focus:ring-primary-200 whitespace-pre-wrap font-sans leading-relaxed"
-                placeholder="Detaillierte Beschreibung…"
-              />
+              {/* PART N + O: full Langtext rendered read-only with pre-wrap.
+                  LV langtext is sourced from Excel — edit in Excel and re-import
+                  to change. */}
+              <div
+                data-readonly="longText"
+                data-testid={`v2-longtext-${p.id}`}
+                className="flex-1 text-sm bg-white border border-slate-200 rounded p-2 whitespace-pre-wrap break-words font-sans leading-[1.45] text-slate-800"
+              >
+                {p.longText}
+              </div>
             </div>
           </td>
           <td className="bg-slate-50/40 border-t border-slate-100" />
@@ -769,63 +780,11 @@ function PositionRow({
   );
 }
 
-const NumCell = memo(function NumCell({
-  value,
-  onChange,
-  intern,
-}: {
-  value: number;
-  onChange: (raw: string) => void;
-  intern?: boolean;
-}) {
-  const d = value % 1 === 0 ? 0 : 2;
-  const formatted = value === 0 ? '' : formatNum(value, d);
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState('');
-
-  return (
-    <td
-      className={clsx(
-        'border-t border-slate-100 px-1 py-1 align-middle',
-        intern ? 'bg-slate-50/70' : 'bg-white',
-      )}
-    >
-      <input
-        value={editing ? draft : formatted}
-        placeholder="0"
-        inputMode="decimal"
-        onChange={(e: ChangeEvent<HTMLInputElement>) => setDraft(e.target.value)}
-        onFocus={(e) => {
-          setEditing(true);
-          setDraft(formatted);
-          e.target.select();
-        }}
-        onBlur={(e) => {
-          const final = e.currentTarget.value;
-          if (final !== formatted) onChange(final);
-          setEditing(false);
-          setDraft('');
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') e.currentTarget.blur();
-          else if (e.key === 'Escape') {
-            setEditing(false);
-            setDraft('');
-            e.currentTarget.blur();
-          }
-        }}
-        className={clsx(
-          'w-full px-1.5 py-1 rounded text-right tabular-nums outline-none transition-colors',
-          'placeholder:text-slate-300 cursor-text border border-transparent',
-          value === 0
-            ? 'text-slate-500 hover:border-slate-300 hover:bg-white'
-            : 'text-slate-900',
-          'focus:bg-white focus:border-primary-400 focus:ring-1 focus:ring-primary-200',
-        )}
-      />
-    </td>
-  );
-});
+// Round 4 PART O removed the NumCell editable component — LV-position
+// numeric fields (Menge, Material EK, Min/Einheit, NU EK) are now rendered
+// inline as read-only <div>s in PositionRow above. The only EDITABLE
+// numeric inputs in v2 are the ZSCHLG % cells in the matrix header strip
+// (PART O), which use a dedicated <ZschlgInput> defined further down.
 
 function PositionTypeSelect({
   value,
@@ -1124,10 +1083,16 @@ function KundenPositionRow({ position: p, params }: { position: Position; params
       <td className="px-3 py-2 border-t border-slate-100 font-mono text-[12px] text-slate-700 align-top whitespace-nowrap">
         {p.oz || '—'}
       </td>
-      <td className="px-3 py-2 border-t border-slate-100 align-top text-slate-900">
-        <div>{p.shortText || '—'}</div>
+      <td className="px-3 py-[10px] border-t border-slate-100 align-top text-slate-900">
+        {/* PART N: full Bezeichnung visible — no clipping, no ellipsis. */}
+        <div
+          data-testid={`kunden-bezeichnung-${p.id}`}
+          className="whitespace-pre-wrap break-words leading-[1.45]"
+        >
+          {p.shortText || '—'}
+        </div>
         {p.longText && (
-          <div className="mt-1 text-xs text-slate-500 whitespace-pre-wrap leading-relaxed">
+          <div className="mt-1 text-xs text-slate-500 whitespace-pre-wrap break-words leading-[1.45]">
             {p.longText}
           </div>
         )}
