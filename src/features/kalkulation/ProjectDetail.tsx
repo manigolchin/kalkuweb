@@ -60,6 +60,10 @@ export default function ProjectDetail() {
   const [showImport, setShowImport] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [tableVersion, setTableVersion] = useState<TableVersion>(() => readSavedTableVersion());
+  // PART K: per-OZ customer-comment counts. Refreshed on project load and
+  // whenever an auto-save lands (in case the customer commented in the
+  // meantime). Empty {} = no badges render.
+  const [commentCounts, setCommentCounts] = useState<Record<string, { total: number; unresolved: number }>>({});
 
   const switchTableVersion = useCallback((v: TableVersion) => {
     setTableVersion(v);
@@ -76,6 +80,20 @@ export default function ProjectDetail() {
   // value from when the effect was queued.
   const updatedAtRef = useRef<number>(0);
 
+  // PART K: fetch comment counts (cheap aggregate, safe to call on every
+  // project mount + after each save). Silent on failure — badges just stay
+  // hidden if the endpoint isn't reachable. Wraps in a named function so
+  // the auto-save effect below can call it after a successful PUT too.
+  const refreshCommentCounts = useCallback(async () => {
+    if (!id) return;
+    try {
+      const { counts } = await api.shares.commentCounts(id);
+      setCommentCounts(counts);
+    } catch {
+      // Endpoint may not exist on older servers — silent.
+    }
+  }, [id]);
+
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -88,6 +106,8 @@ export default function ProjectDetail() {
         setData(normalizeProject(detail.data));
         lastSavedRef.current = JSON.stringify(detail.data);
         updatedAtRef.current = new Date(detail.updatedAt).getTime();
+        // Fire-and-forget — runs in parallel with the initial render.
+        refreshCommentCounts();
       } catch (err) {
         if (err instanceof ApiError && err.status === 404) {
           setError('Projekt nicht gefunden.');
@@ -101,7 +121,7 @@ export default function ProjectDetail() {
     return () => {
       alive = false;
     };
-  }, [id]);
+  }, [id, refreshCommentCounts]);
 
   // auto-save: server is now the source of truth for derived EP/GP (P1-2) — it
   // recomputes on PUT. We still recalc client-side for instant feedback.
@@ -357,6 +377,12 @@ export default function ProjectDetail() {
                 tenderNumber: data.tenderNumber,
                 deadline: data.deadline,
                 bidder: data.bidder,
+              }}
+              commentCounts={commentCounts}
+              onOpenComments={(oz) => {
+                // For now, route the click into the existing Kunden-Feedback
+                // inbox tab. A future iteration may open an in-panel thread.
+                window.open(`/panel/feedback?oz=${encodeURIComponent(oz)}`, '_self');
               }}
             />
           ) : (

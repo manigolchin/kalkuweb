@@ -117,6 +117,34 @@ export const api = {
   shares: {
     listForProject: (projectId: string) =>
       request<{ shares: ShareSummary[] }>(`/projects/${projectId}/shares`),
+    /** PART K: project-wide comment counts grouped by positionOz. Used to
+     *  render badges on PositionTableV2 rows. Cheap aggregate; safe to
+     *  call on every project open and every save. */
+    commentCounts: (projectId: string) =>
+      request<{ counts: Record<string, { total: number; unresolved: number }> }>(
+        `/projects/${projectId}/comments/counts`,
+      ),
+    /** PART K: full per-position comment list. Used when the calculator
+     *  clicks a row badge to expand the thread. */
+    comments: (projectId: string) =>
+      request<{
+        comments: Array<{
+          id: string;
+          shareId: string;
+          positionOz: string;
+          intent: 'accept' | 'change_menge' | 'change_fabrikat' | 'negotiate_ep' | 'other';
+          text: string;
+          authorName: string | null;
+          authorEmail: string | null;
+          createdAt: number | string;
+          resolvedAt: number | string | null;
+        }>;
+        grouped: Record<string, Array<{
+          id: string; positionOz: string; intent: string; text: string;
+          authorName: string | null; authorEmail: string | null;
+          createdAt: number | string;
+        }>>;
+      }>(`/projects/${projectId}/comments`),
     create: (
       projectId: string,
       input: { visiblePositionIds: string[]; settings: ShareSettings; parentShareId?: string },
@@ -243,5 +271,26 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(input),
       }),
+    /** PART K: granular per-position comment. Honors the share's password
+     *  gate via the X-Share-Password header (set the same way as getShare). */
+    postComment: (
+      token: string,
+      input: {
+        positionOz: string;
+        intent: 'accept' | 'change_menge' | 'change_fabrikat' | 'negotiate_ep' | 'other';
+        text: string;
+        authorName?: string;
+        authorEmail?: string;
+      },
+      password?: string,
+    ) =>
+      request<{ ok: true; id: string; createdAt: string; positionOz: string; intent: string }>(
+        `/share/${token}/comments`,
+        {
+          method: 'POST',
+          body: JSON.stringify(input),
+          headers: password ? { 'X-Share-Password': password } : undefined,
+        },
+      ),
   },
 };

@@ -18,6 +18,7 @@ import {
   AlertCircle,
   Layers,
   Users,
+  MessageCircle,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { nanoid } from 'nanoid';
@@ -55,6 +56,15 @@ type Props = {
     deadline: string;
     bidder: string;
   };
+  /** PART K: per-position customer-comment counts. Keyed by the position's
+   *  OZ string. Each entry has `total` (all comments ever) and `unresolved`
+   *  (still-open count, drives the amber dot). Optional — when absent, no
+   *  badges render. */
+  commentCounts?: Record<string, { total: number; unresolved: number }>;
+  /** PART K: handler when the calculator clicks a row's comment badge. Gets
+   *  the position's OZ so the parent can open the relevant FeedbackInbox
+   *  thread. */
+  onOpenComments?: (positionOz: string) => void;
 };
 
 type Group =
@@ -76,6 +86,8 @@ export default function PositionTableV2({
   view: controlledView,
   onViewChange,
   projectMeta,
+  commentCounts,
+  onOpenComments,
 }: Props) {
   const [uncontrolledView, setUncontrolledView] = useState<V2ViewMode>('intern');
   const view = controlledView ?? uncontrolledView;
@@ -330,6 +342,8 @@ export default function PositionTableV2({
                   setPositionType={setPositionType}
                   toggleLongText={toggleLongText}
                   expandedLong={expandedLong}
+                  commentCounts={commentCounts}
+                  onOpenComments={onOpenComments}
                 />
               ) : (
                 <PositionRow
@@ -343,6 +357,8 @@ export default function PositionTableV2({
                   setPositionType={setPositionType}
                   toggleLongText={toggleLongText}
                   isLongExpanded={expandedLong.has(g.row.id)}
+                  commentCount={commentCounts?.[g.row.oz?.trim() ?? '']}
+                  onOpenComments={onOpenComments}
                 />
               ),
             )}
@@ -438,6 +454,8 @@ type GroupRowsProps = {
   setPositionType: (id: string, t: PositionType) => void;
   toggleLongText: (id: string) => void;
   expandedLong: Set<string>;
+  commentCounts?: Record<string, { total: number; unresolved: number }>;
+  onOpenComments?: (positionOz: string) => void;
 };
 
 function GroupRows({
@@ -452,6 +470,8 @@ function GroupRows({
   setPositionType,
   toggleLongText,
   expandedLong,
+  commentCounts,
+  onOpenComments,
 }: GroupRowsProps) {
   return (
     <>
@@ -511,6 +531,8 @@ function GroupRows({
             setPositionType={setPositionType}
             toggleLongText={toggleLongText}
             isLongExpanded={expandedLong.has(p.id)}
+            commentCount={commentCounts?.[p.oz?.trim() ?? '']}
+            onOpenComments={onOpenComments}
           />
         ))}
     </>
@@ -527,6 +549,8 @@ type PositionRowProps = {
   setPositionType: (id: string, t: PositionType) => void;
   toggleLongText: (id: string) => void;
   isLongExpanded: boolean;
+  commentCount?: { total: number; unresolved: number };
+  onOpenComments?: (positionOz: string) => void;
 };
 
 function PositionRow({
@@ -539,6 +563,8 @@ function PositionRow({
   setPositionType,
   toggleLongText,
   isLongExpanded,
+  commentCount,
+  onOpenComments,
 }: PositionRowProps) {
   const calc = useMemo(() => calculatePosition(p, params), [p, params]);
   const pt = (p.positionType ?? 'standard') as PositionType;
@@ -620,6 +646,31 @@ function PositionRow({
               title={p.shortText}
               className="flex-1 min-w-0 px-1 py-1 rounded bg-transparent outline-none focus:bg-slate-50 focus:ring-1 focus:ring-primary-200"
             />
+            {/* PART K: customer-comment badge. Shows only when count > 0.
+                Amber if any unresolved, slate if all resolved. Click → fires
+                onOpenComments(positionOz) so the parent can open the
+                FeedbackInbox thread filtered to this OZ. */}
+            {commentCount && commentCount.total > 0 && (
+              <button
+                type="button"
+                onClick={() => onOpenComments?.(p.oz?.trim() ?? '')}
+                data-testid={`v2-comment-badge-${p.id}`}
+                title={
+                  commentCount.unresolved > 0
+                    ? `${commentCount.unresolved} offene Kunden-Anmerkung${commentCount.unresolved === 1 ? '' : 'en'} (${commentCount.total} gesamt)`
+                    : `${commentCount.total} erledigte Kunden-Anmerkung${commentCount.total === 1 ? '' : 'en'}`
+                }
+                className={clsx(
+                  'inline-flex items-center gap-0.5 shrink-0 px-1.5 py-0.5 rounded-md text-[10px] font-semibold tabular-nums',
+                  commentCount.unresolved > 0
+                    ? 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+                    : 'bg-slate-100 text-slate-500 hover:bg-slate-200',
+                )}
+              >
+                <MessageCircle className="w-3 h-3" />
+                {commentCount.unresolved > 0 ? commentCount.unresolved : commentCount.total}
+              </button>
+            )}
           </div>
         </td>
 

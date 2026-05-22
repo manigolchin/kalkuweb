@@ -1,10 +1,10 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql, inArray } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import bcrypt from 'bcryptjs';
 import { db } from '../db.js';
-import { projects, shares, shareResponses } from '../schema.js';
+import { projects, shares, shareResponses, positionComments } from '../schema.js';
 import { requireAuth, clientIp, type AuthVariables } from '../lib/middleware.js';
 import { buildShareSnapshot, snapshotHash, diffSnapshots } from '../lib/snapshot.js';
 import { recordAuditEvent } from '../lib/audit.js';
@@ -258,6 +258,67 @@ export const sharesRoute = new Hono<{ Variables: AuthVariables }>()
       proposedHash: snapshotHash(proposed),
       diff,
     });
+  })
+
+  /** PART K: per-project comment list grouped by positionOz. Owner-auth
+   *  required (the calculator views this on the INTERN side). Aggregates
+   *  across ALL non-revoked shares of the project so a multi-share
+   *  conversation surfaces in one place. */
+  .get('/projects/:id/comments', requireAuth, async (c) => {
+    const projectId = c.req.param('id');
+    const userId = c.get('userId');
+    const project = await db.query.projects.findFirst({
+      where: and(eq(projects.id, projectId), eq(projects.ownerId, userId)),
+    });
+    if (!project) return c.json({ error: 'not_found' }, 404);
+
+    // Find all share ids for this project (revoked or not — calculator
+    // wants to see historical comments even after a link is revoked).
+    const projShares = await db.select({ id: shares.id }).from(shares).where(eq(shares.projectId, projectId));
+    if (projShares.length === 0) return c.json({ comments: [], grouped: {} });
+    const ids = projShares.map((s) => s.id);
+    const rows = await db
+      .select()
+      .from(positionComments)
+      .where(inArray(positionComments.shareId, ids))
+      .orderBy(desc(positionComments.createdAt));
+
+    // Group by positionOz for INTERN-view consumption.
+    const grouped: Record<string, typeof rows> = {};
+    for (const r of rows) {
+      (grouped[r.positionOz] ??= []).push(r);
+    }
+    return c.json({ comments: rows, grouped });
+  })
+
+  /** PART K: just the counts — used by the v2 INTERN row badges so the
+   *  table can render N badges without pulling the full comment text. */
+  .get('/projects/:id/comments/counts', requireAuth, async (c) => {
+    const projectId = c.req.param('id');
+    const userId = c.get('userId');
+    const project = await db.query.projects.findFirst({
+      where: and(eq(projects.id, projectId), eq(projects.ownerId, userId)),
+    });
+    if (!project) return c.json({ error: 'not_found' }, 404);
+
+    const projShares = await db.select({ id: shares.id }).from(shares).where(eq(shares.projectId, projectId));
+    if (projShares.length === 0) return c.json({ counts: {} });
+    const ids = projShares.map((s) => s.id);
+    const rows = await db
+      .select({
+        positionOz: positionComments.positionOz,
+        n: sql<number>`count(*)`.as('n'),
+        unresolved: sql<number>`sum(case when ${positionComments.resolvedAt} is null then 1 else 0 end)`.as('unresolved'),
+      })
+      .from(positionComments)
+      .where(inArray(positionComments.shareId, ids))
+      .groupBy(positionComments.positionOz);
+
+    const counts: Record<string, { total: number; unresolved: number }> = {};
+    for (const r of rows) {
+      counts[r.positionOz] = { total: Number(r.n), unresolved: Number(r.unresolved) };
+    }
+    return c.json({ counts });
   })
 
   /** Replace the share's frozen snapshot with the current project state.

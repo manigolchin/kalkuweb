@@ -17,7 +17,7 @@
  * fields are not in the type — they cannot be rendered even by accident.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { X, MessageSquare, Trash2, HelpCircle, Pencil, Mail, User } from 'lucide-react';
 import clsx from 'clsx';
 import type { CustomerViewPayload } from '@/features/kalkulation/types';
@@ -42,6 +42,18 @@ type Props = {
   onClear: () => void;
   onSetCustomerName: (v: string) => void;
   onSetCustomerEmail: (v: string) => void;
+  /** PART K: optional persist-to-server handler. When provided, "Anmerkung
+   *  merken" calls this with the current draft + identity. The parent
+   *  (ShareView) translates the legacy intent enum into the PART K enum
+   *  and POSTs to /share/:token/comments. When omitted, the panel falls
+   *  back to local-state-only behaviour (the existing batched flow). */
+  onSubmitToServer?: (input: {
+    positionOz: string;
+    intent: CommentDraft['type'];
+    text: string;
+    authorName?: string;
+    authorEmail?: string;
+  }) => Promise<void>;
 };
 
 const INTENTS: Array<{ key: CommentDraft['type']; label: string; hint: string; icon: typeof Pencil }> = [
@@ -61,7 +73,9 @@ export default function PositionCommentPanel({
   onClear,
   onSetCustomerName,
   onSetCustomerEmail,
+  onSubmitToServer,
 }: Props) {
+  const [submitting, setSubmitting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Focus the textarea when the panel opens so the customer can start
@@ -260,12 +274,40 @@ export default function PositionCommentPanel({
           )}
           <button
             type="button"
-            onClick={onClose}
-            disabled={!hasContact && (draft?.text.trim().length ?? 0) > 0}
+            onClick={async () => {
+              // If there's a non-empty draft AND a server handler, POST it
+              // before closing. Falls back to local-state-only behaviour
+              // when onSubmitToServer is omitted (preserves the legacy
+              // batched flow for callers that haven't opted in).
+              const text = (draft?.text ?? '').trim();
+              if (text.length > 0 && onSubmitToServer && position) {
+                setSubmitting(true);
+                try {
+                  await onSubmitToServer({
+                    positionOz: (position.oz || '').trim(),
+                    intent: draft?.type ?? 'comment',
+                    text,
+                    authorName: customerName.trim() || undefined,
+                    authorEmail: customerEmail.trim() || undefined,
+                  });
+                } catch {
+                  // Don't close on error — let the user retry.
+                  setSubmitting(false);
+                  return;
+                }
+                setSubmitting(false);
+              }
+              onClose();
+            }}
+            disabled={
+              submitting ||
+              (!hasContact && (draft?.text.trim().length ?? 0) > 0)
+            }
+            data-testid="position-comment-submit"
             className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg bg-primary-600 text-white text-sm font-semibold hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
             title={!hasContact && (draft?.text.trim().length ?? 0) > 0 ? 'Bitte Namen eintragen' : undefined}
           >
-            Anmerkung merken
+            {submitting ? 'Senden…' : 'Anmerkung senden'}
           </button>
         </footer>
       </aside>

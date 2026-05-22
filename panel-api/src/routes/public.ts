@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
@@ -47,6 +47,83 @@ async function logAccess(
   }
 }
 
+/**
+ * Shared gate helper used by both `GET /share/:token` and any
+ * write endpoint that addresses a share via its token (PART K's
+ * comment POST). Returns either:
+ *   - { share }                       → allowed; caller proceeds
+ *   - { response }                    → already-formed HTTP response; caller returns it
+ *
+ * Centralizes: not-found / revoked / expired / password / rate-limit /
+ * access-log so the same audit chain covers reads AND writes.
+ */
+async function gateShare(
+  c: Context,
+  token: string,
+  opts: { requirePassword: boolean } = { requirePassword: true },
+): Promise<
+  | { share: typeof shares.$inferSelect }
+  | { response: Response }
+> {
+  // The opts are forward-looking — currently both reads + writes require
+  // the password if one is set. The flag is here so a future read-only
+  // metadata endpoint could be made public without a password if needed.
+  void opts;
+  const ip = clientIp(c);
+  const ua = (c.req.header('user-agent') || '').slice(0, 500);
+  const share = await db.query.shares.findFirst({ where: eq(shares.token, token) });
+  if (!share) return { response: c.json({ error: 'not_found' }, 404) };
+  if (share.revokedAt) {
+    await logAccess(share.id, ip, false, 'revoked', ua);
+    return { response: c.json({ error: 'revoked', reason: 'revoked' }, 410) };
+  }
+  if (share.expiresAt && share.expiresAt.getTime() < Date.now()) {
+    await logAccess(share.id, ip, false, 'expired', ua);
+    return { response: c.json({ error: 'expired', reason: 'expired' }, 410) };
+  }
+  if (share.passwordHash) {
+    const providedPwd = c.req.header('X-Share-Password') || c.req.header('x-share-password');
+    if (!providedPwd) {
+      await logAccess(share.id, ip, false, 'gate_hit', ua);
+      return { response: c.json({ error: 'password_required', reason: 'password_required' }, 401) };
+    }
+    const limit = checkAndRecordFailure('share-unlock', token, ip || 'unknown', UNLOCK_RATELIMIT);
+    if (!limit.allowed) {
+      await logAccess(share.id, ip, false, 'rate_limited', ua);
+      c.header('Retry-After', String(limit.retryAfter));
+      return {
+        response: c.json(
+          {
+            error: 'rate_limited',
+            reason: 'rate_limited',
+            retryAfter: limit.retryAfter,
+            message: 'too_many_password_attempts',
+          },
+          429,
+        ),
+      };
+    }
+    const ok = await bcrypt.compare(providedPwd, share.passwordHash);
+    if (!ok) {
+      await logAccess(share.id, ip, false, 'wrong_password', ua);
+      return { response: c.json({ error: 'password_required', reason: 'password_required' }, 401) };
+    }
+    resetFailureCounter('share-unlock', token, ip || 'unknown');
+    await logAccess(share.id, ip, true, 'unlock_attempt', ua);
+  } else {
+    await logAccess(share.id, ip, true, 'ok', ua);
+  }
+  return { share };
+}
+
+const commentSchema = z.object({
+  positionOz: z.string().trim().min(1).max(200),
+  intent: z.enum(['accept', 'change_menge', 'change_fabrikat', 'negotiate_ep', 'other']),
+  text: z.string().trim().min(1).max(4000),
+  authorName: z.string().trim().min(1).max(200).optional(),
+  authorEmail: z.string().email().max(200).optional(),
+});
+
 const approveSchema = z.object({
   customerName: z.string().trim().min(1).max(200),
   customerEmail: z.string().email().max(200).optional(),
@@ -72,63 +149,9 @@ const changesSchema = z.object({
 export const publicRoute = new Hono()
   .get('/share/:token', async (c) => {
     const token = c.req.param('token');
-    const ip = clientIp(c);
-    const ua = (c.req.header('user-agent') || '').slice(0, 500);
-    const share = await db.query.shares.findFirst({ where: eq(shares.token, token) });
-    if (!share) return c.json({ error: 'not_found' }, 404);
-    if (share.revokedAt) {
-      await logAccess(share.id, ip, false, 'revoked', ua);
-      return c.json({ error: 'revoked', reason: 'revoked' }, 410);
-    }
-
-    // PART J: expiry check. Past expiresAt → 410 with reason='expired'.
-    // Distinct copy from 'revoked' so the customer knows whether to ask for
-    // an extension or assume the offer was withdrawn.
-    if (share.expiresAt && share.expiresAt.getTime() < Date.now()) {
-      await logAccess(share.id, ip, false, 'expired', ua);
-      return c.json({ error: 'expired', reason: 'expired' }, 410);
-    }
-
-    // PART J: password gate. If a hash is set, require X-Share-Password
-    // header. Constant-time compare via bcrypt.compare. Rate-limit failures
-    // per (token, ip) per 15 min. Reset counter on success.
-    if (share.passwordHash) {
-      const providedPwd = c.req.header('X-Share-Password') || c.req.header('x-share-password');
-      if (!providedPwd) {
-        await logAccess(share.id, ip, false, 'gate_hit', ua);
-        return c.json({ error: 'password_required', reason: 'password_required' }, 401);
-      }
-      // Rate-limit BEFORE the bcrypt compare so a brute-force attacker can't
-      // amortize CPU cost — they hit 429 first.
-      const limit = checkAndRecordFailure('share-unlock', token, ip || 'unknown', UNLOCK_RATELIMIT);
-      if (!limit.allowed) {
-        await logAccess(share.id, ip, false, 'rate_limited', ua);
-        c.header('Retry-After', String(limit.retryAfter));
-        return c.json(
-          {
-            error: 'rate_limited',
-            reason: 'rate_limited',
-            retryAfter: limit.retryAfter,
-            message: 'too_many_password_attempts',
-          },
-          429,
-        );
-      }
-      const ok = await bcrypt.compare(providedPwd, share.passwordHash);
-      if (!ok) {
-        await logAccess(share.id, ip, false, 'wrong_password', ua);
-        return c.json({ error: 'password_required', reason: 'password_required' }, 401);
-      }
-      // Success — clear the failure counter so a customer who got the
-      // password right on the 4th try doesn't get locked out on reload.
-      resetFailureCounter('share-unlock', token, ip || 'unknown');
-      await logAccess(share.id, ip, true, 'unlock_attempt', ua);
-    } else {
-      // Unprotected share — log the OK access without contributing to any
-      // rate-limit counter.
-      await logAccess(share.id, ip, true, 'ok', ua);
-    }
-
+    const gate = await gateShare(c, token);
+    if ('response' in gate) return gate.response;
+    const share = gate.share;
     const project = await db.query.projects.findFirst({ where: eq(projects.id, share.projectId) });
     if (!project) return c.json({ error: 'not_found' }, 404);
 
@@ -497,4 +520,76 @@ export const publicRoute = new Hono()
     });
 
     return c.json({ ok: true, respondedAt: now, snapshotHash: share.snapshotHash });
+  })
+
+  /**
+   * PART K: per-position comment. Routed through the share token (the link
+   * IS the credential — no panel auth). Honors the share's password gate
+   * (gateShare reuses the exact same logic the GET uses).
+   *
+   * Validates that positionOz exists in the snapshot the customer is
+   * looking at — prevents a malicious caller from posting comments
+   * against OZ values that aren't in this share.
+   */
+  .post('/share/:token/comments', async (c) => {
+    const token = c.req.param('token');
+    const gate = await gateShare(c, token);
+    if ('response' in gate) return gate.response;
+    const share = gate.share;
+
+    const body = await c.req.json().catch(() => null);
+    const parsed = commentSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json({ error: 'invalid_input', detail: parsed.error.issues }, 400);
+    }
+
+    // Validate that the positionOz appears in the snapshot's visible
+    // positions. This blocks "post a comment against OZ 9.9.9 even though
+    // the share doesn't include that position" — keeps the comment table
+    // tightly aligned with what the customer was actually shown.
+    const snapshotPositions = share.snapshotData?.positions ?? [];
+    const ozInSnapshot = snapshotPositions.some((p) => p.oz === parsed.data.positionOz);
+    if (!ozInSnapshot) {
+      return c.json({ error: 'oz_not_in_share', positionOz: parsed.data.positionOz }, 400);
+    }
+
+    const id = nanoid(16);
+    const now = new Date();
+    await db.insert(positionComments).values({
+      id,
+      shareId: share.id,
+      positionOz: parsed.data.positionOz,
+      intent: parsed.data.intent,
+      text: parsed.data.text,
+      authorName: parsed.data.authorName ?? null,
+      authorEmail: parsed.data.authorEmail ?? null,
+      ip: clientIp(c) ?? null,
+      userAgent: (c.req.header('user-agent') || '').slice(0, 500),
+      createdAt: now,
+    });
+
+    await recordAuditEvent({
+      shareId: share.id,
+      projectId: share.projectId,
+      eventType: 'response.submitted',
+      actorKind: 'customer',
+      actorRef: parsed.data.authorEmail ?? null,
+      ip: clientIp(c),
+      userAgent: (c.req.header('user-agent') || '').slice(0, 500),
+      payload: {
+        kind: 'position_comment',
+        positionOz: parsed.data.positionOz,
+        intent: parsed.data.intent,
+        textLength: parsed.data.text.length,
+        browserFingerprint: clientFingerprint(c),
+      },
+    });
+
+    return c.json({
+      ok: true,
+      id,
+      createdAt: now.toISOString(),
+      positionOz: parsed.data.positionOz,
+      intent: parsed.data.intent,
+    });
   });

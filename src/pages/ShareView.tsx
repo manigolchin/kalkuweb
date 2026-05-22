@@ -569,7 +569,9 @@ export default function ShareView() {
       )}
 
       {/* PART G: side-panel for per-position comments. Renders absolutely
-          fixed; doesn't share the document flow. */}
+          fixed; doesn't share the document flow.
+          PART K: also wires onSubmitToServer so the panel POSTs to the
+          new /comments endpoint on "Anmerkung senden". */}
       <PositionCommentPanel
         open={panelPositionId !== null}
         position={panelPositionId ? positions.find((p) => p.id === panelPositionId) ?? null : null}
@@ -581,6 +583,31 @@ export default function ShareView() {
         onClear={() => panelPositionId && removeChange(panelPositionId)}
         onSetCustomerName={setCustomerName}
         onSetCustomerEmail={setCustomerEmail}
+        onSubmitToServer={async (input) => {
+          // Map the legacy panel intent enum (modify | remove | comment)
+          // to the richer PART K enum. 'modify' is the most common case
+          // and best maps to 'change_menge' as the canonical "I want
+          // something different" bucket; 'remove' has no direct match so
+          // it lands in 'other' with the user's free-text carrying intent.
+          const intentMap: Record<typeof input.intent, 'change_menge' | 'other'> = {
+            modify: 'change_menge',
+            remove: 'other',
+            comment: 'other',
+          };
+          // Best-effort retrieval of the session-cached password (set in
+          // loadShare on successful unlock). Lets a password-gated share
+          // post comments without re-prompting.
+          let storedPwd: string | undefined;
+          try { storedPwd = window.sessionStorage.getItem(sessionKey) ?? undefined; } catch { /* ignore */ }
+          await api.public.postComment(token, {
+            positionOz: input.positionOz,
+            intent: intentMap[input.intent],
+            text: input.text,
+            authorName: input.authorName,
+            authorEmail: input.authorEmail,
+          }, storedPwd);
+          toast.success('Anmerkung gesendet.');
+        }}
       />
     </div>
   );
