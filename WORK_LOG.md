@@ -5,6 +5,19 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-05-23 00:25 — Round 8 — +186 new tests, full re-verification
+- Source: user "check everything again and debug and make so many tests"
+- Branch: claude-auto/v2-gaps-closeout (continued)
+- Result: committed 09e7e52 → feature branch pushed
+- Notes: Baseline pass clean (349 + 68 = 417 tests, lint 0, tsc clean, build green, live preisanfrage 110/186ms). Then added 4 new test files totaling +186 tests covering the gaps left after Round 7:
+  - `panel-api/test/firmen-round8.test.ts` (+27): mock-mode env parsing edge cases (true/TRUE/1/yes/on / 0/false/no/off), cache TTL eviction, structuredClone isolation, URL path regression (asserts /api/* NOT /api/v1/* — would have caught the 2-hour-earlier bug), snake→camel mapping for getProjectPositions + listExternalProjects, PreisanfrageError preserves status+body on non-JSON 500, 403 propagation, firma_calc_defaults precision round-trip (basis-points × 10000 + cents × 100 stay exact), composite-PK enforcement, expanded JWT-leak guard (env JWT never in return value or error message).
+  - `src/pages/panel/__tests__/Firmen.test.tsx` (+17): loading/0/1/10 rows, DEMO badge iff isMock, search filter (name + folder), all 4 filter tabs, "Neu — Setup ausstehend" + "Eigene Defaults" badges, 503/500 error states, XSS sentinel guard.
+  - `src/pages/panel/__tests__/Firma.test.tsx` (+12): header + 404 + invalid kind, defaults form pre-population, isCustom hints, Speichern decoding, Auschreibungen rendering + sort, the critical "Kalkulation starten" cascade end-to-end (12 assertions deep: bidder + client + tenderNumber + deadline + all 4 calcParams overrides + 2 seeded positions with sortOrder + sectionPath + navigation), external firma skips positions, position-fetch fallback non-fatal, Reset confirm + DELETE.
+  - `src/features/kalkulation/__tests__/calc.property.test.ts` (+130): Cartesian property tests over 6 position samples × 5 param samples × 4 invariants. Caught a real subtlety: two-step rounding means GP can drift up to quantity × 0,005 + 0,005 from quantity × EP (documented bound). Mobilbauzaun anchor case explicit. Header rows always-zero. recalcAll/calcTotals correctness.
+  - Bug fix during test writing: `isMockMode` previously didn't recognize "no"/"yes" — extended to accept {true,TRUE,1,yes,on} truthy + {0,false,no,off} falsy with whitespace tolerance.
+  - Fix during test writing: `react-hot-toast` needs `window.matchMedia` which jsdom lacks — mocked the module in the Firma/Firmen tests.
+  Final totals: frontend 349 → 508, panel-api 68 → 95, lint 0, tsc clean both sides, build 3,87 s. Doesn't ship to prod yet — pure test additions on feature branch.
+
 ## 2026-05-23 00:10 — preisanfrage ↔ kalku-website live connection
 - Source: user "now do changes in preis anfrage on server just for we can connect this system to that"
 - Branch: claude-auto/v2-gaps-closeout (continued)
