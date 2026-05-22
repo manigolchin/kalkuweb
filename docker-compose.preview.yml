@@ -1,0 +1,33 @@
+# Preview environment for the chef/landing branch.
+# Lives at: https://preview.kalku.kalkus.de
+#
+# This file is run from a git worktree on the server that's checked out to
+# `chef/landing`, so the build context is whatever's on that branch — independent
+# of `main` (which docker-compose.prod.yml serves on kalku.kalkus.de).
+#
+# Cron-driven rebuild: scripts/preview-update.sh pulls the worktree every 2 min
+# and only rebuilds the container when origin/chef/landing has new commits.
+#
+# Joins the existing Traefik network, uses the cloudflare wildcard cert for
+# *.kalkus.de, never binds a host port.
+
+services:
+  kalku-website-preview:
+    container_name: kalku-website-preview
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    networks:
+      - kalku_kalku-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.kalku-website-preview.entrypoints=websecure"
+      - "traefik.http.routers.kalku-website-preview.rule=Host(`preview.kalku.kalkus.de`)"
+      - "traefik.http.routers.kalku-website-preview.priority=200"
+      - "traefik.http.routers.kalku-website-preview.tls.certresolver=cloudflare"
+      - "traefik.http.services.kalku-website-preview.loadbalancer.server.port=80"
+
+networks:
+  kalku_kalku-network:
+    external: true
