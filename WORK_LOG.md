@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-05-22 21:50 — Verify EP/GP formula vs user's real Excel, add hover breakdown
+- Source: user followup ("are you sure that formular are correct i think is wrong this is one excel taht you can check formular") with a screenshot of Mobilbauzaun (Menge=100.000 m, Material=2, EP=2,24, GP=224.000 €) and path to LV3.xlsx (Sanierung Sandsteinmauer / Gesellchen GmbH) on OneDrive.
+- Branch: claude-auto/v2-gaps-closeout (continued)
+- Result: committed 80e58d9
+- Notes: Wrote `scripts/inspect-lv3-formulas.mjs` to read raw cell formulas + named ranges from their real Vorlage via SheetJS. Verified that our `src/features/kalkulation/calc.ts` is a 1:1 mirror: EP = matEK·(1+matZ) + nuEK·(1+nuZ) + adjMin/60·verrechnungslohn + adjMin/60·gzuschlag, GP = quantity·EP. Defaults match Excel exactly (49,9 €/h / 12 % / 12 % / 10 % / 0,5 / 19 %). The 224 k is mathematically correct given Menge=100 km — a data-magnitude issue (likely GAEB import or entry), not a formula bug. Full side-by-side proof in `docs/v2_redesign/formula_audit_vs_real_excel.md`. Also added native `title` tooltips to EP/GP cells in PositionTableV2 showing the 4-line breakdown — so the next person asking "is this right?" gets the answer in one hover instead of a full audit. Pure additive change, no behavior shift. Lint 0 errors, build 3,7 s, 349/349 vitest pass.
+
 ## 2026-05-19 21:30 — Reconcile state with 5 human commits, mark resolved items
 - Source: continuing the loop re-entry after research commit; noticed via `git log 7444a67..HEAD` that the human committed 5 fixes between my prior shift end and this iteration (6658d16, 37fd03d, 77a271c, 5cc13ed, 28daee5).
 - Branch: claude-auto/2026-05-19-feature-audit-phase1 (continued)
