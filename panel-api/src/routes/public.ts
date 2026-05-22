@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import bcrypt from 'bcryptjs';
+import { verify as argon2Verify } from '@node-rs/argon2';
 import { db } from '../db.js';
 import {
   projects,
@@ -103,7 +104,23 @@ async function gateShare(
         ),
       };
     }
-    const ok = await bcrypt.compare(providedPwd, share.passwordHash);
+    // Round 6 PART Y: argon2id verify, with bcrypt fallback for shares
+    // created in Round 3 ($2-prefixed hashes). Both libraries do their own
+    // constant-time compare internally; argon2's `verify` returns boolean
+    // (throws only on malformed hash — we treat that as a fail-closed).
+    let ok = false;
+    try {
+      if (share.passwordHash.startsWith('$argon2')) {
+        ok = await argon2Verify(share.passwordHash, providedPwd);
+      } else {
+        // Legacy bcrypt hash from Round 3. Verify with bcrypt; this branch
+        // can be deleted once all old shares either expire or get
+        // recreated by their owners.
+        ok = await bcrypt.compare(providedPwd, share.passwordHash);
+      }
+    } catch {
+      ok = false;
+    }
     if (!ok) {
       await logAccess(share.id, ip, false, 'wrong_password', ua);
       return { response: c.json({ error: 'password_required', reason: 'password_required' }, 401) };

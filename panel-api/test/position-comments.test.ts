@@ -244,4 +244,39 @@ describe('PART K — GET /projects/:id/comments(+counts)', () => {
     const body = await counts.json() as { counts: Record<string, unknown> };
     assert.deepEqual(body.counts, {});
   });
+
+  /**
+   * Round 6 PART Z leak guard: the counts endpoint must NEVER carry
+   * comment author email / text / authorName / message into its response.
+   * Even though the endpoint is owner-auth (so a KUNDEN-side request can
+   * never reach it), the frontend INTERN view passes its result through
+   * the same React tree as the KUNDEN preview — a regression that exposed
+   * author email here would land in the DOM the customer can inspect.
+   */
+  test('counts endpoint response carries NO author fields (leak guard)', async () => {
+    const { token, projectId, ownerId } = await seedAll();
+    // Post a comment with an author email + a distinctive body.
+    await app.request(`/api/share/${token}/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        positionOz: '1.4.1.1',
+        intent: 'other',
+        text: '__LEAK_GUARD_CANARY_TEXT__',
+        authorName: '__LEAK_GUARD_AUTHOR__',
+        authorEmail: 'leak-guard@example.com',
+      }),
+    });
+    const counts = await ownerApp.request(`/api/projects/${projectId}/comments/counts`, {
+      headers: await ownerHeaders(ownerId, 'owner@test.local'),
+    });
+    assert.equal(counts.status, 200);
+    const raw = await counts.text();
+    assert.ok(!raw.includes('__LEAK_GUARD_CANARY_TEXT__'), 'comment text leaked into counts response');
+    assert.ok(!raw.includes('__LEAK_GUARD_AUTHOR__'), 'authorName leaked into counts response');
+    assert.ok(!raw.includes('leak-guard@example.com'), 'authorEmail leaked into counts response');
+    // Positive check: the endpoint DOES still surface the count.
+    const body = JSON.parse(raw) as { counts: Record<string, { total: number }> };
+    assert.equal(body.counts['1.4.1.1'].total, 1);
+  });
 });

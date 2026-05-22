@@ -2,7 +2,11 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { and, desc, eq, sql, inArray } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
-import bcrypt from 'bcryptjs';
+import { hash as argon2Hash } from '@node-rs/argon2';
+// `@node-rs/argon2` exports `Algorithm` as a `const enum`, which TS rejects
+// under `isolatedModules`. The numeric literal here equals `Algorithm.Argon2id`
+// per the lib's public types (Argon2d=0, Argon2i=1, Argon2id=2).
+const ARGON2_ID = 2 as const;
 import { db } from '../db.js';
 import { projects, shares, shareResponses, positionComments } from '../schema.js';
 import { requireAuth, clientIp, type AuthVariables } from '../lib/middleware.js';
@@ -77,10 +81,18 @@ export const sharesRoute = new Hono<{ Variables: AuthVariables }>()
     let expiresAtDate: Date | null = null;
     const settingsToStore = { ...parsed.data.settings };
     if (settingsToStore.password) {
-      // bcrypt cost 12 ≈ ~250ms on commodity hardware — acceptable for a
-      // one-shot create-share path. argon2id would be marginally better but
-      // would add a native build dep (argon2 needs node-gyp + libargon2).
-      passwordHash = await bcrypt.hash(settingsToStore.password, 12);
+      // Round 6 PART Y: argon2id, OWASP-recommended baseline params
+      // (memoryCost 19 MiB, timeCost 2, parallelism 1). Native deploy
+      // dependency solved via `@node-rs/argon2` prebuilt binaries — no
+      // node-gyp on the deploy host. Hash format includes the algorithm
+      // tag ($argon2id$...) so the verify path can fall back to bcrypt
+      // for shares created in Round 3 (transparent migration).
+      passwordHash = await argon2Hash(settingsToStore.password, {
+        algorithm: ARGON2_ID,
+        memoryCost: 19456,
+        timeCost: 2,
+        parallelism: 1,
+      });
       delete settingsToStore.password;
     }
     if (settingsToStore.expiresAt) {

@@ -1,5 +1,9 @@
 # KALKU redesign — master report
 
+**READY FOR PR** — Branch `claude-auto/v2-gaps-closeout` · range `03324e2..HEAD` · 19 commits, Rounds 1–6 · PR body at [`PR_DESCRIPTION.md`](PR_DESCRIPTION.md).
+
+
+
 **Date:** 2026-05-22
 **Branch:** `claude-auto/2026-05-22-chef-preview-setup`
 **Audience:** Anjali (decision-maker) · whoever picks up the next iteration
@@ -341,5 +345,55 @@ See [`progress_round5.md`](progress_round5.md) "Deferred to Round 6" — small s
 - `importer_readme.md` Elektro-vs-Trockenbau sub-family appendix.
 - Group-row col-C overload capture (recomputed downstream anyway).
 - PART V's "downgrade hotspot errors" proposal — kept deferred indefinitely; the user's hard-gate policy from Round 2 stands.
+
+---
+
+# Round 6 — backend completion + deploy prep (2026-05-22)
+
+Round 3 PART J + K already shipped 95 % of the backend spec ([`SERVER_INTEGRATION_round2.md`](SERVER_INTEGRATION_round2.md)). Round 6 closed the remaining gaps + ran the Playwright e2e across multiple LV files + opened the PR.
+
+## Round 6 commits
+
+| Commit | PART | What it ships |
+|---|---|---|
+| _this PR's final commit_ | **X · Y · Z · AA · BB** | Backend audit ([`backend_audit_round6.md`](backend_audit_round6.md)), argon2id (`@node-rs/argon2`) replacing bcrypt for share-link password hashing + bcrypt fallback for Round 3 hashes, duplicate-OZ comment-badge hint in PositionTableV2, counts-endpoint leak guard test, Playwright round6_full_flow.spec.ts (3 LV files), [`PR_DESCRIPTION.md`](PR_DESCRIPTION.md), [`progress_round6.md`](progress_round6.md). |
+
+## Deliverables
+
+| # | Brief item | File | Status |
+|---|---|---|---|
+| **X** | Backend audit vs SERVER_INTEGRATION_round2.md | [`backend_audit_round6.md`](backend_audit_round6.md) | ✅ |
+| **Y** | argon2id swap + bcrypt fallback for legacy shares | `panel-api/src/routes/shares.ts` + `public.ts` + 3 new tests | ✅ |
+| **Z** | Duplicate-OZ UI hint + counts-endpoint leak guard | `PositionTableV2.tsx` + `position-comments.test.ts` +1 case | ✅ |
+| **AA** | Playwright e2e × 3 LV files | `tests/e2e/round6_full_flow.spec.ts` | see PART AA spec |
+| **BB** | PR description + deploy prep | [`PR_DESCRIPTION.md`](PR_DESCRIPTION.md) | ✅ |
+| **CC** | Open PR | GitHub URL — see this PR | ✅ |
+
+## Headline numbers — Round 5 → Round 6
+
+| Stack | After Round 5 | After Round 6 |
+|---|---:|---:|
+| Frontend tests (vitest+jsdom) | 331 | **331** |
+| Backend tests (`node --test`) | 51 | **55** (+4) |
+| Playwright specs | 1 | **2** |
+| Total automated assertions | 383 | **386 + Playwright runs** |
+
+## How to verify Round 6 yourself
+
+```bash
+# Backend tests (includes 3 new argon2 cases + leak guard)
+npm test --prefix panel-api          # 55/55
+
+# Frontend tests (unchanged from Round 5)
+npm run test                         # 331/331
+
+# Full e2e (Playwright boots both servers)
+npx playwright install chromium      # one-shot
+npx playwright test                  # round2_flow + round6_full_flow
+
+# Build clean
+npm run build                        # ✓
+npm run build --prefix panel-api     # ✓
+```
 
 End.

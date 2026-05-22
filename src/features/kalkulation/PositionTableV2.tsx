@@ -174,6 +174,22 @@ export default function PositionTableV2({
 
   const totals = useMemo(() => calcTotals(positions, params), [positions, params]);
 
+  // Round 6 PART Z: detect duplicate OZ keys among non-header positions.
+  // The parser already flags this on import (ImportIssue code 'duplicate_oz';
+  // ex7 has 14). At render time we keep a Set so PositionRow can tag its
+  // comment badge with the "kommt mehrfach vor" hint without recomputing
+  // per row.
+  const duplicateOzKeys = useMemo(() => {
+    const count = new Map<string, number>();
+    for (const p of positions) {
+      if (p.isHeader) continue;
+      const oz = (p.oz ?? '').trim();
+      if (!oz) continue;
+      count.set(oz, (count.get(oz) ?? 0) + 1);
+    }
+    return new Set(Array.from(count.entries()).filter(([, n]) => n > 1).map(([k]) => k));
+  }, [positions]);
+
   const updateRow = useCallback(
     (id: string, patch: Partial<Position>) => {
       onChange(positions.map((p) => (p.id === id ? { ...p, ...patch } : p)));
@@ -381,6 +397,7 @@ export default function PositionTableV2({
                   expandedLong={expandedLong}
                   commentCounts={commentCounts}
                   onOpenComments={onOpenComments}
+                  duplicateOzKeys={duplicateOzKeys}
                 />
               ) : (
                 <PositionRow
@@ -396,6 +413,7 @@ export default function PositionTableV2({
                   isLongExpanded={expandedLong.has(g.row.id)}
                   commentCount={commentCounts?.[g.row.oz?.trim() ?? '']}
                   onOpenComments={onOpenComments}
+                  isDuplicateOz={duplicateOzKeys.has((g.row.oz ?? '').trim())}
                 />
               ),
             )}
@@ -494,6 +512,10 @@ type GroupRowsProps = {
   expandedLong: Set<string>;
   commentCounts?: Record<string, { total: number; unresolved: number }>;
   onOpenComments?: (positionOz: string) => void;
+  /** Round 6 PART Z: OZ keys that appear on more than one non-header
+   *  position. Comments on these OZs hit ALL matching rows (back end
+   *  stores by OZ text). The badge surfaces this with a hint. */
+  duplicateOzKeys?: Set<string>;
 };
 
 function GroupRows({
@@ -510,6 +532,7 @@ function GroupRows({
   expandedLong,
   commentCounts,
   onOpenComments,
+  duplicateOzKeys,
 }: GroupRowsProps) {
   return (
     <>
@@ -573,6 +596,7 @@ function GroupRows({
             isLongExpanded={expandedLong.has(p.id)}
             commentCount={commentCounts?.[p.oz?.trim() ?? '']}
             onOpenComments={onOpenComments}
+            isDuplicateOz={duplicateOzKeys?.has((p.oz ?? '').trim()) ?? false}
           />
         ))}
     </>
@@ -591,6 +615,10 @@ type PositionRowProps = {
   isLongExpanded: boolean;
   commentCount?: { total: number; unresolved: number };
   onOpenComments?: (positionOz: string) => void;
+  /** Round 6 PART Z: true when this row's OZ appears on >1 non-header
+   *  position in the project. Comments persist by OZ text — surface that
+   *  ambiguity in the badge title so the calculator knows. */
+  isDuplicateOz?: boolean;
 };
 
 function PositionRow({
@@ -611,6 +639,7 @@ function PositionRow({
   isLongExpanded,
   commentCount,
   onOpenComments,
+  isDuplicateOz,
 }: PositionRowProps) {
   const calc = useMemo(() => calculatePosition(p, params), [p, params]);
   const pt = (p.positionType ?? 'standard') as PositionType;
@@ -710,20 +739,28 @@ function PositionRow({
                 type="button"
                 onClick={() => onOpenComments?.(p.oz?.trim() ?? '')}
                 data-testid={`v2-comment-badge-${p.id}`}
+                data-duplicate-oz={isDuplicateOz ? 'true' : undefined}
                 title={
-                  commentCount.unresolved > 0
+                  (commentCount.unresolved > 0
                     ? `${commentCount.unresolved} offene Kunden-Anmerkung${commentCount.unresolved === 1 ? '' : 'en'} (${commentCount.total} gesamt)`
-                    : `${commentCount.total} erledigte Kunden-Anmerkung${commentCount.total === 1 ? '' : 'en'}`
+                    : `${commentCount.total} erledigte Kunden-Anmerkung${commentCount.total === 1 ? '' : 'en'}`) +
+                  (isDuplicateOz
+                    ? ` — Achtung: OZ "${p.oz?.trim()}" kommt mehrfach vor; Kommentar zur ersten passenden Position zugeordnet`
+                    : '')
                 }
                 className={clsx(
                   'inline-flex items-center gap-0.5 shrink-0 px-1.5 py-0.5 rounded-md text-[10px] font-semibold tabular-nums',
                   commentCount.unresolved > 0
                     ? 'bg-amber-100 text-amber-800 hover:bg-amber-200'
                     : 'bg-slate-100 text-slate-500 hover:bg-slate-200',
+                  // Round 6 PART Z: amber ring when OZ is duplicated so the
+                  // calculator notices at a glance.
+                  isDuplicateOz && 'ring-1 ring-amber-400',
                 )}
               >
                 <MessageCircle className="w-3 h-3" />
                 {commentCount.unresolved > 0 ? commentCount.unresolved : commentCount.total}
+                {isDuplicateOz && <span className="text-amber-700 ml-0.5" aria-hidden>!</span>}
               </button>
             )}
           </div>

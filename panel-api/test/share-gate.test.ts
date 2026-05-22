@@ -222,6 +222,55 @@ describe('PART J — share password gate', () => {
   });
 });
 
+describe('Round 6 PART Y — argon2id forward path + bcrypt legacy fallback', () => {
+  beforeEach(async () => { await cleanupAll(); });
+
+  // Hashing via @node-rs/argon2 directly so we don't depend on the
+  // create-share route (which is owner-auth gated). We just need to prove
+  // that a share row with an argon2id-prefixed hash unlocks correctly.
+  test('share seeded with argon2id hash unlocks with correct password', async () => {
+    const { hash: argon2Hash } = await import('@node-rs/argon2');
+    const argonHash = await argon2Hash('sekret-argon2', {
+      algorithm: 2, // Algorithm.Argon2id (const enum → numeric literal)
+      memoryCost: 19456,
+      timeCost: 2,
+      parallelism: 1,
+    });
+    assert.ok(argonHash.startsWith('$argon2'), 'expected $argon2 hash prefix');
+    const { token } = await seedShare({ password: 'placeholder-ignored' });
+    // Overwrite the bcrypt hash that seedShare wrote with our argon2 one.
+    await db.update(schema.shares).set({ passwordHash: argonHash }).where(eq(schema.shares.token, token));
+
+    const wrong = await app.request(`/api/share/${token}`, {
+      headers: { 'X-Share-Password': 'nope' },
+    });
+    assert.equal(wrong.status, 401);
+
+    const right = await app.request(`/api/share/${token}`, {
+      headers: { 'X-Share-Password': 'sekret-argon2' },
+    });
+    assert.equal(right.status, 200);
+  });
+
+  test('legacy bcrypt-hashed share (from Round 3) still unlocks via fallback', async () => {
+    // seedShare uses bcrypt by default — same path Round 3 took.
+    const { token } = await seedShare({ password: 'legacy-pw' });
+    const right = await app.request(`/api/share/${token}`, {
+      headers: { 'X-Share-Password': 'legacy-pw' },
+    });
+    assert.equal(right.status, 200);
+  });
+
+  test('malformed hash → 401 without throwing', async () => {
+    const { token } = await seedShare({ password: 'placeholder-ignored' });
+    await db.update(schema.shares).set({ passwordHash: 'not-a-valid-hash' }).where(eq(schema.shares.token, token));
+    const res = await app.request(`/api/share/${token}`, {
+      headers: { 'X-Share-Password': 'anything' },
+    });
+    assert.equal(res.status, 401);
+  });
+});
+
 describe('PART J — share expiry', () => {
   beforeEach(async () => { await cleanupAll(); });
 
