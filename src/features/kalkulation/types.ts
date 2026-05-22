@@ -51,6 +51,18 @@ export type Position = {
   timeMinutesFormula?: string;
   /** Inline formula for NU EK. Same semantics as materialFormula. */
   nuFormula?: string;
+  /** Per-row Vorrechnung scratch cells — the 7 F1..F7 slots that the
+   *  Excel template carries at the right side of every position row.
+   *  Calculators use these for intermediate values that the main
+   *  Material/Zeit/NU formulas then reference by name (F1, F2, ..., F7).
+   *  Each slot can hold a raw value, or a formula whose value is cached
+   *  the same way materialFormula does.
+   *
+   *  Partial — only slots the calculator actually populated. F-cells
+   *  can reference each other (forward only — F2 may use F1, etc.) and
+   *  may use Q + named factors; cycles are not detected (calculators
+   *  don't write them in practice). */
+  preCalcs?: Partial<Record<'F1' | 'F2' | 'F3' | 'F4' | 'F5' | 'F6' | 'F7', { value: number; formula?: string }>>;
 };
 
 export type CalcParams = {

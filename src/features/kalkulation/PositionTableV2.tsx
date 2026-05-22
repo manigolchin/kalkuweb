@@ -32,6 +32,7 @@ import {
   type ZuschlagMatrix,
 } from './types';
 import FormulaCell from './FormulaCell';
+import PreCalcStrip from './PreCalcStrip';
 import {
   calculatePosition,
   calcTotals,
@@ -128,6 +129,7 @@ export default function PositionTableV2({
 
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [expandedLong, setExpandedLong] = useState<Set<string>>(new Set());
+  const [expandedPreCalc, setExpandedPreCalc] = useState<Set<string>>(new Set());
 
   const groups = useMemo<Group[]>(() => {
     const out: Group[] = [];
@@ -257,6 +259,15 @@ export default function PositionTableV2({
 
   const toggleLongText = useCallback((id: string) => {
     setExpandedLong((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const togglePreCalc = useCallback((id: string) => {
+    setExpandedPreCalc((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -405,6 +416,8 @@ export default function PositionTableV2({
                   onOpenComments={onOpenComments}
                   duplicateOzKeys={duplicateOzKeys}
                   faktoren={faktoren}
+                  togglePreCalc={togglePreCalc}
+                  expandedPreCalc={expandedPreCalc}
                 />
               ) : (
                 <PositionRow
@@ -422,6 +435,8 @@ export default function PositionTableV2({
                   onOpenComments={onOpenComments}
                   isDuplicateOz={duplicateOzKeys.has((g.row.oz ?? '').trim())}
                   faktoren={faktoren}
+                  togglePreCalc={togglePreCalc}
+                  isPreCalcExpanded={expandedPreCalc.has(g.row.id)}
                 />
               ),
             )}
@@ -524,8 +539,11 @@ type GroupRowsProps = {
    *  position. Comments on these OZs hit ALL matching rows (back end
    *  stores by OZ text). The badge surfaces this with a hint. */
   duplicateOzKeys?: Set<string>;
-  /** Faktoren-Bibliothek surfaced in the per-cell CalcPopover. */
+  /** Faktoren-Bibliothek surfaced in the per-cell FormulaCell autocomplete. */
   faktoren?: FaktorEntry[];
+  /** Per-row F1..F7 Vorrechnung toggle + expanded-state tracker. */
+  togglePreCalc: (id: string) => void;
+  expandedPreCalc: Set<string>;
 };
 
 function GroupRows({
@@ -544,6 +562,8 @@ function GroupRows({
   onOpenComments,
   duplicateOzKeys,
   faktoren,
+  togglePreCalc,
+  expandedPreCalc,
 }: GroupRowsProps) {
   return (
     <>
@@ -609,6 +629,8 @@ function GroupRows({
             onOpenComments={onOpenComments}
             isDuplicateOz={duplicateOzKeys?.has((p.oz ?? '').trim()) ?? false}
             faktoren={faktoren}
+            togglePreCalc={togglePreCalc}
+            isPreCalcExpanded={expandedPreCalc.has(p.id)}
           />
         ))}
     </>
@@ -631,9 +653,12 @@ type PositionRowProps = {
    *  position in the project. Comments persist by OZ text — surface that
    *  ambiguity in the badge title so the calculator knows. */
   isDuplicateOz?: boolean;
-  /** Faktoren-Bibliothek surfaced in the per-cell CalcPopover for the
-   *  three editable cost cells in this row. */
+  /** Faktoren-Bibliothek surfaced in the per-cell FormulaCell autocomplete
+   *  for the three editable cost cells in this row + the F1..F7 strip. */
   faktoren?: FaktorEntry[];
+  /** Per-row F1..F7 Vorrechnung expand toggle + state. */
+  togglePreCalc?: (id: string) => void;
+  isPreCalcExpanded?: boolean;
 };
 
 function PositionRow({
@@ -654,6 +679,8 @@ function PositionRow({
   onOpenComments,
   isDuplicateOz,
   faktoren,
+  togglePreCalc,
+  isPreCalcExpanded,
 }: PositionRowProps) {
   const calc = useMemo(() => calculatePosition(p, params), [p, params]);
   const pt = (p.positionType ?? 'standard') as PositionType;
@@ -816,6 +843,7 @@ function PositionRow({
           onCommit={(v, f) => updateRow(p.id, { materialCost: v, materialFormula: f })}
           faktoren={faktoren}
           contextMenge={p.quantity}
+          preCalcs={p.preCalcs}
           label="Material EK"
         />
         <FormulaCell
@@ -824,6 +852,7 @@ function PositionRow({
           onCommit={(v, f) => updateRow(p.id, { timeMinutes: v, timeMinutesFormula: f })}
           faktoren={faktoren}
           contextMenge={p.quantity}
+          preCalcs={p.preCalcs}
           label="Min/Einheit"
         />
         <FormulaCell
@@ -832,6 +861,7 @@ function PositionRow({
           onCommit={(v, f) => updateRow(p.id, { nuCost: v, nuFormula: f })}
           faktoren={faktoren}
           contextMenge={p.quantity}
+          preCalcs={p.preCalcs}
           label="NU EK"
         />
 
@@ -843,7 +873,34 @@ function PositionRow({
         </td>
 
         <td className="bg-slate-50/70 border-t border-slate-100 px-1 py-[10px] align-top">
-          {hasLong && (
+          {/* Vorrechnung F1..F7 toggle. Always visible on hover; shows
+              active state when the strip is open OR when any slot has a
+              non-zero value (so the calculator can find rows with stashed
+              pre-calcs at a glance). */}
+          {togglePreCalc && (() => {
+            const hasAnySlot = p.preCalcs
+              ? Object.values(p.preCalcs).some((s) => s && (s.value !== 0 || s.formula))
+              : false;
+            return (
+              <button
+                onClick={() => togglePreCalc(p.id)}
+                title={isPreCalcExpanded ? 'Vorrechnung (F1..F7) einklappen' : 'Vorrechnung (F1..F7) öffnen'}
+                aria-label="Vorrechnung F1..F7"
+                data-testid={`precalc-toggle-${p.id}`}
+                className={clsx(
+                  'inline-flex items-center justify-center w-6 h-6 rounded text-[10px] font-mono font-bold transition-colors',
+                  isPreCalcExpanded
+                    ? 'bg-emerald-600 text-white'
+                    : hasAnySlot
+                      ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                      : 'text-slate-300 hover:text-emerald-700 hover:bg-emerald-50 opacity-0 group-hover:opacity-100',
+                )}
+              >
+                F₁₇
+              </button>
+            );
+          })()}
+          {hasLong && !togglePreCalc && (
             <span
               className="inline-flex items-center justify-center w-6 h-6 rounded text-slate-400"
               title={`${(p.longText ?? '').length} Zeichen Langtext`}
@@ -863,6 +920,30 @@ function PositionRow({
           </button>
         </td>
       </tr>
+
+      {/* Per-row F1..F7 Vorrechnung sub-row — only renders when the
+          calculator has expanded it via the F₁₇ toggle button. Spans the
+          full table width (14 columns). Commits each slot individually
+          through updateRow so unmodified slots stay untouched. */}
+      {isPreCalcExpanded && (
+        <PreCalcStrip
+          preCalcs={p.preCalcs}
+          colSpan={14}
+          faktoren={faktoren}
+          contextMenge={p.quantity}
+          onSlotCommit={(slot, value, formula) => {
+            const nextPreCalcs = { ...(p.preCalcs ?? {}) };
+            if (value === 0 && !formula) {
+              delete nextPreCalcs[slot];
+            } else {
+              nextPreCalcs[slot] = { value, formula };
+            }
+            updateRow(p.id, {
+              preCalcs: Object.keys(nextPreCalcs).length === 0 ? undefined : nextPreCalcs,
+            });
+          }}
+        />
+      )}
 
       {isLongExpanded && hasLong && (
         <tr>

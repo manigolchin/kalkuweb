@@ -40,6 +40,13 @@ import { formatNum } from './calc';
 import type { FaktorEntry } from './types';
 
 const RESERVED_TOKENS = ['Q'];
+const F_SLOT_NAMES = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7'] as const;
+export type FSlotName = (typeof F_SLOT_NAMES)[number];
+
+/** Per-row scratch slots — the Excel F1..F7 columns. Each slot is a
+ *  cached value (the formula string lives on the Position too, but
+ *  preprocessing only needs the value). */
+export type PreCalcs = Partial<Record<FSlotName, { value: number; formula?: string }>>;
 
 export type FormulaCellProps = {
   /** Current cached numeric value. */
@@ -57,6 +64,9 @@ export type FormulaCellProps = {
   faktoren?: FaktorEntry[];
   /** Position-row context — `Q` token resolves to this value. */
   contextMenge?: number;
+  /** Per-row F1..F7 scratch slots — when set, references to F1..F7 in the
+   *  expression resolve to the corresponding slot's cached value. */
+  preCalcs?: PreCalcs;
   /** Human-readable label shown in the preview pill tooltip. */
   label?: string;
 };
@@ -70,10 +80,23 @@ function preprocessExpression(
   expr: string,
   faktoren: FaktorEntry[] | undefined,
   q: number | undefined,
+  preCalcs: PreCalcs | undefined,
 ): string {
   let out = expr;
   if (q !== undefined && Number.isFinite(q)) {
     out = out.replace(/\bQ\b/g, String(q));
+  }
+  // F1-F7 substitution — case-sensitive (the Excel convention uses
+  // uppercase F1..F7 and a calculator typing 'f1' likely means something
+  // else, possibly a variable name).
+  if (preCalcs) {
+    for (const slot of F_SLOT_NAMES) {
+      const v = preCalcs[slot]?.value;
+      if (typeof v === 'number' && Number.isFinite(v)) {
+        const re = new RegExp(`\\b${slot}\\b`, 'g');
+        out = out.replace(re, String(v));
+      }
+    }
   }
   if (faktoren && faktoren.length > 0) {
     const sorted = [...faktoren]
@@ -102,6 +125,7 @@ export default function FormulaCell({
   onCommit,
   faktoren,
   contextMenge,
+  preCalcs,
   label,
 }: FormulaCellProps) {
   const d = value % 1 === 0 ? 0 : 2;
@@ -135,9 +159,9 @@ export default function FormulaCell({
   // Live evaluation for formula mode.
   const evaluation = useMemo(() => {
     if (mode !== 'formula') return null;
-    const processed = preprocessExpression(draft, faktoren, contextMenge);
+    const processed = preprocessExpression(draft, faktoren, contextMenge, preCalcs);
     return evaluateAufmass(processed);
-  }, [mode, draft, faktoren, contextMenge]);
+  }, [mode, draft, faktoren, contextMenge, preCalcs]);
 
   // Autocomplete: find the partial word at the cursor, suggest the first
   // factor name whose start matches case-insensitively. Tab to accept.
@@ -147,7 +171,17 @@ export default function FormulaCell({
     if (word.length < 1) return null;
     const wl = word.toLowerCase();
     // Exclude already-exact matches so Tab doesn't replace a full name with itself.
-    const candidates = [...faktoren, ...RESERVED_TOKENS.map((t) => ({ name: t, ep: 0, sourceCol: '', sourceRow: 0, raw: {} } as FaktorEntry))]
+    // F-slot names appear in autocomplete only if the row has any preCalcs
+    // populated (otherwise referencing them yields 0 — confusing).
+    const fSlotTokens: FaktorEntry[] = preCalcs
+      ? F_SLOT_NAMES
+          .filter((s) => preCalcs[s]?.value !== undefined)
+          .map((s) => ({ name: s, ep: 0, sourceCol: '', sourceRow: 0, raw: {} } as FaktorEntry))
+      : [];
+    const reservedTokens: FaktorEntry[] = RESERVED_TOKENS.map(
+      (t) => ({ name: t, ep: 0, sourceCol: '', sourceRow: 0, raw: {} } as FaktorEntry),
+    );
+    const candidates = [...faktoren, ...fSlotTokens, ...reservedTokens]
       .filter((f) =>
         f.name.toLowerCase().startsWith(wl) && f.name.toLowerCase() !== wl,
       )
@@ -193,7 +227,7 @@ export default function FormulaCell({
     if (raw.trim().startsWith('=')) {
       // The user switched to formula by editing in place — handle as formula.
       const f = raw.trim().replace(/^=\s*/, '');
-      const processed = preprocessExpression(f, faktoren, contextMenge);
+      const processed = preprocessExpression(f, faktoren, contextMenge, preCalcs);
       const r = evaluateAufmass(processed);
       const rounded = Math.round(r.total * 10000) / 10000;
       onCommit(rounded, f);
