@@ -372,9 +372,66 @@ export default function ProjectDetail() {
               }}
               commentCounts={commentCounts}
               onOpenComments={(oz) => {
-                // For now, route the click into the existing Kunden-Feedback
-                // inbox tab. A future iteration may open an in-panel thread.
                 window.open(`/panel/feedback?oz=${encodeURIComponent(oz)}`, '_self');
+              }}
+              // Round 4 PART P + Q — captured Vorlage extras for the sticky matrix.
+              zuschlagOriginal={data.zuschlagOriginal}
+              zuschlagAktuell={data.zuschlagAktuell}
+              headerExtras={data.headerExtras}
+              onZschlgChange={(cost, decimal) => {
+                // PART O: persist the override AND sync the corresponding
+                // CalcParams field so live EP/GP recompute cascades through
+                // calculatePosition() automatically.
+                const calcKey: Record<typeof cost, keyof CalcParams> = {
+                  stoffe: 'materialZuschlag',
+                  nu: 'nuZuschlag',
+                  geraete: 'geraeteZuschlagPct',
+                  lohn: 'verrechnungslohn', // 'lohn' override = adjust Stundensatz
+                };
+                if (cost === 'lohn') {
+                  // Lohn ZSCHLG in the matrix is Stundensatz / Mittellohn; an
+                  // override means: set Stundensatz = Mittellohn × (1 + decimal).
+                  const newStundensatz =
+                    data.calcParams.mittellohn * (1 + decimal);
+                  setData((d) => d ? {
+                    ...d,
+                    calcParams: { ...d.calcParams, verrechnungslohn: newStundensatz },
+                    zuschlagAktuell: { ...(d.zuschlagAktuell ?? {}), lohn: decimal },
+                  } : d);
+                } else {
+                  const key = calcKey[cost] as 'materialZuschlag' | 'nuZuschlag' | 'geraeteZuschlagPct';
+                  setData((d) => d ? {
+                    ...d,
+                    calcParams: { ...d.calcParams, [key]: decimal },
+                    zuschlagAktuell: { ...(d.zuschlagAktuell ?? {}), [cost]: decimal },
+                  } : d);
+                }
+              }}
+              onZschlgReset={(cost) => {
+                const orig = data.zuschlagOriginal?.[cost];
+                if (!orig) return;
+                if (cost === 'lohn') {
+                  // Revert Stundensatz to Mittellohn × (1 + original).
+                  setData((d) => d ? {
+                    ...d,
+                    calcParams: {
+                      ...d.calcParams,
+                      verrechnungslohn: d.calcParams.mittellohn * (1 + orig.zschlgPct),
+                    },
+                    zuschlagAktuell: removeKey(d.zuschlagAktuell, 'lohn'),
+                  } : d);
+                } else {
+                  const calcKey: Record<'stoffe' | 'nu' | 'geraete', 'materialZuschlag' | 'nuZuschlag' | 'geraeteZuschlagPct'> = {
+                    stoffe: 'materialZuschlag',
+                    nu: 'nuZuschlag',
+                    geraete: 'geraeteZuschlagPct',
+                  };
+                  setData((d) => d ? {
+                    ...d,
+                    calcParams: { ...d.calcParams, [calcKey[cost]]: orig.zschlgPct },
+                    zuschlagAktuell: removeKey(d.zuschlagAktuell, cost),
+                  } : d);
+                }
               }}
             />
           ) : (
@@ -831,4 +888,17 @@ function normalizeProject(data: ProjectData): ProjectData {
       sectionPath: p.sectionPath ?? '',
     })),
   };
+}
+
+/** PART O helper — remove a single key from the partial zuschlagAktuell
+ *  override map, returning undefined if the result is empty so the field
+ *  disappears from the saved JSON entirely (cleaner than `{}`). */
+function removeKey<T extends object, K extends keyof T>(
+  obj: T | undefined,
+  key: K,
+): T | undefined {
+  if (!obj) return undefined;
+  const { [key]: _dropped, ...rest } = obj;
+  void _dropped;
+  return Object.keys(rest).length === 0 ? undefined : (rest as T);
 }

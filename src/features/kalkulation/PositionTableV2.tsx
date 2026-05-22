@@ -25,8 +25,10 @@ import {
   POSITION_TYPES,
   POSITION_TYPE_LABELS,
   type CalcParams,
+  type HeaderExtras,
   type Position,
   type PositionType,
+  type ZuschlagMatrix,
 } from './types';
 import {
   calculatePosition,
@@ -35,6 +37,9 @@ import {
   formatNum,
   makeBlankPosition,
 } from './calc';
+import ZuschlagMatrixStrip from './ZuschlagMatrixStrip';
+
+type CostType = 'stoffe' | 'nu' | 'geraete' | 'lohn';
 
 export type V2ViewMode = 'intern' | 'kunden';
 
@@ -63,6 +68,17 @@ type Props = {
    *  the position's OZ so the parent can open the relevant FeedbackInbox
    *  thread. */
   onOpenComments?: (positionOz: string) => void;
+  /** Round 4 PART Q — captured Vorlage Zuschlag matrix for the sticky strip
+   *  at the top of INTERN view. When absent, the strip doesn't render. */
+  zuschlagOriginal?: ZuschlagMatrix;
+  /** Round 4 PART O — current overrides (partial map keyed by cost type). */
+  zuschlagAktuell?: Partial<Record<CostType, number>>;
+  /** Round 4 PART Q — header-block extras (Mitarbeiter, Stunden, Überschuss…). */
+  headerExtras?: HeaderExtras;
+  /** Round 4 PART O — fires when a ZSCHLG % cell is edited (debounced 300ms). */
+  onZschlgChange?: (cost: CostType, decimal: number) => void;
+  /** Round 4 PART O — fires when the calculator clicks "Zurücksetzen" on a row. */
+  onZschlgReset?: (cost: CostType) => void;
 };
 
 type Group =
@@ -86,6 +102,11 @@ export default function PositionTableV2({
   projectMeta,
   commentCounts,
   onOpenComments,
+  zuschlagOriginal,
+  zuschlagAktuell,
+  headerExtras,
+  onZschlgChange,
+  onZschlgReset,
 }: Props) {
   const [uncontrolledView, setUncontrolledView] = useState<V2ViewMode>('intern');
   const view = controlledView ?? uncontrolledView;
@@ -254,6 +275,22 @@ export default function PositionTableV2({
   }
 
   return (
+    <div className="space-y-3">
+      {/* PART Q: sticky Zuschlag matrix at the top of INTERN view. Renders
+          only when the imported project carries the captured matrix (i.e.
+          imported through the kalku-xlsx fast-path). Old projects without
+          it just see the existing layout. */}
+      {zuschlagOriginal && (
+        <ZuschlagMatrixStrip
+          original={zuschlagOriginal}
+          aktuell={zuschlagAktuell}
+          extras={headerExtras}
+          params={params}
+          onZschlgChange={(cost, decimal) => onZschlgChange?.(cost, decimal)}
+          onZschlgReset={(cost) => onZschlgReset?.(cost)}
+        />
+      )}
+
     <div className="bg-white border border-slate-200/80 rounded-2xl overflow-hidden">
       <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-slate-100 bg-slate-50/60">
         <ViewToggle view={view} onChange={setView} />
@@ -365,6 +402,7 @@ export default function PositionTableV2({
       </div>
 
       <StickyTotals totals={totals} positionCount={positions.filter((p) => !p.isHeader).length} />
+    </div>
     </div>
   );
 }

@@ -25,6 +25,13 @@ export const SENTINELS = {
   nuCost: 77777,
   internalNote: '__LEAK_INTERNAL_NOTE__',
   aufmassFormula: '__LEAK_AUFMASS__',
+  // Round 4 PART O+Q — sentinels for the new captured / editable fields.
+  // None of these may appear anywhere in KUNDEN-view DOM under any
+  // condition, including after a live ZSCHLG % edit in INTERN.
+  zschlgStoffe: 0.9999,     // displayed as 99.99% — never to leak
+  zschlgLohn: 0.8888,       // displayed as 88.88% — never to leak
+  stundensatz: 66.66,        // displayed as 66.66 € — never to leak
+  ueberschuss: 77777.77,     // displayed as 77.777,77 € — never to leak
 } as const;
 
 function pos(overrides: Partial<Position>): Position {
