@@ -826,11 +826,32 @@ function PositionRow({
           </div>
         </td>
 
-        <td className="bg-white border-t border-slate-100 px-2 py-[10px] align-top text-right tabular-nums text-slate-700">
+        <td
+          className="bg-white border-t border-slate-100 px-2 py-[10px] align-top text-right tabular-nums text-slate-700"
+          title={
+            // 4-line EP breakdown — same formula as the Excel Vorlage:
+            //   E = AA + AB + AJ + AK
+            // Documented in docs/v2_redesign/formula_audit_vs_real_excel.md
+            `EP-Zerlegung\n` +
+            `  Material:  ${formatNum(p.materialCost, 2)} × (1 + ${formatNum(params.materialZuschlag * 100, 0)} %) = ${formatNum(calc.epMaterial, 2)} €\n` +
+            `  Lohn:      ${formatNum(p.timeMinutes, 1)} min / 60 × ${formatNum(params.verrechnungslohn, 2)} €/h = ${formatNum(calc.epLohn, 2)} €\n` +
+            `  Geräte:    ${formatNum(p.timeMinutes, 1)} min / 60 × ${formatNum(params.geraeteStundensatz, 2)} €/h = ${formatNum(calc.epGeraet, 2)} €\n` +
+            `  NU:        ${formatNum(p.nuCost, 2)} × (1 + ${formatNum(params.nuZuschlag * 100, 0)} %) = ${formatNum(calc.epNu, 2)} €\n` +
+            `  ─────────────────────────────\n` +
+            `  EP         = ${formatNum(calc.ep, 2)} €`
+          }
+        >
           {formatNum(calc.ep, 2)}
         </td>
 
-        <td className="bg-white border-t border-slate-100 px-2 py-[10px] align-top text-right tabular-nums font-semibold text-slate-900">
+        <td
+          className="bg-white border-t border-slate-100 px-2 py-[10px] align-top text-right tabular-nums font-semibold text-slate-900"
+          title={
+            `GP = Menge × EP\n` +
+            `   = ${formatNum(p.quantity, p.quantity % 1 === 0 ? 0 : 2)} ${p.unit ?? ''} × ${formatNum(calc.ep, 2)} €\n` +
+            `   = ${formatEUR(calc.gp)}`
+          }
+        >
           {formatEUR(calc.gp)}
         </td>
 
