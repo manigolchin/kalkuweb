@@ -5,6 +5,24 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-05-22 23:05 — End-to-end live verification + round-7 progress doc
+- Source: standing autonomy ("do whatever you want and its better")
+- Branch: claude-auto/v2-gaps-closeout (continued)
+- Result: committed 1b125d4 (docs-only) + 530ae56 + f8c71cc earlier in the session
+- Notes: Drove the actual UI via Claude Preview MCP. Started panel-api in background with PREISANFRAGE_MOCK=fixture, ran Vite dev server, logged in, navigated through the full flow: Firmen page (10 firms + DEMO badge) → Gesellchen detail → edit defaults to 18%/15%/72,51/0,5 → save → click Kalkulation starten on Ludwigschule → landed on a fresh project with all 12 expectations met (positions=25, bidder=Gesellchen GmbH, deadline=2026-05-12T14:00, all 4 calcParams reflect Firma overrides). Wrote `docs/v2_redesign/progress_round7_firma_integration.md` summarising Phase 1a+1b+1c deliverables, the 12-assertion verification table, deferred work (Firma chip on projects, Submissionsergebnis enrichment, adopt endpoint, webhooks), and the 5 commit SHAs. Also caught + recovered from a tsx-watch SIGPIPE crash when I piped panel-api through `head -30` — restarted without the pipe; no code change needed.
+
+## 2026-05-22 23:00 — Phase 1c — seed Kalkulation positions from preisanfrage
+- Source: continued autonomy
+- Branch: claude-auto/v2-gaps-closeout
+- Result: committed f8c71cc
+- Notes: "Kalkulation starten" now pulls GAEB-parsed positions straight from preisanfrage (GET /firmen/:kind/:firmaId/projects/:projectId/positions → upstream /api/v1/projects/:id), not just metadata. Realistic 25-position Ludwigschule mock fixture; Mobilbauzaun at quantity=100 (the formula-audit baseline). External firmas 404 with clear hint (only submission results, no positions in preisanfrage). Fallback to empty[] if fetch fails. 2 new tests. 68/68 panel-api, 349/349 frontend pass.
+
+## 2026-05-22 22:45 — Phase 1b — Mock fixture + Kalkulation starten wiring
+- Source: continued autonomy
+- Branch: claude-auto/v2-gaps-closeout
+- Result: committed 530ae56
+- Notes: Auto-mock in dev (10 firms from real OneDrive layout). DEMO badge in Firmen header. Each Ausschreibung row gets a primary-coloured "Kalkulation starten" button that creates a project with bidder=Firma name + calcParams cascaded from Firma defaults. 3 new tests.
+
 ## 2026-05-22 22:40 — Firma integration Phase 1a — preisanfrage as source of truth
 - Source: follow-up from user's 4 architecture decisions on the integration proposal (commit 6ea675b). User picked: live API on every page, all 98 firmas, service-account JWT, calc defaults in panel-api (not preisanfrage).
 - Branch: claude-auto/v2-gaps-closeout (continued)
