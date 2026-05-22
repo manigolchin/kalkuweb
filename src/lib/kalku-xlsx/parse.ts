@@ -29,7 +29,15 @@
 
 import { ozKey, ozLevel, classifyRow, isErrorCell, ERROR_LITERALS } from '@/features/kalkulation/ozParser.mjs';
 import { makeBlankPosition, DEFAULT_CALC_PARAMS } from '@/features/kalkulation/calc';
-import type { CalcParams, Position, ProjectData } from '@/features/kalkulation/types';
+import type {
+  CalcParams,
+  FaktorEntry,
+  HeaderExtras,
+  Position,
+  ProjectData,
+  ZuschlagMatrix,
+  ZuschlagRow,
+} from '@/features/kalkulation/types';
 import { nanoid } from 'nanoid';
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -68,8 +76,16 @@ export type ParseResult = {
   ok: boolean;
   /** Faktoren-Lookup grid extracted from cols N..W rows 2..12. May be empty. */
   faktorenLookup: FaktorRow[];
+  /** Round 4 PART P: structured Faktoren-Bibliothek (one entry per non-empty
+   *  row of the N-W × 2-12 grid). The UI consumes this; faktorenLookup
+   *  above stays as the raw form for audit/diagnostics. */
+  faktoren: FaktorEntry[];
   /** Lifted CalcParams from the ZSCHLG matrix + Stundensatz + Mittellohn. */
   derivedCalcParams: CalcParams;
+  /** Round 4 PART P: full Zuschlag matrix per cost type (rows 4-7). */
+  zuschlagMatrix: ZuschlagMatrix;
+  /** Round 4 PART P: header-block extras (rows 8-12, cols I-M). */
+  headerExtras: HeaderExtras;
   /** Raw header-block values for confirmation UI. */
   meta: {
     client: string;
@@ -206,6 +222,34 @@ export async function parseKalkulationWorkbook(
     bruttoFromFile: readNumber(ws, 'F', 10),
   };
 
+  // Round 4 PART P: capture the full Zuschlag matrix (rows 4-7) per cost
+  // type. Distinct from `derivedCalcParams` (which extracts JUST the %
+  // values) — the matrix carries EK/VK/diff too, so PART O's live edit
+  // has a full base to recompute from.
+  const readMatrixRow = (r: number): ZuschlagRow => ({
+    ekTotal: readNumber(ws, 'J', r) ?? 0,
+    zschlgPct: readNumber(ws, 'K', r) ?? 0,
+    vkTotal: readNumber(ws, 'L', r) ?? 0,
+    differnz: readNumber(ws, 'M', r) ?? 0,
+  });
+  const zuschlagMatrix: ZuschlagMatrix = {
+    stoffe: readMatrixRow(4),
+    nu: readMatrixRow(5),
+    geraete: readMatrixRow(6),
+    lohn: readMatrixRow(7),
+  };
+
+  // Round 4 PART P: header-block extras (rows 8-12).
+  const headerExtras: HeaderExtras = {
+    mitarbeiter: readNumber(ws, 'J', 8) ?? 0,
+    gesStunden: readNumber(ws, 'L', 8) ?? 0,
+    arbeitstage: readNumber(ws, 'J', 9) ?? 0,
+    monate: readNumber(ws, 'L', 9) ?? 0,
+    ueberschuss: readNumber(ws, 'M', 9) ?? 0,
+    zeitwert: readNumber(ws, 'J', 11) ?? 0,
+    kontrollsumme: readNumber(ws, 'M', 11) ?? 0,
+  };
+
   // 5) CalcParams derivation from ZSCHLG matrix
   const derivedCalcParams: CalcParams = {
     ...DEFAULT_CALC_PARAMS,
@@ -224,6 +268,7 @@ export async function parseKalkulationWorkbook(
   //    factor (F10..F1 per row-13 labels). Cells may contain text tokens
   //    (e.g. "schlitz+Q2*querschnitt") OR numbers OR formula errors.
   const faktorenLookup: FaktorRow[] = [];
+  const faktoren: FaktorEntry[] = [];
   const factorCols = ['N','O','P','Q','R','S','T','U','V','W'];
   for (let r = 2; r <= 12; r++) {
     const rowFactor: FaktorRow = {
@@ -250,7 +295,42 @@ export async function parseKalkulationWorkbook(
         rowFactor.cells[c] = cell.v == null ? null : (typeof cell.v === 'number' ? cell.v : String(cell.v));
       }
     }
-    if (Object.keys(rowFactor.cells).length > 0) faktorenLookup.push(rowFactor);
+    if (Object.keys(rowFactor.cells).length > 0) {
+      faktorenLookup.push(rowFactor);
+
+      // PART P: derive a structured FaktorEntry. The Vorlage's grid is
+      // sparse (most cells are empty placeholders); we treat the first
+      // non-empty cell as the entry name, and the cell to its right as
+      // the unit if present, then look for a numeric ep + minEinheit
+      // anywhere in the row (heuristic — calculators name these
+      // inconsistently across files).
+      const firstNonEmpty = factorCols.find((c) => {
+        const v = rowFactor.cells[c];
+        return v != null && v !== '';
+      });
+      if (firstNonEmpty) {
+        const firstVal = rowFactor.cells[firstNonEmpty];
+        const numerics: number[] = [];
+        let einheit: string | undefined;
+        for (const c of factorCols) {
+          const v = rowFactor.cells[c];
+          if (typeof v === 'number') numerics.push(v);
+          else if (typeof v === 'string' && v.length > 0 && c !== firstNonEmpty) {
+            // First text cell AFTER the name is treated as the unit.
+            if (!einheit && /^[a-zA-Z%/.°²³µm]{1,8}$/.test(v.trim())) einheit = v.trim();
+          }
+        }
+        faktoren.push({
+          name: typeof firstVal === 'string' ? firstVal : String(firstVal),
+          einheit,
+          ep: numerics[0],
+          minEinheit: numerics[1],
+          sourceCol: firstNonEmpty,
+          sourceRow: r,
+          raw: rowFactor.cells,
+        });
+      }
+    }
   }
 
   // 7) Positions — iterate row 14 onward, classify, build Position objects
@@ -356,10 +436,16 @@ export async function parseKalkulationWorkbook(
     calcParams: derivedCalcParams,
     positions,
     notes: '',
+    // Round 4 PART P — full-fidelity capture stored alongside the basics.
+    // `zuschlagOriginal` is frozen here; PART O may add `zuschlagAktuell`
+    // overrides at runtime without touching this struct.
+    zuschlagOriginal: zuschlagMatrix,
+    headerExtras,
+    faktoren,
   };
 
   const ok = !issues.some((i) => i.severity === 'error');
-  return { project, issues, ok, faktorenLookup, derivedCalcParams, meta };
+  return { project, issues, ok, faktorenLookup, faktoren, derivedCalcParams, zuschlagMatrix, headerExtras, meta };
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -395,12 +481,19 @@ function parseDeNumber(raw: unknown): number {
 }
 
 function emptyResult(issues: ImportIssue[]): ParseResult {
+  const emptyRow: ZuschlagRow = { ekTotal: 0, zschlgPct: 0, vkTotal: 0, differnz: 0 };
   return {
     project: null,
     issues,
     ok: false,
     faktorenLookup: [],
+    faktoren: [],
     derivedCalcParams: DEFAULT_CALC_PARAMS,
+    zuschlagMatrix: { stoffe: emptyRow, nu: emptyRow, geraete: emptyRow, lohn: emptyRow },
+    headerExtras: {
+      mitarbeiter: 0, gesStunden: 0, arbeitstage: 0, monate: 0,
+      ueberschuss: 0, zeitwert: 0, kontrollsumme: 0,
+    },
     meta: {
       client: '', service: '', bv: '', bidder: '',
       tenderNumber: '', deadline: '',
