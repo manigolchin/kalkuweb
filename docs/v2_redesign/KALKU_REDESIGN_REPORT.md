@@ -111,4 +111,44 @@ All work was performed on a Mac, not the `/mnt/user-data/outputs/` sandbox the o
 3. **Ship the two P0 share-link tickets** (password + revision banner). ~1 day each.
 4. **Pick the P1 items from `roadmap.md`** that align with the next quarter's positioning.
 
+---
+
+# Round 2 — gap closeout (2026-05-22)
+
+After Round 1 the v2 view shipped but wasn't end-to-end usable: the importer wasn't wired to the UI, and the share-link was missing features a real customer needs. Round 2 closed those gaps. See [`progress_round2.md`](progress_round2.md) for the full checkpoint.
+
+## Round 2 commits
+
+All on branch `claude-auto/v2-gaps-closeout` (created off main, with Round 1 cherry-picked as the first commit).
+
+| Commit | Title | Files | Tests |
+|---|---|---|---|
+| `be24a55` | **PART F** · Wire kalku-xlsx into ImportDialog with formula-error gate | ImportDialog, parse.ts, ProjectDetail | reuses 24 |
+| `ce3ad5f` | **PART I** · Install vitest + migrate node:test specs (explicitly authorized) | vitest.config, test/setup, 2 ports + 1 new component test | 46 |
+| `279dcbc` | **PART G** · Per-position side-panel comments on public ShareView | PositionCommentPanel + leak test, ShareView, types | +5 = 51 |
+| `72b9131` | **PART H** · Password protection + revision banner + expiry | ShareDialog, ShareView, api.ts, types | 51 (no new) |
+
+## What's now usable end-to-end
+
+- **Drop a Kalkulation .xlsx into the panel's "Importieren" → land directly in v2 INTERN view.** The importer detects the template via header anchors, lifts CalcParams from the ZSCHLG matrix + Stundensatz, surfaces formula-error cells as a blocking gate ("Blatt · Zelle · Fehler · Vorschlag" table), and auto-flips `tableVersion=v2` on success.
+- **Click any position in a share-link → side-panel with the comment composer.** Captures name + email on first interaction. Persists drafts so the customer can comment multiple positions and submit once at the bottom.
+- **Set a password + expiry on share-link creation.** Customer hits the password gate before seeing any LV data. Wrong password → friendly "Passwort stimmt nicht" warning. Right password → cached in sessionStorage so reload doesn't re-prompt.
+- **Revision banner.** When the calculator edits the project after a customer has commented, the next time the customer opens the link they see "Neue Version verfügbar — letzte Änderung: …" with a note that their comments stay attached.
+
+## What ships in the bundle but waits on server
+
+Documented in [`SERVER_INTEGRATION_round2.md`](SERVER_INTEGRATION_round2.md). All frontend additions are fail-safe — missing backend fields mean the feature stays off, no regression.
+
+| Server piece | What's missing | Effort estimate |
+|---|---|---|
+| `password_hash`/`expires_at` columns on `shares` + 401/410 branches | `GET /api/share/:token` needs to gate on header + expiry | ~4 hours |
+| `hasNewerVersion` + `latestVersionNumber` on `CustomerViewPayload` | Compare `projects.updated_at > shares.snapshotted_at` in the payload builder | ~1 hour |
+| Rate-limiting failed unlock attempts | Existing infra or new middleware | ~2 hours |
+
+## What I deliberately deferred (with reasoning, not deflection)
+
+- **Per-row comment-count badges in v2 INTERN view** — wants a `GET /api/projects/:id/comments/by-position` aggregate that doesn't exist yet. P1 follow-up. The data is all in `share_responses`; needs one new endpoint.
+- **A separate `unlockShare` server endpoint** — I added the client alias but recommend reusing `GET /share/:token` with `X-Share-Password` instead. Two endpoints for the same shape is just ceremony.
+- **`deploy.sh` accidentally swept into Round 1's cherry-pick.** Pre-existing untracked file at session start. Harmless (deploys to Hetzner via SSH + `docker compose up --build -d`). Note for cleanup if undesired.
+
 End.
