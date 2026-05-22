@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-05-22 22:40 — Firma integration Phase 1a — preisanfrage as source of truth
+- Source: follow-up from user's 4 architecture decisions on the integration proposal (commit 6ea675b). User picked: live API on every page, all 98 firmas, service-account JWT, calc defaults in panel-api (not preisanfrage).
+- Branch: claude-auto/v2-gaps-closeout (continued)
+- Result: committed d4cbc5d (large feat — ~2,000 lines across 12 files)
+- Notes: Shipped the full Phase 1a stack: `panel-api/src/lib/preisanfrage.ts` (typed client w/ snake→camel mapping + 60 s in-memory cache + graceful 502/503), `panel-api/src/routes/firmen.ts` (GET /firmen, GET /firmen/:kind/:id, PUT/DELETE defaults), `firma_calc_defaults` SQLite table keyed by (preisanfrage_firma_id, firma_kind), `Firmen.tsx` list page w/ search+filter, `Firma.tsx` detail page w/ editable defaults + Ausschreibungen list, Building2 nav entry. 8 new panel-api tests cover the client, caching, error mapping, migration idempotency, and JWT-leak guard — 64/64 pass. Frontend 349/349 vitest pass. Lint 0 errors. Build 3,76 s. Companion doc `docs/v2_redesign/preisanfrage_patch_instructions.md` lists the preisanfrage-side changes the human still has to apply (CORS, bot user, JWT mint, env var, container rebuild). Phase 1b (wire each Auschreibung row to "Kalkulation starten") deliberately deferred to its own work unit.
+
 ## 2026-05-22 22:15 — Architecture proposal: preisanfrage as Firmen-source
 - Source: user "we caan bring all information [...] from preisanfrage.kalkus.de [...] fetch Ausschreibungen [...] make all companies from server"
 - Branch: claude-auto/v2-gaps-closeout (continued)
