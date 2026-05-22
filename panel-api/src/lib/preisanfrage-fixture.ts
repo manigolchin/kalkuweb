@@ -449,16 +449,19 @@ export function getMockCompanies(): PreisanfrageCompany[] {
 }
 
 /** Mock activates when:
- *   - PREISANFRAGE_MOCK is explicitly 'fixture' or '1', OR
+ *   - PREISANFRAGE_MOCK is explicitly truthy (fixture / 1 / true / yes), OR
  *   - we're NOT in production AND no real service JWT is set
  *     (= dev defaults to mock so `npm run dev` just works).
  *
- * Explicit `PREISANFRAGE_MOCK=0` always wins — useful for testing the
- * real upstream from a dev box. */
+ * Explicit falsy values (0 / false / no / off) always win — useful for
+ * testing the real upstream from a dev box. Whitespace + case are
+ * tolerated for forgiveness. */
 export function isMockMode(): boolean {
-  const explicit = (process.env.PREISANFRAGE_MOCK ?? '').toLowerCase();
-  if (explicit === 'fixture' || explicit === '1' || explicit === 'true') return true;
-  if (explicit === '0' || explicit === 'false') return false;
+  const explicit = (process.env.PREISANFRAGE_MOCK ?? '').trim().toLowerCase();
+  const truthy = new Set(['fixture', '1', 'true', 'yes', 'on']);
+  const falsy = new Set(['0', 'false', 'no', 'off']);
+  if (truthy.has(explicit)) return true;
+  if (falsy.has(explicit)) return false;
   // Auto: dev + no real token → mock; everything else → not mock.
   const inProd = process.env.NODE_ENV === 'production';
   const hasToken =
