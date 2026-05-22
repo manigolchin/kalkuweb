@@ -249,4 +249,46 @@ Three rounds of work, all on `claude-auto/v2-gaps-closeout`:
 - v2 INTERN row comment-count badge: counts API works; badge UI sometimes needs a second reload. e2e spec logs a warning instead of failing. Tracked as Round 4 P1.
 ````
 
+---
+
+# Round 4 — display fidelity + read-only LV + full-Excel import (2026-05-22)
+
+Full per-PART checkpoint in [`progress_round4.md`](progress_round4.md). Summary:
+
+## Round 4 commits
+
+| Commit | PART | What it ships |
+|---|---|---|
+| `2a669c8` | **N** | Bezeichnung renders in full — no truncation/ellipsis. KG/Titel headings wrap. All LV position fields (OZ, Bezeichnung, Menge, Einheit, Material EK, Min/Einheit, NU EK, Langtext, group name) become read-only `<div>`s with `data-readonly` markers + `align-top`. 7 new tests including a synthetic 300-char Bezeichnung row. |
+| `ae51bd7` | **P** | Excel importer captures full Zuschlag matrix (per cost type: EK / ZSCHLG / VK / DIFFERNZ), header extras (Mitarbeiter / Std / Tage / Monate / Überschuss / Zeitwert), structured Faktoren-Lookup. 13 new tests covering all 4 real example files; fidelity report writes **✅ zero discrepancies**. |
+| `cf459c6` | **O + Q** | New `ZuschlagMatrixStrip` (sticky top of INTERN view) with editable ZSCHLG % per cost type (debounced 300 ms, immediate-on-blur, Escape reverts, reset link). Live recompute cascades through `calculatePosition()`. 10 new tests including 9 sentinel-leak guards for the four new ZSCHLG/Stundensatz/Überschuss sentinels — all confirmed absent from KUNDEN view. |
+
+## Headline numbers
+
+| Stack | Before Round 4 | After Round 4 |
+|---|---|---|
+| Frontend (vitest+jsdom) | 51/51 | **87/87** (+36) |
+| Backend (node:test) | 51/51 | 51/51 (unchanged) |
+| Playwright e2e | 1/1 | 1/1 (unchanged) |
+| **Total assertions** | 103 | **139** |
+| Fidelity vs raw Excel | not measured | **0 discrepancies** (all 4 files) |
+
+## What's now live for users (after deploy)
+
+1. **Full Bezeichnung visible** — every position description renders in its entirety; no clipping, no horizontal scroll, no "…". Multi-line specs are first-class.
+2. **LV is read-only** — Pos, Bezeichnung, Menge, Einheit, EP, GP, all cost-EK fields can't be accidentally edited. Edit Excel → re-import to change.
+3. **Live margin tuning** — the calculator opens INTERN view and the Zuschlag matrix is right at the top. Edit a ZSCHLG cell, every position's EP/GP + Netto + Brutto + Überschuss recompute within ~300 ms. Click "Zurücksetzen" to restore the imported value.
+4. **Full Vorlage capture** — re-importing the same Excel into a new project picks up Mitarbeiter, Std-gesamt, Überschuss, the per-cost-type ZSCHLG matrix, and the Faktoren-Bibliothek — every cell the calculator cares about.
+
+## Deferred to Round 5 (honest list)
+
+- Audit log of ZSCHLG changes (who/when/old→new)
+- Re-import merge prompt for ZSCHLG override conflicts
+- Toast on attempted edit of locked fields (UX call needed — current locked fields don't fire any click event to attach a toast to)
+- Per-row Kalkulationsdetail expander showing X–AP derived values
+- Faktoren-Bibliothek side drawer (data is captured, drawer UI not built)
+- Playwright visual snapshot of long-text row
+
+All documented in `progress_round4.md` "What's deliberately deferred" section.
+
 End.
