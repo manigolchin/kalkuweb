@@ -50,6 +50,14 @@ vi.mock('@/lib/api', async () => {
         resetDefaults: vi.fn(),
         projectPositions: vi.fn(),
         health: vi.fn(),
+        // Round 11 — local CRUD. Tests overwrite per-case via direct assignment
+        // (api.firmen.createLocal = ...) to keep `mock.calls` introspection simple.
+        createLocal: vi.fn(),
+        updateLocal: vi.fn(),
+        archiveLocal: vi.fn(),
+        createAuschreibung: vi.fn(),
+        updateAuschreibung: vi.fn(),
+        archiveAuschreibung: vi.fn(),
       },
     },
   };
@@ -89,14 +97,44 @@ function buildRow(over: Partial<Awaited<ReturnType<typeof api.firmen.list>>['row
 function buildPayload(rows: ReturnType<typeof buildRow>[], opts: { isMock?: boolean } = {}) {
   const managed = rows.filter((r) => r.kind === 'managed').length;
   const external = rows.filter((r) => r.kind === 'external').length;
+  const local = rows.filter((r) => r.kind === 'local').length;
   return {
     rows,
     managedCount: managed,
     externalCount: external,
+    localCount: local,
     totalProjects: rows.reduce((s, r) => s + r.projectCount, 0),
     lastScanAt: '2026-05-22T19:00:00Z',
     generatedAt: '2026-05-22T19:30:00Z',
     isMock: opts.isMock ?? false,
+  };
+}
+
+/** Helper for round-11 local rows. The legacy buildRow is `as const` for
+ *  kind='managed' which makes overriding the kind unsafe at the type
+ *  level — this builder loosens the types so 'local' string ids work. */
+function buildLocalRow(over: Partial<{
+  id: string;
+  displayName: string;
+  tradeType: string | null;
+  projectCount: number;
+  wonCount: number;
+  wonSumBrutto: number;
+  lastSubmissionDate: string | null;
+  hasCustomDefaults: boolean;
+}> = {}): Awaited<ReturnType<typeof api.firmen.list>>['rows'][number] {
+  return {
+    kind: 'local' as const,
+    id: over.id ?? 'local-1234567890ab',
+    folderName: null,
+    displayName: over.displayName ?? 'Lokale Privat GmbH',
+    tradeType: over.tradeType ?? 'galabau',
+    projectCount: over.projectCount ?? 0,
+    wonCount: over.wonCount ?? 0,
+    wonSumBrutto: over.wonSumBrutto ?? 0,
+    lastSubmissionDate: over.lastSubmissionDate ?? null,
+    adoptedCompanyId: null,
+    hasCustomDefaults: over.hasCustomDefaults ?? false,
   };
 }
 
@@ -449,9 +487,9 @@ describe('Firmen.tsx — a11y attributes', () => {
     await waitFor(() => expect(screen.getByText('Gesellchen GmbH')).toBeDefined());
     const group = screen.getByRole('group', { name: 'Filter' });
     expect(group).toBeDefined();
-    // The group must contain all 4 filter buttons.
+    // The group must contain all 5 filter buttons (Round 11 added "Lokal").
     const buttons = group.querySelectorAll('button');
-    expect(buttons.length).toBe(4);
+    expect(buttons.length).toBe(5);
   });
 
   test('active filter button reports aria-pressed="true"', async () => {
@@ -502,5 +540,198 @@ describe('Firmen.tsx — loading skeleton', () => {
     await waitFor(() => expect(screen.getByText('Gesellchen GmbH')).toBeDefined());
     expect(document.querySelectorAll('[data-testid=firmen-skeleton-row]').length).toBe(0);
     expect(document.querySelector('[data-testid=firmen-loading]')).toBeNull();
+  });
+});
+
+/**
+ * Round 11 — manual create + archive of LOCAL firmas.
+ */
+describe('Firmen.tsx — Round 11 local-firma CRUD', () => {
+  test('"Neue Firma" button is visible in the header', async () => {
+    listMock.mockResolvedValueOnce(buildPayload([buildRow()]));
+    renderFirmen();
+    await waitFor(() => expect(screen.getByText('Gesellchen GmbH')).toBeDefined());
+    expect(screen.getByTestId('firmen-new-button')).toBeDefined();
+    expect(screen.getByRole('button', { name: /Neue Firma/ })).toBeDefined();
+  });
+
+  test('clicking "Neue Firma" opens the modal with name input autofocused', async () => {
+    listMock.mockResolvedValueOnce(buildPayload([buildRow()]));
+    renderFirmen();
+    await waitFor(() => expect(screen.getByText('Gesellchen GmbH')).toBeDefined());
+    fireEvent.click(screen.getByTestId('firmen-new-button'));
+    await waitFor(() => expect(screen.getByTestId('new-firma-modal')).toBeDefined());
+    const nameInput = document.getElementById('new-firma-name') as HTMLInputElement;
+    expect(nameInput).not.toBeNull();
+    expect(document.activeElement).toBe(nameInput);
+  });
+
+  test('Anlegen-button is disabled when name is empty + enabled after typing', async () => {
+    listMock.mockResolvedValueOnce(buildPayload([buildRow()]));
+    renderFirmen();
+    await waitFor(() => expect(screen.getByText('Gesellchen GmbH')).toBeDefined());
+    fireEvent.click(screen.getByTestId('firmen-new-button'));
+    const submit = screen.getByRole('button', { name: /Anlegen/ }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    const nameInput = document.getElementById('new-firma-name') as HTMLInputElement;
+    fireEvent.change(nameInput, { target: { value: 'Test Firma' } });
+    expect(submit.disabled).toBe(false);
+  });
+
+  test('submitting calls api.firmen.createLocal with displayName + tradeType + notes', async () => {
+    const createLocalMock = vi.fn().mockResolvedValue({
+      kind: 'local' as const,
+      id: 'new-local-id',
+      displayName: 'Privatkunde Müller',
+      tradeType: 'elektro',
+      notes: 'VIP',
+      archivedAt: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    (api.firmen as unknown as { createLocal: typeof createLocalMock }).createLocal = createLocalMock;
+
+    listMock.mockResolvedValueOnce(buildPayload([buildRow()]));
+    renderFirmen();
+    await waitFor(() => expect(screen.getByText('Gesellchen GmbH')).toBeDefined());
+    fireEvent.click(screen.getByTestId('firmen-new-button'));
+
+    fireEvent.change(document.getElementById('new-firma-name') as HTMLInputElement, {
+      target: { value: 'Privatkunde Müller' },
+    });
+    fireEvent.change(document.getElementById('new-firma-trade') as HTMLSelectElement, {
+      target: { value: 'elektro' },
+    });
+    fireEvent.change(document.getElementById('new-firma-notes') as HTMLTextAreaElement, {
+      target: { value: 'VIP' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Anlegen/ }));
+
+    await waitFor(() => expect(createLocalMock).toHaveBeenCalledTimes(1));
+    expect(createLocalMock.mock.calls[0][0]).toEqual({
+      displayName: 'Privatkunde Müller',
+      tradeType: 'elektro',
+      notes: 'VIP',
+    });
+  });
+
+  test('on success: modal closes + new row appears in table', async () => {
+    const createLocalMock = vi.fn().mockResolvedValue({
+      kind: 'local' as const,
+      id: 'fresh-local',
+      displayName: 'Fresh Firma',
+      tradeType: null,
+      notes: null,
+      archivedAt: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    (api.firmen as unknown as { createLocal: typeof createLocalMock }).createLocal = createLocalMock;
+
+    listMock.mockResolvedValueOnce(buildPayload([buildRow()]));
+    renderFirmen();
+    await waitFor(() => expect(screen.getByText('Gesellchen GmbH')).toBeDefined());
+    fireEvent.click(screen.getByTestId('firmen-new-button'));
+    fireEvent.change(document.getElementById('new-firma-name') as HTMLInputElement, {
+      target: { value: 'Fresh Firma' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Anlegen/ }));
+
+    await waitFor(() => expect(screen.queryByTestId('new-firma-modal')).toBeNull());
+    expect(screen.getByText('Fresh Firma')).toBeDefined();
+  });
+
+  test('on error: toast.error fires + modal stays open', async () => {
+    const createLocalMock = vi.fn().mockRejectedValue(new Error('boom'));
+    (api.firmen as unknown as { createLocal: typeof createLocalMock }).createLocal = createLocalMock;
+    const toast = (await import('react-hot-toast')).default as unknown as { error: ReturnType<typeof vi.fn> };
+
+    listMock.mockResolvedValueOnce(buildPayload([buildRow()]));
+    renderFirmen();
+    await waitFor(() => expect(screen.getByText('Gesellchen GmbH')).toBeDefined());
+    fireEvent.click(screen.getByTestId('firmen-new-button'));
+    fireEvent.change(document.getElementById('new-firma-name') as HTMLInputElement, {
+      target: { value: 'Will Fail' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Anlegen/ }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    // Modal still mounted.
+    expect(screen.getByTestId('new-firma-modal')).toBeDefined();
+  });
+
+  test('Escape key closes the modal', async () => {
+    listMock.mockResolvedValueOnce(buildPayload([buildRow()]));
+    renderFirmen();
+    await waitFor(() => expect(screen.getByText('Gesellchen GmbH')).toBeDefined());
+    fireEvent.click(screen.getByTestId('firmen-new-button'));
+    expect(screen.getByTestId('new-firma-modal')).toBeDefined();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByTestId('new-firma-modal')).toBeNull());
+  });
+
+  test('local firms render with "Lokal" badge', async () => {
+    listMock.mockResolvedValueOnce(
+      buildPayload([buildLocalRow({ id: 'abc123', displayName: 'My Local' })]),
+    );
+    renderFirmen();
+    await waitFor(() => expect(screen.getByText('My Local')).toBeDefined());
+    expect(screen.getByTestId('firma-local-badge').textContent).toBe('Lokal');
+  });
+
+  test('local firms get a trash button — confirm + call api.firmen.archiveLocal', async () => {
+    const archiveLocalMock = vi.fn().mockResolvedValue({ ok: true });
+    (api.firmen as unknown as { archiveLocal: typeof archiveLocalMock }).archiveLocal = archiveLocalMock;
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    listMock.mockResolvedValueOnce(
+      buildPayload([buildLocalRow({ id: 'kill-me', displayName: 'Doomed' })]),
+    );
+    renderFirmen();
+    await waitFor(() => expect(screen.getByText('Doomed')).toBeDefined());
+    fireEvent.click(screen.getByTestId('firma-archive-button'));
+    await waitFor(() => expect(archiveLocalMock).toHaveBeenCalledWith('kill-me'));
+    confirmSpy.mockRestore();
+  });
+
+  test('clicking trash with confirm=false does NOT call the api', async () => {
+    const archiveLocalMock = vi.fn().mockResolvedValue({ ok: true });
+    (api.firmen as unknown as { archiveLocal: typeof archiveLocalMock }).archiveLocal = archiveLocalMock;
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+    listMock.mockResolvedValueOnce(
+      buildPayload([buildLocalRow({ id: 'cancel-me', displayName: 'Stays' })]),
+    );
+    renderFirmen();
+    await waitFor(() => expect(screen.getByText('Stays')).toBeDefined());
+    fireEvent.click(screen.getByTestId('firma-archive-button'));
+    expect(archiveLocalMock).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  test('managed/external firms do NOT show a trash button', async () => {
+    listMock.mockResolvedValueOnce(
+      buildPayload([
+        buildRow({ id: 1, displayName: 'Managed One', kind: 'managed' }),
+        buildRow({ id: 2, displayName: 'External One', kind: 'external', tradeType: null }),
+      ]),
+    );
+    renderFirmen();
+    await waitFor(() => expect(screen.getByText('Managed One')).toBeDefined());
+    expect(document.querySelectorAll('[data-testid=firma-archive-button]').length).toBe(0);
+  });
+
+  test('"Lokal" filter tab shows only local rows', async () => {
+    listMock.mockResolvedValueOnce(
+      buildPayload([
+        buildRow({ id: 1, displayName: 'Managed One' }),
+        buildLocalRow({ id: 'l1', displayName: 'Local One' }),
+      ]),
+    );
+    renderFirmen();
+    await waitFor(() => expect(screen.getByText('Managed One')).toBeDefined());
+    fireEvent.click(screen.getByRole('button', { name: 'Lokal' }));
+    expect(screen.queryByText('Managed One')).toBeNull();
+    expect(screen.getByText('Local One')).toBeDefined();
   });
 });

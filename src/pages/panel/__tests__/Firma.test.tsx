@@ -61,6 +61,12 @@ vi.mock('@/lib/api', async () => {
         resetDefaults: vi.fn(),
         projectPositions: vi.fn(),
         health: vi.fn(),
+        createLocal: vi.fn(),
+        updateLocal: vi.fn(),
+        archiveLocal: vi.fn(),
+        createAuschreibung: vi.fn(),
+        updateAuschreibung: vi.fn(),
+        archiveAuschreibung: vi.fn(),
       },
     },
   };
@@ -543,5 +549,235 @@ describe('Firma.tsx — optimistic defaults save', () => {
     expect(successArgs[0]).toBe('Gespeichert.');
     expect(successArgs[1]).toEqual({ id: 'toast-id-stub' });
     expect(toast.error).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Round 11 — local Ausschreibungen UI (create / status-edit / delete).
+ *
+ * Builds a managed-firma detail that ALSO carries a local Ausschreibung in
+ * its projects[], so we can exercise both:
+ *   - the "Neue Ausschreibung" modal call shape (kind+firmaId from URL)
+ *   - the status badge + quick-edit dropdown for local rows
+ *   - the trash button (with confirm) for local rows
+ *   - the preisanfrage-sourced rows correctly omitting trash/edit
+ */
+describe('Firma.tsx — Round 11 local Ausschreibungen', () => {
+  function buildDetailWithLocal() {
+    return buildDetail({
+      projects: [
+        {
+          source: 'managed' as const,
+          id: 1001,
+          projectNumber: '260512',
+          name: 'Sanierung Sandsteinmauer Ludwigschule',
+          baumassnahme: null,
+          auftraggeberName: 'Stadtverwaltung Sankt Ingbert',
+          anschriftPlzOrt: '66386 Sankt Ingbert',
+          submissionDate: '2026-05-12',
+          submissionTime: '14:00',
+          status: 'analyzed',
+          totalPositions: 25,
+          oneDriveShareUrl: null,
+          updatedAt: '2026-05-12T15:30:00Z',
+        },
+        {
+          // Local row attached to managed/5
+          source: 'local' as const,
+          id: 'local-aus-id-1',
+          projectNumber: 'PRIV-001',
+          name: 'Privat-Sanierung Müller',
+          auftraggeberName: 'Familie Müller',
+          anschriftPlzOrt: '66111 Saarbrücken',
+          submissionDate: '2026-06-01',
+          submissionTime: '10:00',
+          status: 'in_arbeit',
+          firmaKind: 'managed' as const,
+          firmaId: '5',
+          notes: null,
+        },
+      ],
+    });
+  }
+
+  test('"Neue Ausschreibung" button is visible in the Ausschreibungen card', async () => {
+    detailMock.mockResolvedValueOnce(buildDetail());
+    renderFirma();
+    await waitFor(() => expect(screen.getByText('Sanierung Sandsteinmauer Ludwigschule')).toBeDefined());
+    expect(screen.getByTestId('auschreibung-new-button')).toBeDefined();
+  });
+
+  test('clicking "Neue Ausschreibung" opens the modal with all fields', async () => {
+    detailMock.mockResolvedValueOnce(buildDetail());
+    renderFirma();
+    await waitFor(() => expect(screen.getByText('Sanierung Sandsteinmauer Ludwigschule')).toBeDefined());
+    fireEvent.click(screen.getByTestId('auschreibung-new-button'));
+    await waitFor(() => expect(screen.getByTestId('new-auschreibung-modal')).toBeDefined());
+    // Spot-check the field set.
+    expect(document.getElementById('new-aus-name')).not.toBeNull();
+    expect(document.getElementById('new-aus-num')).not.toBeNull();
+    expect(document.getElementById('new-aus-ag')).not.toBeNull();
+    expect(document.getElementById('new-aus-addr')).not.toBeNull();
+    expect(document.getElementById('new-aus-date')).not.toBeNull();
+    expect(document.getElementById('new-aus-time')).not.toBeNull();
+    expect(document.getElementById('new-aus-status')).not.toBeNull();
+    expect(document.getElementById('new-aus-notes')).not.toBeNull();
+  });
+
+  test('submit calls api.firmen.createAuschreibung with the kind+firmaId from URL params', async () => {
+    const createAusMock = vi.fn().mockResolvedValue({
+      source: 'local' as const,
+      id: 'new-aus-x',
+      firmaKind: 'managed' as const,
+      firmaId: '5',
+      name: 'Mein Test',
+      projectNumber: null,
+      auftraggeberName: null,
+      anschriftPlzOrt: null,
+      submissionDate: null,
+      submissionTime: null,
+      status: 'offen' as const,
+      notes: null,
+      archivedAt: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    (api.firmen as unknown as { createAuschreibung: typeof createAusMock }).createAuschreibung = createAusMock;
+
+    detailMock.mockResolvedValueOnce(buildDetail()).mockResolvedValue(buildDetail());
+    renderFirma('/panel/firmen/managed/5');
+    await waitFor(() => expect(screen.getByText('Sanierung Sandsteinmauer Ludwigschule')).toBeDefined());
+    fireEvent.click(screen.getByTestId('auschreibung-new-button'));
+    fireEvent.change(document.getElementById('new-aus-name') as HTMLInputElement, {
+      target: { value: 'Mein Test' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Anlegen/ }));
+
+    await waitFor(() => expect(createAusMock).toHaveBeenCalledTimes(1));
+    const [kind, firmaId, body] = createAusMock.mock.calls[0];
+    expect(kind).toBe('managed');
+    // URL was managed/5 → firmaId stays numeric here because Firma.tsx
+    // resolves it through Number(idRaw) for preisanfrage kinds.
+    expect(firmaId).toBe(5);
+    expect(body.name).toBe('Mein Test');
+    expect(body.status).toBe('offen');
+  });
+
+  test('local Ausschreibungen render with "Lokal" source badge', async () => {
+    detailMock.mockResolvedValueOnce(buildDetailWithLocal());
+    renderFirma();
+    await waitFor(() => expect(screen.getByText('Privat-Sanierung Müller')).toBeDefined());
+    expect(screen.getByTestId('auschreibung-local-source-badge').textContent).toBe('Lokal');
+  });
+
+  test('status badge renders the right label per status', async () => {
+    detailMock.mockResolvedValueOnce(buildDetailWithLocal());
+    renderFirma();
+    await waitFor(() => expect(screen.getByText('Privat-Sanierung Müller')).toBeDefined());
+    const badge = screen.getByTestId('auschreibung-status-badge');
+    expect(badge.textContent).toBe('In Arbeit');
+  });
+
+  test('clicking the status badge swaps to a dropdown', async () => {
+    detailMock.mockResolvedValueOnce(buildDetailWithLocal());
+    renderFirma();
+    await waitFor(() => expect(screen.getByText('Privat-Sanierung Müller')).toBeDefined());
+    fireEvent.click(screen.getByTestId('auschreibung-status-badge'));
+    await waitFor(() => expect(screen.getByTestId('auschreibung-status-select')).toBeDefined());
+    const select = screen.getByTestId('auschreibung-status-select') as HTMLSelectElement;
+    // 5 options: offen / in_arbeit / abgegeben / gewonnen / verloren
+    expect(select.querySelectorAll('option').length).toBe(5);
+  });
+
+  test('changing status via dropdown calls api.firmen.updateAuschreibung', async () => {
+    const updateAusMock = vi.fn().mockResolvedValue({
+      source: 'local' as const,
+      id: 'local-aus-id-1',
+      firmaKind: 'managed' as const,
+      firmaId: '5',
+      name: 'Privat-Sanierung Müller',
+      projectNumber: 'PRIV-001',
+      auftraggeberName: 'Familie Müller',
+      anschriftPlzOrt: '66111 Saarbrücken',
+      submissionDate: '2026-06-01',
+      submissionTime: '10:00',
+      status: 'gewonnen' as const,
+      notes: null,
+      archivedAt: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    (api.firmen as unknown as { updateAuschreibung: typeof updateAusMock }).updateAuschreibung = updateAusMock;
+
+    detailMock.mockResolvedValue(buildDetailWithLocal());
+    renderFirma();
+    await waitFor(() => expect(screen.getByText('Privat-Sanierung Müller')).toBeDefined());
+    fireEvent.click(screen.getByTestId('auschreibung-status-badge'));
+    const select = screen.getByTestId('auschreibung-status-select') as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: 'gewonnen' } });
+    await waitFor(() => expect(updateAusMock).toHaveBeenCalledWith('local-aus-id-1', { status: 'gewonnen' }));
+  });
+
+  test('local Ausschreibungen show a trash button', async () => {
+    detailMock.mockResolvedValueOnce(buildDetailWithLocal());
+    renderFirma();
+    await waitFor(() => expect(screen.getByText('Privat-Sanierung Müller')).toBeDefined());
+    expect(screen.getByTestId('auschreibung-delete-button')).toBeDefined();
+  });
+
+  test('trash button → confirm → calls api.firmen.archiveAuschreibung', async () => {
+    const archiveAusMock = vi.fn().mockResolvedValue({ ok: true });
+    (api.firmen as unknown as { archiveAuschreibung: typeof archiveAusMock }).archiveAuschreibung = archiveAusMock;
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    detailMock.mockResolvedValue(buildDetailWithLocal());
+    renderFirma();
+    await waitFor(() => expect(screen.getByText('Privat-Sanierung Müller')).toBeDefined());
+    fireEvent.click(screen.getByTestId('auschreibung-delete-button'));
+    await waitFor(() => expect(archiveAusMock).toHaveBeenCalledWith('local-aus-id-1'));
+    confirmSpy.mockRestore();
+  });
+
+  test('preisanfrage-sourced Ausschreibungen do NOT show a trash button', async () => {
+    detailMock.mockResolvedValueOnce(buildDetail()); // only the managed row
+    renderFirma();
+    await waitFor(() => expect(screen.getByText('Sanierung Sandsteinmauer Ludwigschule')).toBeDefined());
+    expect(document.querySelectorAll('[data-testid=auschreibung-delete-button]').length).toBe(0);
+  });
+
+  test('local firma (URL=/panel/firmen/local/abc): renders header + Ausschreibungen, no Defaults card', async () => {
+    detailMock.mockResolvedValueOnce({
+      firma: {
+        kind: 'local' as const,
+        id: 'abc123-localid1',
+        folderName: null,
+        displayName: 'Privatkunde Müller',
+        tradeType: 'putz',
+        projectCount: 0,
+        wonCount: 0,
+        wonSumBrutto: 0,
+        lastSubmissionDate: null,
+        adoptedCompanyId: null,
+        notes: 'wichtig',
+      },
+      defaults: {
+        materialZuschlag: 0.12,
+        nuZuschlag: 0.12,
+        verrechnungslohn: 49.9,
+        geraeteStundensatz: 0.5,
+        isCustom: false,
+      },
+      projects: [],
+    });
+    renderFirma('/panel/firmen/local/abc123-localid1');
+    await waitFor(() => expect(screen.getByText('Privatkunde Müller')).toBeDefined());
+    // "Lokal (Panel)" badge in the header
+    expect(screen.getByText('Lokal (Panel)')).toBeDefined();
+    // No "Kalkulations-Defaults" form (skipped for local kind).
+    expect(screen.queryByRole('form', { name: 'Kalkulations-Defaults' })).toBeNull();
+    // Empty Ausschreibungen list.
+    expect(screen.getByText(/Noch keine Ausschreibungen/)).toBeDefined();
+    // "Neue Ausschreibung" button still visible.
+    expect(screen.getByTestId('auschreibung-new-button')).toBeDefined();
   });
 });

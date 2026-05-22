@@ -210,5 +210,42 @@ export function runMigrations() {
       updated_at INTEGER NOT NULL,
       PRIMARY KEY (preisanfrage_firma_id, firma_kind)
     );
+
+    -- Round 11 — local Firmen (panel-only; never synced to preisanfrage).
+    CREATE TABLE IF NOT EXISTS local_firmen (
+      id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      display_name TEXT NOT NULL,
+      trade_type TEXT,
+      notes TEXT,
+      archived_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_local_firmen_owner ON local_firmen(owner_id);
+    CREATE INDEX IF NOT EXISTS idx_local_firmen_archived ON local_firmen(archived_at);
+
+    -- Round 11 — local Ausschreibungen. firmaKind/firmaId is composite ref to
+    -- (managed | external | local) Firma. Status enum mirrors the panel UI badges.
+    CREATE TABLE IF NOT EXISTS local_auschreibungen (
+      id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      firma_kind TEXT NOT NULL CHECK (firma_kind IN ('managed','external','local')),
+      firma_id TEXT NOT NULL,
+      project_number TEXT,
+      name TEXT NOT NULL,
+      auftraggeber_name TEXT,
+      anschrift_plz_ort TEXT,
+      submission_date TEXT,
+      submission_time TEXT,
+      status TEXT NOT NULL DEFAULT 'offen' CHECK (status IN ('offen','in_arbeit','abgegeben','gewonnen','verloren')),
+      notes TEXT,
+      archived_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_local_aus_owner ON local_auschreibungen(owner_id);
+    CREATE INDEX IF NOT EXISTS idx_local_aus_firma ON local_auschreibungen(firma_kind, firma_id);
+    CREATE INDEX IF NOT EXISTS idx_local_aus_archived ON local_auschreibungen(archived_at);
   `);
 }

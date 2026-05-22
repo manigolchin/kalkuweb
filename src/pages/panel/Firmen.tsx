@@ -11,7 +11,7 @@
  * See: docs/v2_redesign/multi_company_integration_architecture.md
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import {
@@ -23,8 +23,12 @@ import {
   ArrowRight,
   RefreshCw,
   HardHat,
+  Plus,
+  Trash2,
+  X,
 } from 'lucide-react';
 import clsx from 'clsx';
+import toast from 'react-hot-toast';
 import { api, ApiError } from '@/lib/api';
 import { formatEUR } from '@/features/kalkulation/calc';
 import { Skeleton } from '@/components/panel/Skeleton';
@@ -39,7 +43,31 @@ const TRADE_LABEL: Record<string, string> = {
   fenster: 'Fenster',
   haustechnik: 'Haustechnik',
   heizung: 'Heizung',
+  sanitaer: 'Sanitär',
+  dach: 'Dachdecker',
+  fassade: 'Fassade',
+  putz: 'Putz/Stuck',
+  maler: 'Maler',
+  sonstiges: 'Sonstiges',
 };
+
+/** Curated trade list shown in the Neue-Firma dropdown. Stays in sync with
+ *  the union of values the panel UI knows how to label (see TRADE_LABEL). */
+const TRADE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: 'galabau', label: 'GaLaBau' },
+  { value: 'elektro', label: 'Elektro' },
+  { value: 'tiefbau', label: 'Tiefbau' },
+  { value: 'leitungsbau', label: 'Leitungsbau' },
+  { value: 'fenster', label: 'Fenster' },
+  { value: 'haustechnik', label: 'Haustechnik' },
+  { value: 'heizung', label: 'Heizung' },
+  { value: 'sanitaer', label: 'Sanitär' },
+  { value: 'dach', label: 'Dachdecker' },
+  { value: 'fassade', label: 'Fassade' },
+  { value: 'putz', label: 'Putz/Stuck' },
+  { value: 'maler', label: 'Maler' },
+  { value: 'sonstiges', label: 'Sonstiges' },
+];
 
 export default function Firmen() {
   const navigate = useNavigate();
@@ -47,10 +75,14 @@ export default function Firmen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'all' | 'managed' | 'external' | 'won-recent'>('all');
+  const [filter, setFilter] = useState<'all' | 'managed' | 'external' | 'local' | 'won-recent'>('all');
   // Keyboard-nav: index into filteredRows. -1 = no row highlighted.
   const [highlight, setHighlight] = useState<number>(-1);
   const searchRef = useRef<HTMLInputElement | null>(null);
+  // Round 11 — "Neue Firma" modal open/close.
+  const [createOpen, setCreateOpen] = useState(false);
+  // Round 11 — which local firma is currently being archived (for spinner).
+  const [archivingId, setArchivingId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -83,6 +115,32 @@ export default function Firmen() {
     load();
   }, []);
 
+  async function handleArchiveLocal(row: FirmaRow) {
+    if (row.kind !== 'local' || typeof row.id !== 'string') return;
+    if (!confirm(`Lokale Firma "${row.displayName}" archivieren? Alle zugehörigen lokalen Ausschreibungen werden ebenfalls archiviert.`)) {
+      return;
+    }
+    setArchivingId(row.id);
+    try {
+      await api.firmen.archiveLocal(row.id);
+      toast.success('Firma archiviert.');
+      // Optimistic local removal so the spinner doesn't flicker.
+      setData((d) =>
+        d
+          ? {
+              ...d,
+              rows: d.rows.filter((r) => !(r.kind === 'local' && r.id === row.id)),
+              localCount: Math.max(0, d.localCount - 1),
+            }
+          : d,
+      );
+    } catch (e) {
+      toast.error(`Archivieren fehlgeschlagen: ${String(e)}`);
+    } finally {
+      setArchivingId(null);
+    }
+  }
+
   // Snapshot "now" once at mount so the filter predicate stays pure
   // (react-hooks/purity). Re-snapshotted on each load() via the
   // `data.generatedAt` server-supplied timestamp. Good enough for a 90-day
@@ -100,6 +158,7 @@ export default function Firmen() {
       .filter((r) => {
         if (filter === 'managed' && r.kind !== 'managed') return false;
         if (filter === 'external' && r.kind !== 'external') return false;
+        if (filter === 'local' && r.kind !== 'local') return false;
         if (filter === 'won-recent') {
           if (r.wonCount === 0) return false;
           if (!r.lastSubmissionDate) return false;
@@ -221,7 +280,10 @@ export default function Firmen() {
           )}
           {data && (
             <span className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
-              {data.managedCount} verwaltet + {data.externalCount} extern = {data.rows.length} Firmen
+              {data.managedCount} verwaltet + {data.externalCount} extern
+              {data.localCount > 0 && ` + ${data.localCount} lokal`}
+              {' = '}
+              {data.rows.length} Firmen
             </span>
           )}
           <button
@@ -232,6 +294,16 @@ export default function Firmen() {
           >
             <RefreshCw className={clsx('w-3.5 h-3.5', loading && 'animate-spin')} />
             Aktualisieren
+          </button>
+          <button
+            type="button"
+            onClick={() => setCreateOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-primary-600 text-white hover:bg-primary-700"
+            data-testid="firmen-new-button"
+            title="Lokale Firma manuell anlegen (ohne preisanfrage-Onboarding)"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Neue Firma
           </button>
         </div>
       </header>
@@ -259,6 +331,7 @@ export default function Firmen() {
             { id: 'all', label: 'Alle' },
             { id: 'managed', label: 'Verwaltet' },
             { id: 'external', label: 'Nur extern' },
+            { id: 'local', label: 'Lokal' },
             { id: 'won-recent', label: 'Zuletzt gewonnen' },
           ].map((tab) => (
             <button
@@ -354,6 +427,10 @@ export default function Firmen() {
                   row={row}
                   selected={highlight === idx}
                   onHover={() => setHighlight(idx)}
+                  onArchive={row.kind === 'local' ? () => handleArchiveLocal(row) : undefined}
+                  archiving={
+                    row.kind === 'local' && typeof row.id === 'string' && archivingId === row.id
+                  }
                 />
               ))}
             </tbody>
@@ -366,6 +443,197 @@ export default function Firmen() {
           Letzter OneDrive-Scan: {new Date(data.lastScanAt).toLocaleString('de-DE')}
         </p>
       )}
+
+      {createOpen && (
+        <NewFirmaModal
+          onClose={() => setCreateOpen(false)}
+          onCreated={(row) => {
+            // Optimistically append + refresh in background for accurate counts.
+            setData((d) =>
+              d
+                ? {
+                    ...d,
+                    rows: [
+                      ...d.rows,
+                      {
+                        kind: 'local' as const,
+                        id: row.id,
+                        folderName: null,
+                        displayName: row.displayName,
+                        tradeType: row.tradeType,
+                        projectCount: 0,
+                        wonCount: 0,
+                        wonSumBrutto: 0,
+                        lastSubmissionDate: null,
+                        adoptedCompanyId: null,
+                        hasCustomDefaults: false,
+                      },
+                    ],
+                    localCount: d.localCount + 1,
+                  }
+                : d,
+            );
+            setCreateOpen(false);
+            toast.success('Lokale Firma angelegt.');
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Modal dialog for creating a new local Firma. Keeps the create flow in one
+ * file rather than spinning up a tiny component module — easier to discover
+ * when reading Firmen.tsx for the first time.
+ */
+function NewFirmaModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (row: Awaited<ReturnType<typeof api.firmen.createLocal>>) => void;
+}) {
+  const [displayName, setDisplayName] = useState('');
+  const [tradeType, setTradeType] = useState<string>('');
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+  const nameRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    // Autofocus the name field on mount.
+    nameRef.current?.focus();
+  }, []);
+
+  // Close on Escape — matches typical modal UX.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const trimmedName = displayName.trim();
+  const canSubmit = trimmedName.length > 0 && !saving;
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!canSubmit) return;
+    setSaving(true);
+    try {
+      const row = await api.firmen.createLocal({
+        displayName: trimmedName,
+        tradeType: tradeType || null,
+        notes: notes.trim() || null,
+      });
+      onCreated(row);
+    } catch (e) {
+      toast.error(`Anlegen fehlgeschlagen: ${String(e)}`);
+      setSaving(false); // keep modal open so user can retry
+    }
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="new-firma-title"
+      data-testid="new-firma-modal"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+      onClick={(e) => {
+        // Click outside the panel closes the modal.
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="w-full max-w-md rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl">
+        <header className="flex items-start justify-between gap-3 px-5 py-4 border-b border-slate-100 dark:border-slate-800">
+          <div>
+            <h2 id="new-firma-title" className="text-base font-semibold text-slate-900 dark:text-slate-100">
+              Neue lokale Firma anlegen
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Bleibt nur im KALKU-Panel — keine preisanfrage-Anbindung nötig.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Schließen"
+            className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </header>
+        <form onSubmit={submit} className="px-5 py-4 space-y-4">
+          <div>
+            <label htmlFor="new-firma-name" className="text-xs font-medium text-slate-600 dark:text-slate-300">
+              Firmenname *
+            </label>
+            <input
+              id="new-firma-name"
+              ref={nameRef}
+              type="text"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              maxLength={200}
+              required
+              className="input w-full mt-1"
+              placeholder="z. B. Privatkunde Müller, Berlin"
+            />
+          </div>
+          <div>
+            <label htmlFor="new-firma-trade" className="text-xs font-medium text-slate-600 dark:text-slate-300">
+              Gewerk (optional)
+            </label>
+            <select
+              id="new-firma-trade"
+              value={tradeType}
+              onChange={(e) => setTradeType(e.target.value)}
+              className="input w-full mt-1"
+            >
+              <option value="">— kein Gewerk —</option>
+              {TRADE_OPTIONS.map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="new-firma-notes" className="text-xs font-medium text-slate-600 dark:text-slate-300">
+              Notizen (optional)
+            </label>
+            <textarea
+              id="new-firma-notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              maxLength={5000}
+              rows={3}
+              className="input w-full mt-1 resize-none"
+              placeholder="Kontaktdaten, Hinweise, Sonderwünsche…"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              Abbrechen
+            </button>
+            <button
+              type="submit"
+              disabled={!canSubmit}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50"
+            >
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+              Anlegen
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
@@ -374,12 +642,19 @@ function FirmaRowEl({
   row,
   selected = false,
   onHover,
+  onArchive,
+  archiving = false,
 }: {
   row: FirmaRow;
   selected?: boolean;
   onHover?: () => void;
+  /** Only passed for local firms. Undefined for managed/external — those can't
+   *  be archived from the panel because preisanfrage owns them. */
+  onArchive?: () => void;
+  archiving?: boolean;
 }) {
   const isExternal = row.kind === 'external';
+  const isLocal = row.kind === 'local';
   const isUnadopted = isExternal && !row.adoptedCompanyId;
   return (
     <tr
@@ -402,6 +677,15 @@ function FirmaRowEl({
         </Link>
         <div className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
           {row.folderName && <span className="font-mono">{row.folderName}</span>}
+          {isLocal && (
+            <span
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-100 dark:bg-sky-900/40 text-sky-800 dark:text-sky-200 font-semibold"
+              title="Lokal angelegt — nicht aus preisanfrage."
+              data-testid="firma-local-badge"
+            >
+              Lokal
+            </span>
+          )}
           {isUnadopted && (
             <span
               className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 font-semibold"
@@ -456,12 +740,31 @@ function FirmaRowEl({
         )}
       </td>
       <td className="px-4 py-3 align-top text-right">
-        <Link
-          to={`/panel/firmen/${row.kind}/${row.id}`}
-          className="inline-flex items-center gap-1 text-primary-600 dark:text-primary-300 hover:text-primary-700 dark:hover:text-primary-200 text-xs font-medium"
-        >
-          Öffnen <ArrowRight className="w-3 h-3" />
-        </Link>
+        <div className="inline-flex items-center gap-2 justify-end">
+          {onArchive && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onArchive();
+              }}
+              disabled={archiving}
+              aria-label="Firma archivieren"
+              data-testid="firma-archive-button"
+              className="p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded disabled:opacity-50"
+              title="Archivieren"
+            >
+              {archiving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+            </button>
+          )}
+          <Link
+            to={`/panel/firmen/${row.kind}/${row.id}`}
+            className="inline-flex items-center gap-1 text-primary-600 dark:text-primary-300 hover:text-primary-700 dark:hover:text-primary-200 text-xs font-medium"
+          >
+            Öffnen <ArrowRight className="w-3 h-3" />
+          </Link>
+        </div>
       </td>
     </tr>
   );

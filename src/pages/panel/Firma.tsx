@@ -11,7 +11,7 @@
  * Source of truth split: see docs/v2_redesign/multi_company_integration_architecture.md.
  */
 
-import { useEffect, useId, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import {
@@ -29,12 +29,41 @@ import {
   MapPin,
   CalendarDays,
   Calculator,
+  Plus,
+  Trash2,
+  X,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { api, ApiError } from '@/lib/api';
 import { formatEUR } from '@/features/kalkulation/calc';
 import { Skeleton } from '@/components/panel/Skeleton';
+
+/** Round 11 — status enum for local Ausschreibungen. Keep colors stable so
+ *  the panel reads like a Kanban (offen=slate, in-progress=amber, done=blue,
+ *  win=green, loss=rose). */
+type AuschreibungStatus = 'offen' | 'in_arbeit' | 'abgegeben' | 'gewonnen' | 'verloren';
+const STATUS_LABEL: Record<AuschreibungStatus, string> = {
+  offen: 'Offen',
+  in_arbeit: 'In Arbeit',
+  abgegeben: 'Abgegeben',
+  gewonnen: 'Gewonnen',
+  verloren: 'Verloren',
+};
+const STATUS_CLASS: Record<AuschreibungStatus, string> = {
+  offen: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+  in_arbeit: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
+  abgegeben: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200',
+  gewonnen: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200',
+  verloren: 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200',
+};
+const STATUS_OPTIONS: ReadonlyArray<AuschreibungStatus> = [
+  'offen', 'in_arbeit', 'abgegeben', 'gewonnen', 'verloren',
+];
+
+function isAuschreibungStatus(s: string | undefined): s is AuschreibungStatus {
+  return s === 'offen' || s === 'in_arbeit' || s === 'abgegeben' || s === 'gewonnen' || s === 'verloren';
+}
 
 type FirmaDetail = Awaited<ReturnType<typeof api.firmen.detail>>;
 
@@ -51,18 +80,30 @@ const TRADE_LABEL: Record<string, string> = {
 export default function Firma() {
   const { kind: kindRaw, id: idRaw } = useParams<{ kind: string; id: string }>();
   const navigate = useNavigate();
-  const kind = (kindRaw === 'managed' || kindRaw === 'external' ? kindRaw : null) as
-    | 'managed'
-    | 'external'
-    | null;
-  const id = Number(idRaw);
+  const kind = (kindRaw === 'managed' || kindRaw === 'external' || kindRaw === 'local'
+    ? kindRaw
+    : null) as 'managed' | 'external' | 'local' | null;
+  /** id is `string` for local kind (nanoid), `number` for preisanfrage kinds.
+   *  We pass it through as the raw param string everywhere except the legacy
+   *  `numericId` checks that the preisanfrage-defaults endpoint needs. */
+  const idParam: string | number | null = kind === 'local' ? (idRaw ?? null) : Number(idRaw);
 
   const [data, setData] = useState<FirmaDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
-    if (!kind || !Number.isInteger(id) || id <= 0) {
+    if (!kind) {
+      setError('Ungültige Firma-Referenz.');
+      setLoading(false);
+      return;
+    }
+    if (kind !== 'local' && (!Number.isInteger(idParam) || (idParam as number) <= 0)) {
+      setError('Ungültige Firma-Referenz.');
+      setLoading(false);
+      return;
+    }
+    if (kind === 'local' && (!idParam || typeof idParam !== 'string')) {
       setError('Ungültige Firma-Referenz.');
       setLoading(false);
       return;
@@ -70,11 +111,15 @@ export default function Firma() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.firmen.detail(kind, id);
+      const res = await api.firmen.detail(kind, idParam as number | string);
       setData(res);
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) {
-        setError('Diese Firma gibt es nicht (mehr) in preisanfrage.');
+        setError(
+          kind === 'local'
+            ? 'Diese lokale Firma gibt es nicht (mehr).'
+            : 'Diese Firma gibt es nicht (mehr) in preisanfrage.',
+        );
       } else if (e instanceof ApiError && e.status === 503) {
         setError('preisanfrage.kalkus.de ist gerade nicht erreichbar.');
       } else {
@@ -194,31 +239,38 @@ export default function Firma() {
       {data && (
         <>
           <Header firma={data.firma} kind={kind} />
-          <DefaultsCard
-            kind={kind}
-            id={id}
-            initial={data.defaults}
-            displayName={data.firma.displayName}
-            onSaved={(next) => setData({ ...data, defaults: next })}
-            onReset={() =>
-              setData({
-                ...data,
-                defaults: {
-                  materialZuschlag: 0.12,
-                  nuZuschlag: 0.12,
-                  verrechnungslohn: 49.9,
-                  geraeteStundensatz: 0.5,
-                  isCustom: false,
-                },
-              })
-            }
-          />
+          {/* Calc defaults only exist for preisanfrage firmas — the
+              firma_calc_defaults table CHECK restricts kind to managed/external.
+              For local firms we show the global defaults via ProjectsCard but
+              don't render the editable form. */}
+          {kind !== 'local' && (
+            <DefaultsCard
+              kind={kind}
+              id={idParam as number}
+              initial={data.defaults}
+              displayName={data.firma.displayName}
+              onSaved={(next) => setData({ ...data, defaults: next })}
+              onReset={() =>
+                setData({
+                  ...data,
+                  defaults: {
+                    materialZuschlag: 0.12,
+                    nuZuschlag: 0.12,
+                    verrechnungslohn: 49.9,
+                    geraeteStundensatz: 0.5,
+                    isCustom: false,
+                  },
+                })
+              }
+            />
+          )}
           <ProjectsCard
             projects={data.projects}
             firmaKind={kind}
-            firmaId={id}
+            firmaId={idParam as number | string}
             firmaDisplayName={data.firma.displayName}
             defaults={data.defaults}
+            onChanged={load}
           />
         </>
       )}
@@ -231,7 +283,7 @@ function Header({
   kind,
 }: {
   firma: FirmaDetail['firma'];
-  kind: 'managed' | 'external';
+  kind: 'managed' | 'external' | 'local';
 }) {
   return (
     <header className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
@@ -256,10 +308,16 @@ function Header({
                 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium',
                 kind === 'managed'
                   ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
-                  : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
+                  : kind === 'external'
+                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
+                    : 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200',
               )}
             >
-              {kind === 'managed' ? 'Verwaltet (preisanfrage)' : 'Extern (OneDrive)'}
+              {kind === 'managed'
+                ? 'Verwaltet (preisanfrage)'
+                : kind === 'external'
+                  ? 'Extern (OneDrive)'
+                  : 'Lokal (Panel)'}
             </span>
           </div>
         </div>
@@ -541,15 +599,20 @@ function ProjectsCard({
   firmaId,
   firmaDisplayName,
   defaults,
+  onChanged,
 }: {
   projects: FirmaDetail['projects'];
-  firmaKind: 'managed' | 'external';
-  firmaId: number;
+  firmaKind: 'managed' | 'external' | 'local';
+  firmaId: number | string;
   firmaDisplayName: string;
   defaults: FirmaDetail['defaults'];
+  /** Called after a successful create / status-change / delete so the parent
+   *  page can reload its data (counts, lastSubmissionDate, etc.). */
+  onChanged: () => void;
 }) {
   const navigate = useNavigate();
   const [starting, setStarting] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const sorted = useMemo(() => {
     return [...projects].sort((a, b) => {
@@ -658,14 +721,25 @@ function ProjectsCard({
       aria-label="Ausschreibungen"
       className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
     >
-      <header className="px-5 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-        <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-          <CalendarDays className="w-4 h-4 text-slate-500" />
-          Ausschreibungen ({sorted.length})
-        </h2>
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          Klick auf <strong>Kalkulation starten</strong> legt ein neues Projekt mit den Firma-Defaults an.
-        </p>
+      <header className="px-5 py-3 border-b border-slate-100 dark:border-slate-800 flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            <CalendarDays className="w-4 h-4 text-slate-500" />
+            Ausschreibungen ({sorted.length})
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Klick auf <strong>Kalkulation starten</strong> legt ein neues Projekt mit den Firma-Defaults an.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setCreateOpen(true)}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm rounded-lg bg-primary-600 text-white hover:bg-primary-700"
+          data-testid="auschreibung-new-button"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Neue Ausschreibung
+        </button>
       </header>
       {sorted.length === 0 ? (
         <div className="px-5 py-12 text-center text-sm text-slate-500">
@@ -674,76 +748,472 @@ function ProjectsCard({
       ) : (
         <ul className="divide-y divide-slate-100 dark:divide-slate-800">
           {sorted.map((p) => (
-            <li key={`${p.source}:${p.id}`} className="px-5 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-              <div className="flex items-start justify-between gap-3 flex-wrap">
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                    {p.name ?? p.baumassnahme ?? p.folderName ?? p.projectNumber ?? '(ohne Titel)'}
-                  </div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-3 flex-wrap">
-                    {p.projectNumber && <span className="font-mono">#{p.projectNumber}</span>}
-                    {p.auftraggeberName && <span>{p.auftraggeberName}</span>}
-                    {p.anschriftPlzOrt && (
-                      <span className="inline-flex items-center gap-1">
-                        <MapPin className="w-3 h-3" />
-                        {p.anschriftPlzOrt}
-                      </span>
-                    )}
-                    {p.submissionDate && (
-                      <span className="inline-flex items-center gap-1">
-                        <Calendar className="w-3 h-3" />
-                        {new Date(p.submissionDate).toLocaleDateString('de-DE')}
-                        {p.submissionTime && ` ${p.submissionTime}`}
-                      </span>
-                    )}
-                    {typeof p.totalPositions === 'number' && p.totalPositions > 0 && (
-                      <span>{p.totalPositions} Positionen</span>
-                    )}
-                    {typeof p.ourRank === 'number' && (
-                      <span
-                        className={clsx(
-                          'inline-flex items-center gap-1 px-1.5 rounded',
-                          p.ourRank === 1
-                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
-                            : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
-                        )}
-                      >
-                        <Trophy className="w-3 h-3" />
-                        Rang {p.ourRank}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {p.oneDriveShareUrl && (
-                    <a
-                      href={p.oneDriveShareUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400 hover:text-primary-600 hover:underline"
-                    >
-                      OneDrive <ExternalLink className="w-3 h-3" />
-                    </a>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => startKalkulation(p)}
-                    disabled={starting !== null}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50"
-                  >
-                    {starting === `${p.source}:${p.id}` ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : (
-                      <Calculator className="w-3 h-3" />
-                    )}
-                    Kalkulation starten
-                  </button>
-                </div>
-              </div>
-            </li>
+            <AuschreibungRow
+              key={`${p.source}:${p.id}`}
+              project={p}
+              startingKey={starting}
+              onStart={() => startKalkulation(p)}
+              onChanged={onChanged}
+            />
           ))}
         </ul>
       )}
+
+      {createOpen && (
+        <NewAuschreibungModal
+          firmaKind={firmaKind}
+          firmaId={firmaId}
+          onClose={() => setCreateOpen(false)}
+          onCreated={() => {
+            setCreateOpen(false);
+            toast.success('Ausschreibung angelegt.');
+            onChanged();
+          }}
+        />
+      )}
     </section>
+  );
+}
+
+/**
+ * One row in the Ausschreibungen list. Renders read-only fields for
+ * preisanfrage-sourced projects, plus inline status quick-edit + edit/delete
+ * for local Ausschreibungen.
+ */
+function AuschreibungRow({
+  project: p,
+  startingKey,
+  onStart,
+  onChanged,
+}: {
+  project: FirmaDetail['projects'][number];
+  startingKey: string | null;
+  onStart: () => void;
+  onChanged: () => void;
+}) {
+  const isLocal = p.source === 'local';
+  const status: AuschreibungStatus | undefined = isAuschreibungStatus(p.status) ? p.status : undefined;
+  const [statusDraft, setStatusDraft] = useState<AuschreibungStatus | undefined>(status);
+  const [statusEditing, setStatusEditing] = useState(false);
+  const [statusBusy, setStatusBusy] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    setStatusDraft(status);
+  }, [status]);
+
+  async function commitStatus(next: AuschreibungStatus) {
+    if (!isLocal || typeof p.id !== 'string') return;
+    if (next === status) {
+      setStatusEditing(false);
+      return;
+    }
+    setStatusBusy(true);
+    try {
+      await api.firmen.updateAuschreibung(p.id, { status: next });
+      toast.success('Status aktualisiert.');
+      setStatusEditing(false);
+      onChanged();
+    } catch (e) {
+      toast.error(`Status-Änderung fehlgeschlagen: ${String(e)}`);
+      // Roll back the draft to the prior value.
+      setStatusDraft(status);
+    } finally {
+      setStatusBusy(false);
+    }
+  }
+
+  async function deleteLocal() {
+    if (!isLocal || typeof p.id !== 'string') return;
+    if (!confirm(`Ausschreibung "${p.name ?? '(ohne Titel)'}" archivieren?`)) return;
+    setDeleting(true);
+    try {
+      await api.firmen.archiveAuschreibung(p.id);
+      toast.success('Ausschreibung archiviert.');
+      onChanged();
+    } catch (e) {
+      toast.error(`Archivieren fehlgeschlagen: ${String(e)}`);
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <li
+      className="px-5 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/40"
+      data-testid={isLocal ? 'auschreibung-local-row' : 'auschreibung-row'}
+    >
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
+            {p.name ?? p.baumassnahme ?? p.folderName ?? p.projectNumber ?? '(ohne Titel)'}
+          </div>
+          <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-3 flex-wrap">
+            {p.projectNumber && <span className="font-mono">#{p.projectNumber}</span>}
+            {p.auftraggeberName && <span>{p.auftraggeberName}</span>}
+            {p.anschriftPlzOrt && (
+              <span className="inline-flex items-center gap-1">
+                <MapPin className="w-3 h-3" />
+                {p.anschriftPlzOrt}
+              </span>
+            )}
+            {p.submissionDate && (
+              <span className="inline-flex items-center gap-1">
+                <Calendar className="w-3 h-3" />
+                {new Date(p.submissionDate).toLocaleDateString('de-DE')}
+                {p.submissionTime && ` ${p.submissionTime}`}
+              </span>
+            )}
+            {typeof p.totalPositions === 'number' && p.totalPositions > 0 && (
+              <span>{p.totalPositions} Positionen</span>
+            )}
+            {typeof p.ourRank === 'number' && (
+              <span
+                className={clsx(
+                  'inline-flex items-center gap-1 px-1.5 rounded',
+                  p.ourRank === 1
+                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
+                    : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+                )}
+              >
+                <Trophy className="w-3 h-3" />
+                Rang {p.ourRank}
+              </span>
+            )}
+            {isLocal && (
+              <span
+                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-sky-100 dark:bg-sky-900/40 text-sky-800 dark:text-sky-200"
+                data-testid="auschreibung-local-source-badge"
+                title="Diese Ausschreibung wurde manuell im Panel angelegt — nicht aus preisanfrage."
+              >
+                Lokal
+              </span>
+            )}
+            {/* Status badge — for local Aus, click to quick-edit. */}
+            {status && (
+              isLocal ? (
+                statusEditing ? (
+                  <select
+                    aria-label="Status ändern"
+                    value={statusDraft}
+                    onChange={(e) => {
+                      const v = e.target.value as AuschreibungStatus;
+                      setStatusDraft(v);
+                      commitStatus(v);
+                    }}
+                    onBlur={() => setStatusEditing(false)}
+                    autoFocus
+                    disabled={statusBusy}
+                    className={clsx(
+                      'px-1.5 py-0.5 rounded text-[11px] font-medium border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900',
+                    )}
+                    data-testid="auschreibung-status-select"
+                  >
+                    {STATUS_OPTIONS.map((s) => (
+                      <option key={s} value={s}>{STATUS_LABEL[s]}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setStatusEditing(true)}
+                    className={clsx(
+                      'inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium hover:ring-2 hover:ring-primary-400',
+                      STATUS_CLASS[status],
+                    )}
+                    data-testid="auschreibung-status-badge"
+                    title="Klick zum Ändern"
+                  >
+                    {STATUS_LABEL[status]}
+                  </button>
+                )
+              ) : (
+                <span
+                  className={clsx(
+                    'inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium',
+                    STATUS_CLASS[status],
+                  )}
+                  data-testid="auschreibung-status-badge"
+                >
+                  {STATUS_LABEL[status]}
+                </span>
+              )
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {p.oneDriveShareUrl && (
+            <a
+              href={p.oneDriveShareUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400 hover:text-primary-600 hover:underline"
+            >
+              OneDrive <ExternalLink className="w-3 h-3" />
+            </a>
+          )}
+          {isLocal && (
+            <button
+              type="button"
+              onClick={deleteLocal}
+              disabled={deleting}
+              aria-label="Ausschreibung archivieren"
+              data-testid="auschreibung-delete-button"
+              className="p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded disabled:opacity-50"
+              title="Archivieren"
+            >
+              {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onStart}
+            disabled={startingKey !== null}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50"
+          >
+            {startingKey === `${p.source}:${p.id}` ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <Calculator className="w-3 h-3" />
+            )}
+            Kalkulation starten
+          </button>
+        </div>
+      </div>
+    </li>
+  );
+}
+
+/**
+ * Modal for adding a new local Ausschreibung onto any Firma. Mirrors the
+ * NewFirmaModal shape — focused form with sensible defaults.
+ */
+function NewAuschreibungModal({
+  firmaKind,
+  firmaId,
+  onClose,
+  onCreated,
+}: {
+  firmaKind: 'managed' | 'external' | 'local';
+  firmaId: number | string;
+  onClose: () => void;
+  onCreated: (row: Awaited<ReturnType<typeof api.firmen.createAuschreibung>>) => void;
+}) {
+  const [name, setName] = useState('');
+  const [projectNumber, setProjectNumber] = useState('');
+  const [auftraggeber, setAuftraggeber] = useState('');
+  const [anschrift, setAnschrift] = useState('');
+  const [submissionDate, setSubmissionDate] = useState('');
+  const [submissionTime, setSubmissionTime] = useState('');
+  const [status, setStatus] = useState<AuschreibungStatus>('offen');
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+  const nameRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    nameRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const trimmedName = name.trim();
+  const canSubmit = trimmedName.length > 0 && !saving;
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!canSubmit) return;
+    setSaving(true);
+    try {
+      const row = await api.firmen.createAuschreibung(firmaKind, firmaId, {
+        name: trimmedName,
+        projectNumber: projectNumber.trim() || null,
+        auftraggeberName: auftraggeber.trim() || null,
+        anschriftPlzOrt: anschrift.trim() || null,
+        submissionDate: submissionDate || null,
+        submissionTime: submissionTime || null,
+        status,
+        notes: notes.trim() || null,
+      });
+      onCreated(row);
+    } catch (e) {
+      toast.error(`Anlegen fehlgeschlagen: ${String(e)}`);
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="new-aus-title"
+      data-testid="new-auschreibung-modal"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="w-full max-w-lg rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl">
+        <header className="flex items-start justify-between gap-3 px-5 py-4 border-b border-slate-100 dark:border-slate-800">
+          <div>
+            <h2 id="new-aus-title" className="text-base font-semibold text-slate-900 dark:text-slate-100">
+              Neue Ausschreibung anlegen
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Wird lokal im Panel gespeichert.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Schließen"
+            className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </header>
+        <form onSubmit={submit} className="px-5 py-4 space-y-3">
+          <div>
+            <label htmlFor="new-aus-name" className="text-xs font-medium text-slate-600 dark:text-slate-300">
+              Bezeichnung *
+            </label>
+            <input
+              id="new-aus-name"
+              ref={nameRef}
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              maxLength={255}
+              className="input w-full mt-1"
+              placeholder="z. B. Sanierung Marktstraße 12"
+            />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="new-aus-num" className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                Projektnummer
+              </label>
+              <input
+                id="new-aus-num"
+                type="text"
+                value={projectNumber}
+                onChange={(e) => setProjectNumber(e.target.value)}
+                maxLength={64}
+                className="input w-full mt-1 font-mono"
+                placeholder="2026-05-XX"
+              />
+            </div>
+            <div>
+              <label htmlFor="new-aus-status" className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                Status
+              </label>
+              <select
+                id="new-aus-status"
+                value={status}
+                onChange={(e) => setStatus(e.target.value as AuschreibungStatus)}
+                className="input w-full mt-1"
+              >
+                {STATUS_OPTIONS.map((s) => (
+                  <option key={s} value={s}>{STATUS_LABEL[s]}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label htmlFor="new-aus-ag" className="text-xs font-medium text-slate-600 dark:text-slate-300">
+              Auftraggeber
+            </label>
+            <input
+              id="new-aus-ag"
+              type="text"
+              value={auftraggeber}
+              onChange={(e) => setAuftraggeber(e.target.value)}
+              maxLength={255}
+              className="input w-full mt-1"
+              placeholder="Stadtverwaltung Saarbrücken"
+            />
+          </div>
+          <div>
+            <label htmlFor="new-aus-addr" className="text-xs font-medium text-slate-600 dark:text-slate-300">
+              Anschrift / PLZ-Ort
+            </label>
+            <input
+              id="new-aus-addr"
+              type="text"
+              value={anschrift}
+              onChange={(e) => setAnschrift(e.target.value)}
+              maxLength={255}
+              className="input w-full mt-1"
+              placeholder="66111 Saarbrücken"
+            />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="new-aus-date" className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                Abgabedatum
+              </label>
+              <input
+                id="new-aus-date"
+                type="date"
+                value={submissionDate}
+                onChange={(e) => setSubmissionDate(e.target.value)}
+                className="input w-full mt-1"
+              />
+            </div>
+            <div>
+              <label htmlFor="new-aus-time" className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                Abgabezeit
+              </label>
+              <input
+                id="new-aus-time"
+                type="time"
+                value={submissionTime}
+                onChange={(e) => setSubmissionTime(e.target.value)}
+                className="input w-full mt-1"
+              />
+            </div>
+          </div>
+          <div>
+            <label htmlFor="new-aus-notes" className="text-xs font-medium text-slate-600 dark:text-slate-300">
+              Notizen
+            </label>
+            <textarea
+              id="new-aus-notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              maxLength={5000}
+              className="input w-full mt-1 resize-none"
+              placeholder="Sonderwünsche, Ansprechpartner…"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              Abbrechen
+            </button>
+            <button
+              type="submit"
+              disabled={!canSubmit}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50"
+            >
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+              Anlegen
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }

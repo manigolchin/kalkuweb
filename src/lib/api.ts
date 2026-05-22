@@ -211,13 +211,15 @@ export const api = {
      *  the "integration disabled" placeholder. */
     health: () =>
       request<{ enabled: boolean; mock: boolean; hint: string }>(`/firmen/health`),
-    /** Big list — all 98 firmas from preisanfrage (managed + external)
-     *  + a `hasCustomDefaults` flag per row. */
+    /** Big list — all preisanfrage firmas (managed + external) PLUS the
+     *  current user's local firmas. `id` is `number` for preisanfrage rows
+     *  (managed/external) and `string` (nanoid) for local rows — branch on
+     *  `kind` before passing it to subsequent calls. */
     list: () =>
       request<{
         rows: Array<{
-          kind: 'managed' | 'external';
-          id: number;
+          kind: 'managed' | 'external' | 'local';
+          id: number | string;
           folderName: string | null;
           displayName: string;
           tradeType: string | null;
@@ -230,17 +232,22 @@ export const api = {
         }>;
         managedCount: number;
         externalCount: number;
+        localCount: number;
         totalProjects: number;
         lastScanAt: string | null;
         generatedAt: string;
         isMock: boolean;
+        preisanfrageDisabled?: boolean;
       }>(`/firmen`),
-    /** Per-Firma detail page payload: master row + defaults + projects. */
-    detail: (kind: 'managed' | 'external', id: number) =>
+    /** Per-Firma detail page payload: master row + defaults + projects.
+     *  Accepts all 3 kinds. `id` type is `number | string` since local
+     *  firmas use nanoid strings. Local-Firma payloads include a `notes`
+     *  string on the firma object. */
+    detail: (kind: 'managed' | 'external' | 'local', id: number | string) =>
       request<{
         firma: {
-          kind: 'managed' | 'external';
-          id: number;
+          kind: 'managed' | 'external' | 'local';
+          id: number | string;
           folderName: string | null;
           displayName: string;
           tradeType: string | null;
@@ -249,6 +256,7 @@ export const api = {
           wonSumBrutto: number;
           lastSubmissionDate: string | null;
           adoptedCompanyId: number | null;
+          notes?: string | null;
         };
         defaults: {
           materialZuschlag: number;
@@ -260,8 +268,8 @@ export const api = {
           updatedAt?: number;
         };
         projects: Array<{
-          source: 'managed' | 'external';
-          id: number;
+          source: 'managed' | 'external' | 'local';
+          id: number | string;
           projectNumber: string | null;
           name: string | null;
           folderName?: string;
@@ -282,14 +290,24 @@ export const api = {
           ourBrutto?: number | null;
           updatedAt?: string;
           parsedAt?: string | null;
+          // Local-Aus extras:
+          firmaKind?: 'managed' | 'external' | 'local';
+          firmaId?: string;
+          notes?: string | null;
+          archivedAt?: number | null;
+          createdAt?: number;
         }>;
       }>(`/firmen/${kind}/${id}`),
     /** Fetch GAEB-parsed positions for a managed-firma project. Returns
-     *  404 for external firmas (they only carry submission-result data
-     *  in preisanfrage, not LV positions). */
-    projectPositions: (kind: 'managed' | 'external', firmaId: number, projectId: number) =>
+     *  empty positions for local firmas / local Ausschreibungen and 404
+     *  for external firmas (which only carry submission-result data). */
+    projectPositions: (
+      kind: 'managed' | 'external' | 'local',
+      firmaId: number | string,
+      projectId: number | string,
+    ) =>
       request<{
-        projectId: number;
+        projectId: number | string;
         count: number;
         positions: Array<{
           oz: string;
@@ -327,6 +345,116 @@ export const api = {
       }),
     resetDefaults: (kind: 'managed' | 'external', id: number) =>
       request<{ ok: true }>(`/firmen/${kind}/${id}/defaults`, { method: 'DELETE' }),
+
+    /* ─── Round 11: local Firma + local Ausschreibung CRUD ─────── */
+
+    /** Create a local Firma (panel-only — never synced to preisanfrage). */
+    createLocal: (input: { displayName: string; tradeType?: string | null; notes?: string | null }) =>
+      request<{
+        kind: 'local';
+        id: string;
+        displayName: string;
+        tradeType: string | null;
+        notes: string | null;
+        archivedAt: number | null;
+        createdAt: number;
+        updatedAt: number;
+      }>(`/firmen`, { method: 'POST', body: JSON.stringify(input) }),
+
+    /** Patch a local Firma. All fields optional. */
+    updateLocal: (
+      id: string,
+      input: { displayName?: string; tradeType?: string | null; notes?: string | null },
+    ) =>
+      request<{
+        kind: 'local';
+        id: string;
+        displayName: string;
+        tradeType: string | null;
+        notes: string | null;
+        archivedAt: number | null;
+        createdAt: number;
+        updatedAt: number;
+      }>(`/firmen/local/${id}`, { method: 'PUT', body: JSON.stringify(input) }),
+
+    /** Soft-delete a local Firma + cascade-archive its Ausschreibungen. */
+    archiveLocal: (id: string) =>
+      request<{ ok: true }>(`/firmen/local/${id}`, { method: 'DELETE' }),
+
+    /** Create a local Ausschreibung attached to a Firma of any kind. */
+    createAuschreibung: (
+      kind: 'managed' | 'external' | 'local',
+      firmaId: number | string,
+      input: {
+        name: string;
+        projectNumber?: string | null;
+        auftraggeberName?: string | null;
+        anschriftPlzOrt?: string | null;
+        submissionDate?: string | null;
+        submissionTime?: string | null;
+        status?: 'offen' | 'in_arbeit' | 'abgegeben' | 'gewonnen' | 'verloren';
+        notes?: string | null;
+      },
+    ) =>
+      request<{
+        source: 'local';
+        id: string;
+        firmaKind: 'managed' | 'external' | 'local';
+        firmaId: string;
+        name: string;
+        projectNumber: string | null;
+        auftraggeberName: string | null;
+        anschriftPlzOrt: string | null;
+        submissionDate: string | null;
+        submissionTime: string | null;
+        status: 'offen' | 'in_arbeit' | 'abgegeben' | 'gewonnen' | 'verloren';
+        notes: string | null;
+        archivedAt: number | null;
+        createdAt: number;
+        updatedAt: number;
+      }>(`/firmen/${kind}/${firmaId}/auschreibungen`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+
+    /** Patch any local Ausschreibung field — including status. */
+    updateAuschreibung: (
+      id: string,
+      input: {
+        name?: string;
+        projectNumber?: string | null;
+        auftraggeberName?: string | null;
+        anschriftPlzOrt?: string | null;
+        submissionDate?: string | null;
+        submissionTime?: string | null;
+        status?: 'offen' | 'in_arbeit' | 'abgegeben' | 'gewonnen' | 'verloren';
+        notes?: string | null;
+      },
+    ) =>
+      request<{
+        source: 'local';
+        id: string;
+        firmaKind: 'managed' | 'external' | 'local';
+        firmaId: string;
+        name: string;
+        projectNumber: string | null;
+        auftraggeberName: string | null;
+        anschriftPlzOrt: string | null;
+        submissionDate: string | null;
+        submissionTime: string | null;
+        status: 'offen' | 'in_arbeit' | 'abgegeben' | 'gewonnen' | 'verloren';
+        notes: string | null;
+        archivedAt: number | null;
+        createdAt: number;
+        updatedAt: number;
+      }>(`/firmen/local-auschreibung/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(input),
+      }),
+
+    /** Soft-delete a local Ausschreibung. */
+    archiveAuschreibung: (id: string) =>
+      request<{ ok: true }>(`/firmen/local-auschreibung/${id}`, { method: 'DELETE' }),
   },
   templates: {
     list: () => request<{ templates: PositionTemplate[] }>(`/templates`),

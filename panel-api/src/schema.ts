@@ -195,6 +195,64 @@ export const firmaCalcDefaults = sqliteTable('firma_calc_defaults', {
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
 });
 
+/**
+ * Round 11 — local Firmen + local Ausschreibungen.
+ *
+ * "Local" firms + Ausschreibungen live ONLY in panel-api's DB. They never
+ * touch preisanfrage. Use case: one-off Bauunternehmer / private Ausschreibung
+ * the user wants to kalkulate without going through the full preisanfrage
+ * onboarding (SMTP / SharePoint / classifier setup).
+ *
+ * Composite key model: every Ausschreibung references its parent Firma via
+ * (firmaKind, firmaId). 'managed'+companies.id and 'external'+external_companies.id
+ * come from preisanfrage (numeric id); 'local'+local_firmen.id is panel-local
+ * (nanoid string). The text column holds both ids — the consumer reads `firmaKind`
+ * to pick the right interpretation.
+ *
+ * Soft delete: `archivedAt` non-null hides the row from the standard list
+ * endpoints but keeps history intact for audit / undo.
+ */
+export const localFirmen = sqliteTable('local_firmen', {
+  id: text('id').primaryKey(),
+  ownerId: text('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  displayName: text('display_name').notNull(),
+  /** Free-form. UI offers a curated set (galabau/elektro/tiefbau/leitungsbau/
+   *  fenster/haustechnik/heizung/sanitaer/dach/fassade/putz/maler/sonstiges)
+   *  but we don't enforce it in DB to stay flexible. */
+  tradeType: text('trade_type'),
+  notes: text('notes'),
+  archivedAt: integer('archived_at', { mode: 'timestamp_ms' }),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+});
+
+export const localAuschreibungen = sqliteTable('local_auschreibungen', {
+  id: text('id').primaryKey(),
+  ownerId: text('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  /** The Firma this Ausschreibung belongs to. Composite (firmaKind, firmaId)
+   *  — see schema comment above. Local Ausschreibungen on managed/external
+   *  firms ARE allowed (e.g. a "private" tender the calculator wants to
+   *  attach to a preisanfrage-tracked Bauunternehmer). */
+  firmaKind: text('firma_kind', { enum: ['managed', 'external', 'local'] }).notNull(),
+  firmaId: text('firma_id').notNull(),
+  projectNumber: text('project_number'),
+  name: text('name').notNull(),
+  auftraggeberName: text('auftraggeber_name'),
+  anschriftPlzOrt: text('anschrift_plz_ort'),
+  /** ISO YYYY-MM-DD. Stored as text so SQLite's lexicographic sort matches
+   *  chronological order without timezone gymnastics. */
+  submissionDate: text('submission_date'),
+  /** HH:MM (24h). */
+  submissionTime: text('submission_time'),
+  status: text('status', {
+    enum: ['offen', 'in_arbeit', 'abgegeben', 'gewonnen', 'verloren'],
+  }).notNull().default('offen'),
+  notes: text('notes'),
+  archivedAt: integer('archived_at', { mode: 'timestamp_ms' }),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+});
+
 export type User = typeof users.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type Share = typeof shares.$inferSelect;
@@ -205,6 +263,8 @@ export type PositionTemplate = typeof positionTemplates.$inferSelect;
 export type ShareAccessLog = typeof shareAccessLog.$inferSelect;
 export type PositionComment = typeof positionComments.$inferSelect;
 export type FirmaCalcDefaults = typeof firmaCalcDefaults.$inferSelect;
+export type LocalFirma = typeof localFirmen.$inferSelect;
+export type LocalAuschreibung = typeof localAuschreibungen.$inferSelect;
 
 /**
  * PART K: customer comments per LV position. Routed via the share token
