@@ -56,7 +56,8 @@ export type ImportIssue = {
     | 'col13_label_mismatch'
     | 'unparseable_oz'
     | 'empty_sheet'
-    | 'multiple_sheets';
+    | 'multiple_sheets'
+    | 'duplicate_oz';
   message: string;
 };
 
@@ -96,6 +97,9 @@ export type ParseResult = {
     deadline: string;
     nettoFromFile: number | null;
     bruttoFromFile: number | null;
+    /** Round 5 PART S: MwSt-Betrag from F9 (derivable from netto × mwst,
+     *  but captured verbatim for round-trip fidelity). */
+    mwstBetragFromFile: number | null;
   };
 };
 
@@ -220,6 +224,9 @@ export async function parseKalkulationWorkbook(
     deadline: readString(ws, 'F', 2),
     nettoFromFile: readNumber(ws, 'F', 8),
     bruttoFromFile: readNumber(ws, 'F', 10),
+    // Round 5 PART S: MwSt-Betrag from F9. Verbatim capture for round-trip
+    // fidelity; the value is derivable from netto × mwst-rate.
+    mwstBetragFromFile: readNumber(ws, 'F', 9),
   };
 
   // Round 4 PART P: capture the full Zuschlag matrix (rows 4-7) per cost
@@ -248,6 +255,10 @@ export async function parseKalkulationWorkbook(
     ueberschuss: readNumber(ws, 'M', 9) ?? 0,
     zeitwert: readNumber(ws, 'J', 11) ?? 0,
     kontrollsumme: readNumber(ws, 'M', 11) ?? 0,
+    // Round 5 PART S: L12 Mitarbeiter-Einsatz multiplier. Constant 1 across
+    // all 10 example fixtures, but the cell is editable in the Vorlage so
+    // capturing it future-proofs the round-trip.
+    mitarbeiterFlag: readNumber(ws, 'L', 12) ?? 1,
   };
 
   // 5) CalcParams derivation from ZSCHLG matrix
@@ -423,6 +434,27 @@ export async function parseKalkulationWorkbook(
     }
   }
 
+  // Round 5 PART S: surface duplicate OZ keys as warnings. Example 7 in
+  // the corpus has 14 — the rows still import cleanly (each gets its own
+  // nanoid) but downstream OZ-keyed reconciliation (re-import, comment
+  // migration) would be ambiguous. A warning is enough; we do NOT block.
+  const ozCount = new Map<string, number>();
+  for (const p of positions) {
+    if (p.isHeader || !p.oz) continue;
+    const key = ozKey(p.oz);
+    if (!key) continue;
+    ozCount.set(key, (ozCount.get(key) ?? 0) + 1);
+  }
+  const duplicates = Array.from(ozCount.entries()).filter(([, n]) => n > 1);
+  if (duplicates.length > 0) {
+    issues.push({
+      severity: 'warning',
+      location: `${sheetName}!A`,
+      code: 'duplicate_oz',
+      message: `${duplicates.length} OZ${duplicates.length === 1 ? '' : '-Schlüssel'} mehrfach vergeben (z.B. ${duplicates.slice(0, 3).map(([k, n]) => `${k}×${n}`).join(', ')}). Re-Import + Kommentar-Zuordnung sind dadurch mehrdeutig.`,
+    });
+  }
+
   // 8) Assemble ProjectData
   const project: ProjectData = {
     name: meta.bv || 'Importiertes LV',
@@ -493,11 +525,13 @@ function emptyResult(issues: ImportIssue[]): ParseResult {
     headerExtras: {
       mitarbeiter: 0, gesStunden: 0, arbeitstage: 0, monate: 0,
       ueberschuss: 0, zeitwert: 0, kontrollsumme: 0,
+      mitarbeiterFlag: 1,
     },
     meta: {
       client: '', service: '', bv: '', bidder: '',
       tenderNumber: '', deadline: '',
       nettoFromFile: null, bruttoFromFile: null,
+      mwstBetragFromFile: null,
     },
   };
 }

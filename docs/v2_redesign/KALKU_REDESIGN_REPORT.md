@@ -291,4 +291,55 @@ Full per-PART checkpoint in [`progress_round4.md`](progress_round4.md). Summary:
 
 All documented in `progress_round4.md` "What's deliberately deferred" section.
 
+---
+
+# Round 5 — 10-example verification audit (2026-05-22)
+
+Rounds 1–4 shipped against **4 example LV files**. Round 5 expanded the corpus to **10** (added examples 5–10 with broader gewerke / ZSCHLG / OZ-shape variance) and ran a parallel five-PART audit, then a consolidator. Full per-PART checkpoint in [`progress_round5.md`](progress_round5.md).
+
+## Round 5 commits
+
+| Commit | PART | What it ships |
+|---|---|---|
+| `f2eaf77` | **W (mid-round fix)** | Re-add `NumCellEditable` — the Round 4 PART O over-lock removed editable per-position Material EK / Min/Einheit / NU EK cells (those are the calculator's primary input surface, not the row-aggregated ZSCHLG totals that PART O meant to lock). Surfaced by PART U's first feature-coverage run; committed before the parallel audits finished. |
+| _this commit_ | **R+S+T+U+V+W consolidation** | parser additions (X9 header-block scan / F9 MwSt-Betrag capture / L12 Mitarbeiter-Einsatz flag / duplicate-OZ warning) + 9 new fixtures (lv_ex{2..10}.ts) + 4 new test files (audit-10examples, coverage, fidelity extension, leak extensions) + 6 new docs + 4 new scripts. |
+
+## Deliverables (Round 5)
+
+| # | Brief item | File | Status |
+|---|---|---|---|
+| **R** | Parser robustness audit + fixes (10 files) | [`parser_audit_10examples.md`](parser_audit_10examples.md) | ✅ 10/10 parse cleanly; parser learns X9 hotspot |
+| **S** | Round-trip fidelity (every A1:AP cell, 10 files) | [`import_fidelity_10examples.md`](import_fidelity_10examples.md) | ✅ 41/41 tests; F9 + L12 captures added |
+| **T** | Sentinel-leak coverage (10 fixtures × 4 invariants) | [`leak_test_10examples.md`](leak_test_10examples.md) | ✅ 40/40 sentinel assertions + 77 sub-tests; KUNDEN structurally leak-proof |
+| **U** | 10×12 feature coverage matrix | [`feature_coverage_audit.md`](feature_coverage_audit.md) | ✅ 85 pass · 5 expected partial (formula-error gate) · 30 backend-dep · **0 broken** |
+| **V** | Cross-example column classification | [`column_classification.md`](column_classification.md) | ✅ Round 5 sections added; 4-file content kept as Appendix A |
+| **W** | Consolidation + fix everything that surfaced | [`progress_round5.md`](progress_round5.md) | ✅ PART O over-lock reverted; PART S gaps closed; PART U test corrected |
+
+## Headline numbers — Round 4 → Round 5
+
+| Stack | After Round 4 | After Round 5 |
+|---|---:|---:|
+| Frontend (vitest+jsdom) | 87 | **331** (+244) |
+| Backend (node:test) | 51 | 51 (unchanged) |
+| Playwright e2e | 1 | 1 (unchanged) |
+| **Total assertions** | **139** | **383** |
+| Real LV files in regression corpus | 4 | **10** |
+| Fidelity vs raw Excel | 0 disc. (4 files) | **0 disc.** (10 files, after F9+L12 capture) |
+| Feature × file coverage cells | n/a | **120 cells, 0 broken** |
+
+## What's now live for users (post Round 5)
+
+1. **Per-position EK editing restored** — Round 4 PART O over-locked Material EK / Min/Einheit / NU EK cells; commit `f2eaf77` reverts those three to editable inputs while keeping the row-aggregated ZSCHLG totals (in the matrix strip) read-only. The calculator's GAEB-import → fill-EK workflow is back.
+2. **Parser handles the wider corpus** — Trockenbau (ex6, ex8), Reinigung (ex7), HLS variants all parse cleanly. ZSCHLG ranges 12–50%, Stundensatz 34.90–89.90 €, OZ formats include zero-padded (`01.  .001`) and trailing-dot anomalies — all work.
+3. **Parser surfaces ambiguity, not silence** — duplicate OZ keys (ex7 has 14) raise a non-blocking warning instead of being silently merged on re-import.
+4. **Fidelity capture is exhaustive** — `meta.mwstBetragFromFile` (F9) and `headerExtras.mitarbeiterFlag` (L12) now round-trip. Zero remaining "unknown" cells in the per-file fidelity classifier.
+
+## Deferred to Round 6
+
+See [`progress_round5.md`](progress_round5.md) "Deferred to Round 6" — small set, all reasoned:
+- Explicit `ozParser.test.ts` regression fixtures for the 4 new OZ shape variants (already exercised implicitly).
+- `importer_readme.md` Elektro-vs-Trockenbau sub-family appendix.
+- Group-row col-C overload capture (recomputed downstream anyway).
+- PART V's "downgrade hotspot errors" proposal — kept deferred indefinitely; the user's hard-gate policy from Round 2 stands.
+
 End.

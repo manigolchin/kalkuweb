@@ -90,6 +90,7 @@ export type HeaderExtras = {
   ueberschuss: number;        // M9 — projected profit €
   zeitwert: number;           // J11 — time adjustment %
   kontrollsumme: number;      // M11 — control sum (should be 0)
+  mitarbeiterFlag?: number;   // L12 — Mitarbeiter-Einsatz multiplier (PART S, Round 5; optional for back-compat with pre-Round-5 fixtures)
 };
 
 /**
