@@ -50,3 +50,12 @@ coverage
 /panel-api/dist/
 /panel-api/.env
 /panel-api/.env.local
+# nested-cwd quirk where Playwright's webServer cwd makes the data dir
+# materialize at panel-api/panel-api/data/. Belt-and-braces.
+/panel-api/panel-api/
+
+# Playwright artifacts (test-results + the HTML report). Per-test screenshots
+# we want kept go in docs/v2_redesign/e2e/.
+/test-results/
+/playwright-report/
+/docs/v2_redesign/e2e/playwright-report/

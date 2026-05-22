@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import toast from 'react-hot-toast';
@@ -7,7 +7,7 @@ import {
   Loader2,
   AlertCircle,
   MessageSquarePlus,
-  X,
+  MessageSquare,
   Building2,
   ShieldCheck,
   Calendar,
@@ -16,16 +16,22 @@ import {
   Fingerprint,
   Clock,
   Download,
+  ChevronRight,
+  Lock,
+  AlertTriangle,
+  RefreshCcw,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api, ApiError } from '@/lib/api';
 import type { CustomerViewPayload } from '@/features/kalkulation/types';
 import { formatEUR } from '@/features/kalkulation/calc';
+import PositionCommentPanel from '@/pages/share/PositionCommentPanel';
 
 type ChangeDraft = { positionId: string; type: 'modify' | 'remove' | 'comment'; text: string };
 type ViewState =
   | { kind: 'loading' }
   | { kind: 'error'; message: string; status?: number }
+  | { kind: 'password-required'; previousAttemptFailed?: boolean }
   | { kind: 'ready'; payload: CustomerViewPayload };
 
 export default function ShareView() {
@@ -37,32 +43,70 @@ export default function ShareView() {
   const [changes, setChanges] = useState<Record<string, ChangeDraft>>({});
   const [submitted, setSubmitted] = useState<'approve' | 'changes' | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // PART G: per-position side-panel state. `panelPositionId` holds the id of
+  // the position whose comment panel is currently open (null = closed).
+  const [panelPositionId, setPanelPositionId] = useState<string | null>(null);
 
-  useEffect(() => {
-    let alive = true;
-    (async () => {
+  // PART H: persist unlock state in sessionStorage so a reload during the
+  // same session doesn't force the customer to re-enter the password. Keyed
+  // by token (each share has its own).
+  const sessionKey = `kalku.share.unlock.${token}`;
+
+  const loadShare = useCallback(
+    async (password?: string) => {
       setState({ kind: 'loading' });
       try {
-        const payload = await api.public.getShare(token);
-        if (!alive) return;
+        const payload = await api.public.getShare(token, password);
+        // Persist working password for the session so reloads work without
+        // re-prompting. Cleared on logout-style scenarios.
+        if (password) {
+          try { window.sessionStorage.setItem(sessionKey, password); } catch { /* private mode */ }
+        }
         if (payload.settings.customerName) setCustomerName(payload.settings.customerName);
         if (payload.settings.customerEmail) setCustomerEmail(payload.settings.customerEmail);
         setState({ kind: 'ready', payload });
       } catch (err) {
-        if (!alive) return;
-        if (err instanceof ApiError && err.status === 410) {
-          setState({ kind: 'error', message: 'Dieser Link wurde widerrufen.', status: 410 });
+        if (err instanceof ApiError && err.status === 401) {
+          // Password required / wrong password. Clear any stale session-stored
+          // value so the user gets the prompt cleanly.
+          try { window.sessionStorage.removeItem(sessionKey); } catch { /* ignore */ }
+          setState({
+            kind: 'password-required',
+            previousAttemptFailed: password !== undefined,
+          });
+        } else if (err instanceof ApiError && err.status === 410) {
+          // Body may carry { reason: 'expired' | 'revoked' } — show specific text.
+          const reason = (err.body as { reason?: string } | undefined)?.reason;
+          setState({
+            kind: 'error',
+            message:
+              reason === 'expired'
+                ? 'Dieser Link ist abgelaufen.'
+                : 'Dieser Link wurde widerrufen.',
+            status: 410,
+          });
         } else if (err instanceof ApiError && err.status === 404) {
           setState({ kind: 'error', message: 'Link nicht gefunden.', status: 404 });
         } else {
           setState({ kind: 'error', message: 'Angebot konnte nicht geladen werden.' });
         }
       }
+    },
+    [token, sessionKey],
+  );
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      let storedPwd: string | undefined;
+      try { storedPwd = window.sessionStorage.getItem(sessionKey) ?? undefined; } catch { /* ignore */ }
+      await loadShare(storedPwd);
+      if (!alive) return;
     })();
     return () => {
       alive = false;
     };
-  }, [token]);
+  }, [token, loadShare, sessionKey]);
 
   // Captured once on mount so the render stays pure (lint: react-hooks/purity).
   const [mountedAtMs] = useState<number>(() => Date.now());
@@ -144,6 +188,10 @@ export default function ShareView() {
     );
   }
 
+  if (state.kind === 'password-required') {
+    return <PasswordGate previousAttemptFailed={state.previousAttemptFailed} onSubmit={loadShare} />;
+  }
+
   if (state.kind === 'error') {
     return (
       <div className="min-h-screen grid place-items-center bg-slate-50 px-4">
@@ -154,7 +202,7 @@ export default function ShareView() {
           <h1 className="text-lg font-semibold text-slate-900">{state.message}</h1>
           <p className="text-sm text-slate-500 mt-2">
             {state.status === 410
-              ? 'Der Anbieter hat diesen Link inzwischen widerrufen. Bitte beim Absender einen neuen Link anfragen.'
+              ? 'Bitte beim Absender einen neuen Link anfragen.'
               : 'Bitte prüfen Sie den Link in Ihrer E-Mail.'}
           </p>
         </div>
@@ -245,6 +293,40 @@ export default function ShareView() {
       </header>
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-10 space-y-6">
+        {/* PART H: revision banner — surfaced when the calculator has edited
+            after this share was last snapshotted. Customer can ask for an
+            updated link (URL is the same — server resnapshots in place). */}
+        {payload.hasNewerVersion && (
+          <div
+            data-testid="share-revision-banner"
+            className="bg-amber-50 border border-amber-300 rounded-2xl px-5 py-4 flex items-start gap-3"
+          >
+            <RefreshCcw className="w-5 h-5 text-amber-700 flex-shrink-0 mt-0.5" />
+            <div className="flex-1 text-sm">
+              <p className="font-semibold text-amber-900">
+                Neue Version verfügbar
+                {payload.latestVersionNumber && (
+                  <span className="font-normal text-amber-800">
+                    {' '}(v{payload.latestVersionNumber} statt v{project.versionNumber})
+                  </span>
+                )}
+              </p>
+              <p className="text-xs text-amber-800/90 mt-1 leading-relaxed">
+                Der Anbieter hat das Angebot nach Ihrem ersten Aufruf bearbeitet.
+                Bitte beim Absender (
+                <a href={`mailto:${owner.contactEmail}`} className="underline font-medium">
+                  {owner.contactEmail}
+                </a>
+                ) einen aktualisierten Link anfragen oder die Seite neu laden, sobald
+                eine neue Schnappschuss-Version vorliegt.
+                <strong className="block mt-1">
+                  Ihre bisherigen Anmerkungen bleiben erhalten — sie sind dem Anbieter zugeordnet.
+                </strong>
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Project meta */}
         <div className="bg-white border border-slate-200/80 rounded-2xl p-6 sm:p-8">
           <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -330,17 +412,27 @@ export default function ShareView() {
                 )}
               >
                 {p.isHeader ? (
-                  <h4 className="font-semibold text-primary-700">{p.shortText}</h4>
+                  /* PART N: KG/Titel heading wraps in full. */
+                  <h4 className="font-semibold text-primary-700 whitespace-pre-wrap break-words leading-[1.45]">
+                    {p.shortText}
+                  </h4>
                 ) : (
                   <>
                     <div className="flex items-start gap-4 flex-wrap sm:flex-nowrap">
-                      <span className="text-xs font-mono text-slate-400 w-12 mt-0.5 flex-shrink-0">
+                      <span className="text-xs font-mono text-slate-400 w-16 mt-0.5 flex-shrink-0 whitespace-pre">
                         {p.oz || '–'}
                       </span>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-900">{p.shortText}</p>
+                        {/* PART N: full Bezeichnung wraps; no truncation, no
+                            line-clamp. Customer always sees the complete text. */}
+                        <p
+                          data-testid={`share-bezeichnung-${p.id}`}
+                          className="text-sm font-medium text-slate-900 whitespace-pre-wrap break-words leading-[1.45]"
+                        >
+                          {p.shortText}
+                        </p>
                         {p.longText && (
-                          <p className="text-xs text-slate-600 mt-1 whitespace-pre-wrap leading-relaxed">
+                          <p className="text-xs text-slate-600 mt-1 whitespace-pre-wrap break-words leading-[1.45]">
                             {p.longText}
                           </p>
                         )}
@@ -353,11 +445,11 @@ export default function ShareView() {
                       </div>
                     </div>
                     {!submitted && settings.allowChangeRequests && (
-                      <PositionFeedback
-                        position={p}
+                      <PositionCommentTrigger
+                        positionId={p.id}
+                        positionShortText={p.shortText}
                         draft={changes[p.id]}
-                        onSet={(patch) => setChange(p.id, patch)}
-                        onClear={() => removeChange(p.id)}
+                        onOpen={() => setPanelPositionId(p.id)}
                       />
                     )}
                   </>
@@ -485,83 +577,198 @@ export default function ShareView() {
           </div>
         </div>
       )}
+
+      {/* PART G: side-panel for per-position comments. Renders absolutely
+          fixed; doesn't share the document flow.
+          PART K: also wires onSubmitToServer so the panel POSTs to the
+          new /comments endpoint on "Anmerkung senden". */}
+      <PositionCommentPanel
+        open={panelPositionId !== null}
+        position={panelPositionId ? positions.find((p) => p.id === panelPositionId) ?? null : null}
+        draft={panelPositionId ? changes[panelPositionId] : undefined}
+        customerName={customerName}
+        customerEmail={customerEmail}
+        onClose={() => setPanelPositionId(null)}
+        onSet={(patch) => panelPositionId && setChange(panelPositionId, patch)}
+        onClear={() => panelPositionId && removeChange(panelPositionId)}
+        onSetCustomerName={setCustomerName}
+        onSetCustomerEmail={setCustomerEmail}
+        onSubmitToServer={async (input) => {
+          // Map the legacy panel intent enum (modify | remove | comment)
+          // to the richer PART K enum. 'modify' is the most common case
+          // and best maps to 'change_menge' as the canonical "I want
+          // something different" bucket; 'remove' has no direct match so
+          // it lands in 'other' with the user's free-text carrying intent.
+          const intentMap: Record<typeof input.intent, 'change_menge' | 'other'> = {
+            modify: 'change_menge',
+            remove: 'other',
+            comment: 'other',
+          };
+          // Best-effort retrieval of the session-cached password (set in
+          // loadShare on successful unlock). Lets a password-gated share
+          // post comments without re-prompting.
+          let storedPwd: string | undefined;
+          try { storedPwd = window.sessionStorage.getItem(sessionKey) ?? undefined; } catch { /* ignore */ }
+          await api.public.postComment(token, {
+            positionOz: input.positionOz,
+            intent: intentMap[input.intent],
+            text: input.text,
+            authorName: input.authorName,
+            authorEmail: input.authorEmail,
+          }, storedPwd);
+          toast.success('Anmerkung gesendet.');
+        }}
+      />
     </div>
   );
 }
 
-function PositionFeedback({
-  position,
+/**
+ * Inline trigger that opens the side-panel for a given position. If a
+ * draft already exists, surfaces a chip-style indicator showing the intent
+ * + a snippet of the comment so the customer remembers what they wrote.
+ * Click anywhere on the trigger → opens the panel.
+ */
+function PositionCommentTrigger({
+  positionId: _positionId,
+  positionShortText,
   draft,
-  onSet,
-  onClear,
+  onOpen,
 }: {
-  position: { id: string; shortText: string };
+  positionId: string;
+  positionShortText: string;
   draft: ChangeDraft | undefined;
-  onSet: (patch: Partial<ChangeDraft>) => void;
-  onClear: () => void;
+  onOpen: () => void;
 }) {
-  if (!draft) {
+  if (draft && draft.text.trim().length > 0) {
+    const intentLabel =
+      draft.type === 'modify' ? 'Änderung' : draft.type === 'remove' ? 'Streichen' : 'Frage';
+    const intentColor =
+      draft.type === 'modify'
+        ? 'border-amber-300 bg-amber-50/80 text-amber-900'
+        : draft.type === 'remove'
+          ? 'border-rose-300 bg-rose-50/80 text-rose-900'
+          : 'border-sky-300 bg-sky-50/80 text-sky-900';
     return (
       <button
         type="button"
-        onClick={() => onSet({ type: 'modify', text: '' })}
-        className="mt-2 text-xs inline-flex items-center gap-1 text-slate-500 hover:text-primary-600"
+        onClick={onOpen}
+        data-testid="position-comment-trigger-active"
+        className={clsx(
+          'mt-2 w-full text-left inline-flex items-start gap-2 px-3 py-2 rounded-lg border text-xs',
+          intentColor,
+          'hover:brightness-95',
+        )}
       >
-        <MessageSquarePlus className="w-3.5 h-3.5" />
-        Anmerkung / Änderung zu „{position.shortText.slice(0, 28)}{position.shortText.length > 28 ? '…' : ''}"
+        <MessageSquare className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+        <span className="flex-1 min-w-0">
+          <strong className="font-semibold">{intentLabel}: </strong>
+          <span className="line-clamp-2 break-words">{draft.text}</span>
+        </span>
+        <ChevronRight className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 opacity-60" />
       </button>
     );
   }
   return (
-    <div className="mt-3 p-3 rounded-xl border border-amber-200 bg-amber-50/60">
-      <div className="flex items-center gap-2 mb-2 flex-wrap">
-        <label className="inline-flex items-center gap-1 text-xs">
+    <button
+      type="button"
+      onClick={onOpen}
+      data-testid="position-comment-trigger"
+      className="mt-2 text-xs inline-flex items-center gap-1 text-slate-500 hover:text-primary-600"
+    >
+      <MessageSquarePlus className="w-3.5 h-3.5" />
+      Anmerkung zu „{positionShortText.slice(0, 28)}{positionShortText.length > 28 ? '…' : ''}"
+    </button>
+  );
+}
+
+/**
+ * PART H: password gate. Rendered when the share endpoint returns 401.
+ * On submit, calls loadShare(password) which retries the GET with the
+ * X-Share-Password header. The server is expected to rate-limit failed
+ * attempts (client-side has no rate limiter beyond the natural delay of
+ * a network round-trip).
+ *
+ * State design: lifts password into local state (NOT shareView's state)
+ * so the input doesn't survive an unmount + remount when the parent
+ * re-renders the loading spinner mid-request.
+ */
+function PasswordGate({
+  previousAttemptFailed,
+  onSubmit,
+}: {
+  previousAttemptFailed?: boolean;
+  onSubmit: (password: string) => void | Promise<void>;
+}) {
+  const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  return (
+    <div
+      className="min-h-screen grid place-items-center bg-slate-50 px-4"
+      data-testid="share-password-gate"
+    >
+      <form
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (!password) return;
+          setSubmitting(true);
+          try {
+            await onSubmit(password);
+          } finally {
+            setSubmitting(false);
+          }
+        }}
+        className="max-w-md w-full bg-white border border-slate-200/80 rounded-2xl p-7 sm:p-8 shadow-sm"
+      >
+        <div className="inline-flex p-3 rounded-full bg-primary-50 mb-3">
+          <Lock className="w-5 h-5 text-primary-600" />
+        </div>
+        <h1 className="text-lg font-semibold text-slate-900">
+          Geschütztes Angebot
+        </h1>
+        <p className="text-sm text-slate-500 mt-1 leading-relaxed">
+          Der Anbieter hat diesen Link mit einem Passwort versehen. Bitte das
+          Passwort eingeben, das Sie per Telefon, SMS oder separater E-Mail
+          erhalten haben.
+        </p>
+
+        {previousAttemptFailed && (
+          <div className="mt-4 flex items-start gap-2 px-3 py-2 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <span>Passwort stimmt nicht. Bitte erneut versuchen.</span>
+          </div>
+        )}
+
+        <label className="block mt-5">
+          <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            Passwort
+          </span>
           <input
-            type="radio"
-            checked={draft.type === 'modify'}
-            onChange={() => onSet({ type: 'modify' })}
-            className="text-primary-600"
+            type="password"
+            autoFocus
+            autoComplete="off"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="mt-1 input"
+            placeholder="••••••••"
           />
-          <span className="text-slate-700">Änderung wünschen</span>
         </label>
-        <label className="inline-flex items-center gap-1 text-xs">
-          <input
-            type="radio"
-            checked={draft.type === 'remove'}
-            onChange={() => onSet({ type: 'remove' })}
-            className="text-primary-600"
-          />
-          <span className="text-slate-700">Streichen</span>
-        </label>
-        <label className="inline-flex items-center gap-1 text-xs">
-          <input
-            type="radio"
-            checked={draft.type === 'comment'}
-            onChange={() => onSet({ type: 'comment' })}
-            className="text-primary-600"
-          />
-          <span className="text-slate-700">Nur Frage</span>
-        </label>
+
         <button
-          onClick={onClear}
-          className="ml-auto text-xs text-slate-400 hover:text-slate-600 inline-flex items-center gap-1"
+          type="submit"
+          disabled={!password || submitting}
+          className="mt-5 w-full inline-flex items-center justify-center gap-2 h-11 rounded-lg bg-primary-600 text-white font-semibold hover:bg-primary-700 disabled:opacity-50"
         >
-          <X className="w-3 h-3" /> Verwerfen
+          {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+          Angebot öffnen
         </button>
-      </div>
-      <textarea
-        autoFocus
-        placeholder={
-          draft.type === 'modify'
-            ? 'z. B. Bitte 8 m² statt 10 m². Oder: lieber Fliesen 60×60 statt 30×30.'
-            : draft.type === 'remove'
-              ? 'z. B. Diese Position nicht beauftragen.'
-              : 'z. B. Welches Material ist hier vorgesehen?'
-        }
-        value={draft.text}
-        onChange={(e) => onSet({ text: e.target.value })}
-        className="w-full text-sm bg-white border border-amber-200 rounded-lg px-3 py-2 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-200 min-h-[56px]"
-      />
+
+        <p className="text-[11px] text-slate-400 mt-4 text-center">
+          Wir speichern das Passwort nur in dieser Browser-Sitzung. Nach dem
+          Schließen des Tabs wird es vergessen.
+        </p>
+      </form>
     </div>
   );
 }

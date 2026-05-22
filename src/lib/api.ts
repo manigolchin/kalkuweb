@@ -117,6 +117,34 @@ export const api = {
   shares: {
     listForProject: (projectId: string) =>
       request<{ shares: ShareSummary[] }>(`/projects/${projectId}/shares`),
+    /** PART K: project-wide comment counts grouped by positionOz. Used to
+     *  render badges on PositionTableV2 rows. Cheap aggregate; safe to
+     *  call on every project open and every save. */
+    commentCounts: (projectId: string) =>
+      request<{ counts: Record<string, { total: number; unresolved: number }> }>(
+        `/projects/${projectId}/comments/counts`,
+      ),
+    /** PART K: full per-position comment list. Used when the calculator
+     *  clicks a row badge to expand the thread. */
+    comments: (projectId: string) =>
+      request<{
+        comments: Array<{
+          id: string;
+          shareId: string;
+          positionOz: string;
+          intent: 'accept' | 'change_menge' | 'change_fabrikat' | 'negotiate_ep' | 'other';
+          text: string;
+          authorName: string | null;
+          authorEmail: string | null;
+          createdAt: number | string;
+          resolvedAt: number | string | null;
+        }>;
+        grouped: Record<string, Array<{
+          id: string; positionOz: string; intent: string; text: string;
+          authorName: string | null; authorEmail: string | null;
+          createdAt: number | string;
+        }>>;
+      }>(`/projects/${projectId}/comments`),
     create: (
       projectId: string,
       input: { visiblePositionIds: string[]; settings: ShareSettings; parentShareId?: string },
@@ -199,7 +227,29 @@ export const api = {
       request<{ ok: true }>(`/templates/${id}`, { method: 'DELETE' }),
   },
   public: {
-    getShare: (token: string) => request<CustomerViewPayload>(`/share/${token}`),
+    /**
+     * PART H: getShare now accepts an optional `password` arg. If the share
+     * is password-protected and no/wrong password is sent, the server
+     * responds 401 and the caller (ShareView) renders the password gate.
+     * On success the server flips `passwordRequired` to false in the
+     * response so the gate stops rendering.
+     *
+     * Passwords go in a header (NOT a query string) so they don't appear
+     * in server access logs or browser history.
+     */
+    getShare: (token: string, password?: string) =>
+      request<CustomerViewPayload>(`/share/${token}`, {
+        headers: password ? { 'X-Share-Password': password } : undefined,
+      }),
+    /**
+     * PART H: optional dedicated unlock endpoint. Calls the same path as
+     * getShare; exists for clarity at call sites and so the future server
+     * can rate-limit failed unlock attempts separately from regular reads.
+     */
+    unlockShare: (token: string, password: string) =>
+      request<CustomerViewPayload>(`/share/${token}`, {
+        headers: { 'X-Share-Password': password },
+      }),
     approve: (
       token: string,
       input: { customerName: string; customerEmail?: string; message?: string },
@@ -221,5 +271,26 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(input),
       }),
+    /** PART K: granular per-position comment. Honors the share's password
+     *  gate via the X-Share-Password header (set the same way as getShare). */
+    postComment: (
+      token: string,
+      input: {
+        positionOz: string;
+        intent: 'accept' | 'change_menge' | 'change_fabrikat' | 'negotiate_ep' | 'other';
+        text: string;
+        authorName?: string;
+        authorEmail?: string;
+      },
+      password?: string,
+    ) =>
+      request<{ ok: true; id: string; createdAt: string; positionOz: string; intent: string }>(
+        `/share/${token}/comments`,
+        {
+          method: 'POST',
+          body: JSON.stringify(input),
+          headers: password ? { 'X-Share-Password': password } : undefined,
+        },
+      ),
   },
 };
