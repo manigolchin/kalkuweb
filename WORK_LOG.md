@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-05-22 23:25 — Audit + competitive feature roadmap v3
+- Source: user "check everything that you did is working without bug and work perfectly and fast and search [...] for best feutures"
+- Branch: claude-auto/v2-gaps-closeout (continued)
+- Result: committed e77445d (docs-only — round7_audit_findings.md + feature_roadmap_v3.md)
+- Notes: Three-pass audit. (1) Full test re-run: 349/349 frontend, 68/68 panel-api, lint 0 errors, tsc clean both sides, build 3,76 s. (2) Live API smoke: booted panel-api in mock mode, curl-ran 14 endpoints — all ≤15 ms with proper error JSON (401 unauthorized / 400 invalid_input with Zod issues / 404 firma_not_found / 404 external_firma_has_no_positions with hint / 503 upstream_error). Cache verified working (cold = warm latency). Defaults PUT/DELETE round-trip works. (3) Gap audit against architecture doc — 12 of 12 claims shipped, 0 gaps. Three P2 polish items captured (narrow-viewport table scroll, firmaId semantic, tsx-watch SIGPIPE). Then delegated competitive research agent — wrote `feature_roadmap_v3.md` (1,972 words) listing 7 highest-impact features to ship next: bulk edit + multi-select, Cmd-Z undo, inline plausibility chips, GAEB DA XML 2000 / DA 90 export, EFB 221/222/223 export, EP suggestion from own history, Nachtrag-Workflow VOB §2 Nr. 3/5/6. Each item carries user-story / effort / competitor citation (Nevaris, iTwo, ARRIBA, California.pro, ORCA, Sirados, STLB-Bau, MWM-Libero, Allplan Bauwerk, ProBauG). Sequencing rec: 8–10 weeks of focused work across 3 sprints to close Sprint 1–3.
+
 ## 2026-05-22 23:05 — End-to-end live verification + round-7 progress doc
 - Source: standing autonomy ("do whatever you want and its better")
 - Branch: claude-auto/v2-gaps-closeout (continued)
