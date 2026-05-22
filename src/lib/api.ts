@@ -284,6 +284,23 @@ export const api = {
           parsedAt?: string | null;
         }>;
       }>(`/firmen/${kind}/${id}`),
+    /** Fetch GAEB-parsed positions for a managed-firma project. Returns
+     *  404 for external firmas (they only carry submission-result data
+     *  in preisanfrage, not LV positions). */
+    projectPositions: (kind: 'managed' | 'external', firmaId: number, projectId: number) =>
+      request<{
+        projectId: number;
+        count: number;
+        positions: Array<{
+          oz: string;
+          shortText: string;
+          longText: string;
+          quantity: number;
+          unit: string;
+          isHeader: boolean;
+          pageNumber?: number | null;
+        }>;
+      }>(`/firmen/${kind}/${firmaId}/projects/${projectId}/positions`),
     updateDefaults: (
       kind: 'managed' | 'external',
       id: number,

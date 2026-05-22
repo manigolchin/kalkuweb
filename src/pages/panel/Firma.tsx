@@ -152,6 +152,7 @@ export default function Firma() {
           <ProjectsCard
             projects={data.projects}
             firmaKind={kind}
+            firmaId={id}
             firmaDisplayName={data.firma.displayName}
             defaults={data.defaults}
           />
@@ -418,11 +419,13 @@ function NumberField({
 function ProjectsCard({
   projects,
   firmaKind,
+  firmaId,
   firmaDisplayName,
   defaults,
 }: {
   projects: FirmaDetail['projects'];
   firmaKind: 'managed' | 'external';
+  firmaId: number;
   firmaDisplayName: string;
   defaults: FirmaDetail['defaults'];
 }) {
@@ -441,13 +444,58 @@ function ProjectsCard({
     const key = `${p.source}:${p.id}`;
     setStarting(key);
     try {
+      // For MANAGED firmas, try to seed the new project with positions that
+      // preisanfrage already parsed from the GAEB. External firmas don't
+      // have positions in preisanfrage yet, so we leave positions empty
+      // and let the calculator upload the GAEB manually.
+      const seededPositions: NonNullable<Parameters<typeof api.projects.create>[0]['positions']> = [];
+      if (p.source === 'managed') {
+        try {
+          const res = await api.firmen.projectPositions(firmaKind, firmaId, p.id);
+          // The route validates (kind, firmaId, projectId) and then asks
+          // preisanfrage for the GAEB-parsed positions. project_id is the
+          // upstream's globally-unique id; firmaId is kept in the URL for
+          // route-hierarchy consistency + future cross-firma leakage guards.
+          let order = 0;
+          for (const pos of res.positions) {
+            const isHdr = !!pos.isHeader;
+            seededPositions.push({
+              id: crypto.randomUUID(),
+              oz: pos.oz,
+              shortText: pos.shortText,
+              longText: pos.longText,
+              hinweisText: '',
+              quantity: pos.quantity,
+              unit: pos.unit,
+              // EK columns start empty — that's the calculator's job to fill.
+              materialCost: 0,
+              timeMinutes: 0,
+              nuCost: 0,
+              isHeader: isHdr,
+              sortOrder: order++,
+              sectionPath: pos.oz.split('.').slice(0, -1).join('.') || pos.oz,
+              epLohn: 0,
+              epMaterial: 0,
+              epGeraet: 0,
+              epNu: 0,
+              ep: 0,
+              gp: 0,
+              visibleToCustomer: true,
+              positionType: 'standard',
+            });
+          }
+        } catch (e) {
+          // Non-fatal — fall back to empty positions[].
+          console.warn('[Firma] positions seed failed, continuing with empty LV:', e);
+        }
+      }
+
       // Pre-fill the new project with everything we already know:
       //  - bidder = Firma name (so the Excel export header is correct from minute 1)
       //  - calcParams = Firma defaults cascaded into globals
       //  - client / service / tenderNumber / deadline from the Ausschreibung
       //  - name = the Ausschreibung title
-      // Empty positions[] — the calculator imports the GAEB/PDF in a follow-up
-      // step (Phase 1c will wire "Positionen aus preisanfrage holen").
+      //  - positions = seeded from preisanfrage if available
       const submissionIso = p.submissionDate
         ? (p.submissionTime ? `${p.submissionDate}T${p.submissionTime}` : p.submissionDate)
         : '';
@@ -470,10 +518,15 @@ function ProjectsCard({
           personaleinsatz: 3,
           mwst: 0.19,
         },
-        positions: [],
+        positions: seededPositions,
         notes: `Aus preisanfrage importiert — Firma: ${firmaDisplayName} (${firmaKind}), Ref: ${p.source}:${p.id}`,
       });
-      toast.success('Kalkulation angelegt — jetzt GAEB importieren oder Positionen einpflegen.');
+      const seededN = seededPositions.length;
+      toast.success(
+        seededN > 0
+          ? `Kalkulation mit ${seededN} Positionen aus preisanfrage angelegt.`
+          : 'Kalkulation angelegt — jetzt GAEB importieren oder Positionen einpflegen.',
+      );
       navigate(`/panel/kalkulation/${created.id}`);
     } catch (e) {
       toast.error(`Konnte Kalkulation nicht starten: ${String(e)}`);

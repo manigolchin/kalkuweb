@@ -19,6 +19,7 @@ import type {
   PreisanfrageOverview,
   PreisanfrageProject,
   PreisanfrageExternalProject,
+  PreisanfragePosition,
 } from './preisanfrage.js';
 
 let warned = false;
@@ -314,6 +315,69 @@ const MOCK_MANAGED_PROJECTS: Record<number, PreisanfrageProject[]> = {
   ],
 };
 
+/** Positions per project — mirrors what preisanfrage's GAEB parser would
+ *  return. Realistic Sanierung-Sandsteinmauer rows for Gesellchen project
+ *  1001 (Ludwigschule). Headers (oz=" 1", " 2", …) have no quantity. */
+const MOCK_PROJECT_POSITIONS: Record<number, PreisanfragePosition[]> = {
+  1001: [
+    // Gesellchen — Sanierung Sandsteinmauer Ludwigschule
+    { oz: '01', shortText: 'Baustelleneinrichtung', longText: '', quantity: 0, unit: '', isHeader: true },
+    { oz: '01.01.001', shortText: 'Bauschuttcontainer', longText: 'Mulde 7 m³, inkl. Aufstellen, Vorhalten, Abfuhr.', quantity: 3, unit: 'Stck', isHeader: false },
+    { oz: '01.01.002', shortText: 'Strahlgutcontainer', longText: 'Container Strahlgut beladbar, inkl. Entsorgungsnachweis.', quantity: 1, unit: 'Stck', isHeader: false },
+    { oz: '01.01.003', shortText: 'Sondermüll Entsorgung', longText: 'Sondermüll-Behälter inkl. Entsorgungsnachweis.', quantity: 1, unit: 'psch', isHeader: false },
+    { oz: '01.01.004', shortText: 'Mobilbauzaun, Höhe 2,00 m', longText: 'Liefern, montieren, vorhalten, demontieren, abfahren.', quantity: 100, unit: 'm', isHeader: false },
+    { oz: '01.01.005', shortText: 'Baustelleneinrichtung, Vorhaltung, Räumung', longText: '', quantity: 1, unit: 'psch', isHeader: false },
+    { oz: '02', shortText: 'Gerüstbau und Schutzmaßnahmen', longText: '', quantity: 0, unit: '', isHeader: true },
+    { oz: '02.01.001', shortText: 'Fahrbares Gerüst', longText: 'Fahrbares Arbeitsgerüst, Bühnenhöhe bis 4,0 m.', quantity: 1, unit: 'Stck', isHeader: false },
+    { oz: '02.01.002', shortText: 'Fassadengerüst', longText: 'Arbeitsgerüst nach DIN 4420, vorhalten 6 Wochen.', quantity: 80, unit: 'm²', isHeader: false },
+    { oz: '02.01.003', shortText: 'Netzplanen', longText: 'Staubschutznetze um Gerüst.', quantity: 80, unit: 'm²', isHeader: false },
+    { oz: '02.01.004', shortText: 'Bodenschutz', longText: 'Schutzfolie + Schutzmatten auf Bestandsbelag.', quantity: 260, unit: 'm²', isHeader: false },
+    { oz: '02.01.005', shortText: 'Garagentor- und Fassadenschutz', longText: 'Folierung Bestandsfassade gegen Staubeintritt.', quantity: 20, unit: 'm²', isHeader: false },
+    { oz: '03', shortText: 'Abbrucharbeiten', longText: '', quantity: 0, unit: '', isHeader: true },
+    { oz: '03.01.001', shortText: 'Stahlgitterzaun entfernen', longText: 'Bestand demontieren, fachgerecht entsorgen.', quantity: 108, unit: 'm', isHeader: false },
+    { oz: '03.01.002', shortText: 'Verankerungen entfernen', longText: 'Bestehende Einzelverankerungen ausbrechen.', quantity: 92, unit: 'Stck', isHeader: false },
+    { oz: '03.01.003', shortText: 'Stahlpfosten demontieren', longText: 'Bestand demontieren, fachgerecht entsorgen.', quantity: 36, unit: 'Stck', isHeader: false },
+    { oz: '03.01.004', shortText: 'Betonabdeckplatten Pfeiler entfernen', longText: '', quantity: 22, unit: 'Stck', isHeader: false },
+    { oz: '03.01.005', shortText: 'Betonabdeckplatten Mauer entfernen', longText: '', quantity: 108, unit: 'm', isHeader: false },
+    { oz: '03.01.006', shortText: 'Mauerwerksbewuchs entfernen', longText: 'Bewuchs mechanisch und chemisch entfernen.', quantity: 40, unit: 'm²', isHeader: false },
+    { oz: '04', shortText: 'Sandsteinmauer-Sanierung', longText: '', quantity: 0, unit: '', isHeader: true },
+    { oz: '04.01.001', shortText: 'Reinigung Strahlverfahren', longText: 'Partikelstrahlen mit ≤ 0,5 bar, Strahlgut nach AGB.', quantity: 195, unit: 'm²', isHeader: false },
+    { oz: '04.01.002', shortText: 'Steinaustausch Sandsteinquader', longText: 'Beschädigte Quader durch passende Vierungen ersetzen.', quantity: 14, unit: 'Stck', isHeader: false },
+    { oz: '04.01.003', shortText: 'Vierungen Mörtelersatz', longText: 'Reprofilierung mit Sandstein-Ergänzungsmörtel.', quantity: 38, unit: 'dm²', isHeader: false },
+    { oz: '04.01.004', shortText: 'Fugensanierung Trasskalkmörtel', longText: 'Fugen ausräumen, neu verfugen mit M5 Trasskalk.', quantity: 410, unit: 'm', isHeader: false },
+    { oz: '04.01.005', shortText: 'Hydrophobierung Wasserabweisend', longText: 'Schlussbehandlung Silikonharzlösung.', quantity: 195, unit: 'm²', isHeader: false },
+  ],
+  1002: [
+    // Gesellchen — Grünpflege Saarbrücken (compact LV)
+    { oz: '01', shortText: 'Vorbereitung', longText: '', quantity: 0, unit: '', isHeader: true },
+    { oz: '01.01.001', shortText: 'Geländeaufnahme + Kartierung', longText: '', quantity: 1, unit: 'psch', isHeader: false },
+    { oz: '02', shortText: 'Gehölzpflege', longText: '', quantity: 0, unit: '', isHeader: true },
+    { oz: '02.01.001', shortText: 'Baumkronenschnitt 8-15 m', longText: 'Inkl. Abfuhr Grünschnitt.', quantity: 38, unit: 'Stck', isHeader: false },
+    { oz: '02.01.002', shortText: 'Strauchschnitt', longText: '', quantity: 420, unit: 'm²', isHeader: false },
+    { oz: '03', shortText: 'Rasenpflege', longText: '', quantity: 0, unit: '', isHeader: true },
+    { oz: '03.01.001', shortText: 'Rasenmahd inkl. Abfuhr', longText: 'Frequenz: alle 3 Wochen, Saison.', quantity: 12_400, unit: 'm²', isHeader: false },
+  ],
+  2001: [
+    // MPB Bau — GS Dieblich Leitungsverlegung
+    { oz: '01', shortText: 'Tiefbau', longText: '', quantity: 0, unit: '', isHeader: true },
+    { oz: '01.01.001', shortText: 'Asphaltschnitt', longText: 'Maschineller Trennschnitt im Bestandsbelag.', quantity: 124, unit: 'm', isHeader: false },
+    { oz: '01.01.002', shortText: 'Asphaltabbruch', longText: '', quantity: 86, unit: 'm²', isHeader: false },
+    { oz: '01.01.003', shortText: 'Aushub Leitungsgraben', longText: 'Tiefe bis 1,5 m, Breite 0,4 m.', quantity: 124, unit: 'm', isHeader: false },
+    { oz: '02', shortText: 'Leitung', longText: '', quantity: 0, unit: '', isHeader: true },
+    { oz: '02.01.001', shortText: 'Erdkabel NAYY 4×16', longText: 'Liefern + verlegen.', quantity: 124, unit: 'm', isHeader: false },
+    { oz: '02.01.002', shortText: 'Warnband', longText: 'Liefern + auslegen.', quantity: 124, unit: 'm', isHeader: false },
+  ],
+  3001: [
+    // Schwarzkopf — PV-Anlage Bitburg
+    { oz: '01', shortText: 'Module und Unterkonstruktion', longText: '', quantity: 0, unit: '', isHeader: true },
+    { oz: '01.01.001', shortText: 'PV-Modul 425 Wp monokristallin', longText: 'Liefern, montieren, anschließen.', quantity: 564, unit: 'Stck', isHeader: false },
+    { oz: '01.01.002', shortText: 'UK Aufdach Trapezblech', longText: '', quantity: 1, unit: 'psch', isHeader: false },
+    { oz: '02', shortText: 'Wechselrichter und Verkabelung', longText: '', quantity: 0, unit: '', isHeader: true },
+    { oz: '02.01.001', shortText: 'String-Wechselrichter 100 kW', longText: '', quantity: 3, unit: 'Stck', isHeader: false },
+    { oz: '02.01.002', shortText: 'DC-Verkabelung', longText: '', quantity: 1, unit: 'psch', isHeader: false },
+  ],
+};
+
 const MOCK_EXTERNAL_PROJECTS: Record<number, PreisanfrageExternalProject[]> = {
   101: [
     {
@@ -366,6 +430,11 @@ export function getMockManagedProjects(companyId: number): PreisanfrageProject[]
 export function getMockExternalProjects(externalFirmaId: number): PreisanfrageExternalProject[] {
   warnOnce();
   return structuredClone(MOCK_EXTERNAL_PROJECTS[externalFirmaId] ?? []);
+}
+
+export function getMockProjectPositions(projectId: number): PreisanfragePosition[] {
+  warnOnce();
+  return structuredClone(MOCK_PROJECT_POSITIONS[projectId] ?? []);
 }
 
 export function getMockCompanies(): PreisanfrageCompany[] {

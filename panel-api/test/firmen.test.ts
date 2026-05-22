@@ -174,6 +174,45 @@ test('preisanfrage MOCK: auto-enabled in dev when no JWT is set', async () => {
   }
 });
 
+test('preisanfrage MOCK: getProjectPositions returns Ludwigschule rows for Gesellchen project 1001', async () => {
+  const oldJwt = process.env.PREISANFRAGE_SERVICE_JWT;
+  const oldMock = process.env.PREISANFRAGE_MOCK;
+  delete process.env.PREISANFRAGE_SERVICE_JWT;
+  process.env.PREISANFRAGE_MOCK = 'fixture';
+  try {
+    const { getProjectPositions, _clearPreisanfrageCache } = await import('../src/lib/preisanfrage.js');
+    _clearPreisanfrageCache();
+    const ps = await getProjectPositions(1001);
+    assert.ok(ps.length > 10, 'Ludwigschule fixture should have many positions');
+    // Mobilbauzaun is the position the formula audit was based on — keep it canonical.
+    const mobilbauzaun = ps.find((p) => p.shortText.toLowerCase().includes('mobilbauzaun'));
+    assert.ok(mobilbauzaun, 'Mobilbauzaun position should be present');
+    assert.equal(mobilbauzaun!.unit, 'm');
+    assert.equal(mobilbauzaun!.quantity, 100, 'Menge canonical 100 (NOT 100000 like the bug case)');
+    // Headers are flagged so the calculator hides EP columns on them.
+    const headers = ps.filter((p) => p.isHeader);
+    assert.ok(headers.length >= 4, 'expect at least 4 header rows (Baustelle/Gerüst/Abbruch/Sanierung)');
+  } finally {
+    process.env.PREISANFRAGE_SERVICE_JWT = oldJwt;
+    if (oldMock === undefined) delete process.env.PREISANFRAGE_MOCK;
+    else process.env.PREISANFRAGE_MOCK = oldMock;
+  }
+});
+
+test('preisanfrage MOCK: getProjectPositions returns [] for unknown project id', async () => {
+  const oldMock = process.env.PREISANFRAGE_MOCK;
+  process.env.PREISANFRAGE_MOCK = 'fixture';
+  try {
+    const { getProjectPositions, _clearPreisanfrageCache } = await import('../src/lib/preisanfrage.js');
+    _clearPreisanfrageCache();
+    const ps = await getProjectPositions(99999);
+    assert.equal(ps.length, 0);
+  } finally {
+    if (oldMock === undefined) delete process.env.PREISANFRAGE_MOCK;
+    else process.env.PREISANFRAGE_MOCK = oldMock;
+  }
+});
+
 test('preisanfrage MOCK: explicit PREISANFRAGE_MOCK=0 disables auto-mock even in dev', async () => {
   const oldJwt = process.env.PREISANFRAGE_SERVICE_JWT;
   const oldMock = process.env.PREISANFRAGE_MOCK;

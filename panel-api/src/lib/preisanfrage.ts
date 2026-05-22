@@ -24,6 +24,7 @@ import {
   getMockExternalProjects,
   getMockManagedProjects,
   getMockOverview,
+  getMockProjectPositions,
   isMockMode,
 } from './preisanfrage-fixture.js';
 
@@ -98,6 +99,23 @@ export type PreisanfrageProject = {
   oneDriveShareUrl: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+/** Subset of a position parsed by preisanfrage from the GAEB file. Used
+ *  to seed a kalku-website calculation project so the calculator doesn't
+ *  need to re-upload + re-parse the GAEB. Only the fields the kalku-website
+ *  Position type needs — preisanfrage carries more (category, hersteller,
+ *  needs_rfq, requires_trgs) which we ignore here. */
+export type PreisanfragePosition = {
+  /** OZ string as it appears in the GAEB (e.g. "01.01.004"). */
+  oz: string;
+  shortText: string;
+  longText: string;
+  quantity: number;
+  unit: string;
+  isHeader: boolean;
+  /** Page in the original PDF — useful for the calculator to cross-check. */
+  pageNumber?: number | null;
 };
 
 /** Subset of `/api/v1/admin/external-firmas/{id}/projects` — projects for
@@ -314,6 +332,40 @@ export async function listManagedProjects(companyId: number, opts?: {
       updatedAt: r.updated_at,
     })),
   );
+}
+
+/** Fetch the GAEB-parsed positions for a managed-firma project. Returns
+ *  what we need to seed a kalku-website Position[] — calls upstream
+ *  `GET /api/v1/projects/{id}` (which includes positions[]) and projects
+ *  the shape down to the kalku-website Position fields. */
+export async function getProjectPositions(projectId: number): Promise<PreisanfragePosition[]> {
+  if (isMockMode()) return getMockProjectPositions(projectId);
+  const key = `positions:${projectId}`;
+  const hit = cached<PreisanfragePosition[]>(key);
+  if (hit) return hit;
+  type RawPos = {
+    oz: string;
+    short_text: string;
+    long_text: string | null;
+    quantity: number;
+    unit: string;
+    page_number?: number | null;
+  };
+  type RawProject = { positions: RawPos[] };
+  const raw = await call<RawProject>(`/api/v1/projects/${projectId}`);
+  const rows = (raw.positions ?? []).map((p) => ({
+    oz: p.oz ?? '',
+    shortText: p.short_text ?? '',
+    longText: p.long_text ?? '',
+    quantity: typeof p.quantity === 'number' ? p.quantity : Number(p.quantity) || 0,
+    unit: p.unit ?? '',
+    // preisanfrage doesn't track "isHeader" explicitly; OZ structure tells us.
+    // Header rows in GAEB-XML typically have no quantity/unit. The kalku-website
+    // PositionTable handles isHeader by hiding price columns — same default ok.
+    isHeader: !p.quantity || !p.unit,
+    pageNumber: p.page_number ?? null,
+  }));
+  return cache(key, rows);
 }
 
 export async function listExternalProjects(externalFirmaId: number): Promise<PreisanfrageExternalProject[]> {

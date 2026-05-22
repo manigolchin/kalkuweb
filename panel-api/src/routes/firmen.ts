@@ -20,6 +20,7 @@ import { firmaCalcDefaults } from '../schema.js';
 import { requireAuth, type AuthVariables } from '../lib/middleware.js';
 import {
   getFirmaOverview,
+  getProjectPositions,
   listManagedProjects,
   listExternalProjects,
   isPreisanfrageEnabled,
@@ -228,6 +229,38 @@ export const firmenRoute = new Hono<{ Variables: AuthVariables }>()
         },
         defaults: serializeDefaults(defaultsRow),
         projects,
+      });
+    } catch (err) {
+      const { status, body } = handleUpstreamError(err);
+      return c.json(body, status);
+    }
+  })
+
+  /** Fetch the GAEB-parsed positions for one managed-firma project.
+   *  Used by the "Kalkulation starten" flow to seed the new kalku-website
+   *  project's Position[] without re-uploading the GAEB. External firmas
+   *  don't yet have positions in preisanfrage (only submission results),
+   *  so we 404 those — the calculator imports the GAEB manually. */
+  .get('/firmen/:kind/:firmaId/projects/:projectId/positions', requireAuth, async (c) => {
+    const kindParsed = FIRMA_KIND.safeParse(c.req.param('kind'));
+    const firmaId = Number(c.req.param('firmaId'));
+    const projectId = Number(c.req.param('projectId'));
+    if (!kindParsed.success || !Number.isInteger(firmaId) || firmaId <= 0 || !Number.isInteger(projectId) || projectId <= 0) {
+      return c.json({ error: 'invalid_ref' }, 400);
+    }
+    if (kindParsed.data === 'external') {
+      return c.json({ error: 'external_firma_has_no_positions',
+        hint: 'External firmas only carry submission results in preisanfrage. Import the GAEB manually.' }, 404);
+    }
+    if (!isPreisanfrageEnabled()) {
+      return c.json({ error: 'integration_disabled' }, 503);
+    }
+    try {
+      const positions = await getProjectPositions(projectId);
+      return c.json({
+        projectId,
+        count: positions.length,
+        positions,
       });
     } catch (err) {
       const { status, body } = handleUpstreamError(err);
