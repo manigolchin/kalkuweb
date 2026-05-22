@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-05-22 22:00 — Cross-project formula audit (kalku-website vs bauki/kalku-ki)
+- Source: user followup "check formula in bauki toll in projects that for claculation that we system have like that calculation formular"
+- Branch: claude-auto/v2-gaps-closeout (continued)
+- Result: committed b54048e
+- Notes: Found two calc engines in /Users/admin/projects/bauki/kalku-ki/ — `src/utils/projectCalc.js` (manual flow, applies zeitabzug) and `src/engine/calculator.js` (Regelwerk auto-calc, Y pre-adjusted). Both are arithmetically identical to our kalku-website calc.ts and to the LV3.xlsx Vorlage. Verified by reading actual code lines (sed -n) and FIRMA_DEFAULTS. The only difference is bauki ships higher defaults (€72,51/h labour, 20 % markups) vs canonical €49,9/12 %/12 % — intentional per-firma policy, not a bug. Three-way comparison table + reproducer commands in `docs/v2_redesign/formula_audit_cross_project.md`. No code change; doc-only.
+
 ## 2026-05-22 21:50 — Verify EP/GP formula vs user's real Excel, add hover breakdown
 - Source: user followup ("are you sure that formular are correct i think is wrong this is one excel taht you can check formular") with a screenshot of Mobilbauzaun (Menge=100.000 m, Material=2, EP=2,24, GP=224.000 €) and path to LV3.xlsx (Sanierung Sandsteinmauer / Gesellchen GmbH) on OneDrive.
 - Branch: claude-auto/v2-gaps-closeout (continued)
