@@ -227,3 +227,86 @@ describe('ProjectsList.tsx — load error', () => {
     await waitFor(() => expect(toastErrorSpy).toHaveBeenCalledWith('Projekte konnten nicht geladen werden.'));
   });
 });
+
+/**
+ * Round 10 — a11y attribute audit. We rely on role="list" / role="listitem"
+ * so screen readers announce the project grid as a list.
+ */
+describe('ProjectsList.tsx — a11y attributes', () => {
+  test('project grid carries role="list" + aria-label="Projekte"', async () => {
+    listMock.mockResolvedValueOnce({
+      projects: [buildProject({ id: 'p1', name: 'Alpha' })],
+    });
+    renderList();
+    await waitFor(() => expect(screen.getByText('Alpha')).toBeDefined());
+    const list = screen.getByRole('list', { name: 'Projekte' });
+    expect(list).toBeDefined();
+  });
+
+  test('each ProjectCard carries role="listitem"', async () => {
+    listMock.mockResolvedValueOnce({
+      projects: [
+        buildProject({ id: 'p1', name: 'Alpha' }),
+        buildProject({ id: 'p2', name: 'Beta' }),
+        buildProject({ id: 'p3', name: 'Gamma' }),
+      ],
+    });
+    renderList();
+    await waitFor(() => expect(screen.getByText('Alpha')).toBeDefined());
+    const items = screen.getAllByRole('listitem');
+    expect(items.length).toBe(3);
+  });
+
+  test('each card has an aria-label including the project name', async () => {
+    listMock.mockResolvedValueOnce({
+      projects: [
+        buildProject({ id: 'p1', name: 'Alpha' }),
+        buildProject({ id: 'p2', name: '' }), // → "Unbenanntes Projekt"
+      ],
+    });
+    renderList();
+    await waitFor(() => expect(screen.getByText('Alpha')).toBeDefined());
+    const items = screen.getAllByRole('listitem');
+    const labels = items.map((el) => el.getAttribute('aria-label'));
+    expect(labels).toContain('Projekt Alpha');
+    expect(labels).toContain('Projekt Unbenanntes Projekt');
+  });
+});
+
+/**
+ * Round 10 — skeleton-grid tests.
+ *
+ * The 6-card skeleton grid is wrapped in an `aria-busy` region; once the
+ * api resolves, the skeleton disappears and the real project cards render.
+ */
+describe('ProjectsList.tsx — loading skeleton', () => {
+  test('renders 6 skeleton cards while api is in-flight', async () => {
+    let resolve: (v: unknown) => void = () => {};
+    listMock.mockReturnValueOnce(new Promise((r) => (resolve = r as never)));
+    renderList();
+    const cards = document.querySelectorAll('[data-testid=projects-skeleton-card]');
+    expect(cards.length).toBe(6);
+    resolve({ projects: [] });
+  });
+
+  test('skeleton container has aria-busy="true" + aria-live="polite"', async () => {
+    let resolve: (v: unknown) => void = () => {};
+    listMock.mockReturnValueOnce(new Promise((r) => (resolve = r as never)));
+    renderList();
+    const region = document.querySelector('[data-testid=projects-loading]') as HTMLElement;
+    expect(region).not.toBeNull();
+    expect(region.getAttribute('aria-busy')).toBe('true');
+    expect(region.getAttribute('aria-live')).toBe('polite');
+    resolve({ projects: [] });
+  });
+
+  test('after data resolves the skeleton vanishes and project cards render', async () => {
+    listMock.mockResolvedValueOnce({
+      projects: [buildProject({ id: 'p1', name: 'Real-Project' })],
+    });
+    renderList();
+    await waitFor(() => expect(screen.getByText('Real-Project')).toBeDefined());
+    expect(document.querySelectorAll('[data-testid=projects-skeleton-card]').length).toBe(0);
+    expect(document.querySelector('[data-testid=projects-loading]')).toBeNull();
+  });
+});

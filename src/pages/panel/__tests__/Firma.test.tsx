@@ -22,9 +22,16 @@ import Firma from '../Firma';
 
 // react-hot-toast's <Toaster /> reads window.matchMedia at mount; jsdom
 // doesn't provide it. We don't assert on the toast UI itself — just stub
-// toast.success/error so the component's imports resolve cleanly.
+// toast.success/error/loading so the component's imports resolve cleanly.
+// (loading was added for Round-10 optimistic save — returns a stable id
+// string the success/error calls can target to mutate the same toast.)
 vi.mock('react-hot-toast', () => ({
-  default: { success: vi.fn(), error: vi.fn() },
+  default: {
+    success: vi.fn(),
+    error: vi.fn(),
+    loading: vi.fn(() => 'toast-id-stub'),
+    dismiss: vi.fn(),
+  },
   Toaster: () => null,
 }));
 
@@ -335,5 +342,206 @@ describe('Firma.tsx — projects + Kalkulation starten', () => {
     fireEvent.click(screen.getByRole('button', { name: /Zurücksetzen/ }));
     await waitFor(() => expect(resetDefaultsMock).toHaveBeenCalledWith('managed', 5));
     confirmSpy.mockRestore();
+  });
+});
+
+/**
+ * Round 10 — a11y attribute audit (form aria-label, label↔input htmlFor
+ * association via useId(), section aria-label).
+ */
+describe('Firma.tsx — a11y attributes', () => {
+  test('Defaults <form> carries aria-label="Kalkulations-Defaults"', async () => {
+    detailMock.mockResolvedValueOnce(buildDetail());
+    renderFirma();
+    await waitFor(() => expect(screen.getByText('Gesellchen GmbH')).toBeDefined());
+    const form = screen.getByRole('form', { name: 'Kalkulations-Defaults' });
+    expect(form).toBeDefined();
+  });
+
+  test('every NumberField input has an id + an associated <label htmlFor>', async () => {
+    detailMock.mockResolvedValueOnce(buildDetail());
+    renderFirma();
+    await waitFor(() => expect(screen.getByText('Gesellchen GmbH')).toBeDefined());
+    const numberInputs = Array.from(
+      document.querySelectorAll<HTMLInputElement>('input[type=number]'),
+    );
+    expect(numberInputs.length).toBe(4);
+    for (const input of numberInputs) {
+      // Every input must carry an id…
+      expect(input.id).toBeTruthy();
+      // …and a <label htmlFor=id> must exist for screen readers.
+      const label = document.querySelector(`label[for="${input.id}"]`);
+      expect(label).not.toBeNull();
+    }
+  });
+
+  test('Ausschreibungen <section> carries aria-label="Ausschreibungen"', async () => {
+    detailMock.mockResolvedValueOnce(buildDetail());
+    renderFirma();
+    await waitFor(() => expect(screen.getByText('Sanierung Sandsteinmauer Ludwigschule')).toBeDefined());
+    // getByRole('region', { name: 'Ausschreibungen' }) requires aria-label
+    // on the <section>, which is exactly what we added.
+    const section = screen.getByRole('region', { name: 'Ausschreibungen' });
+    expect(section).toBeDefined();
+  });
+});
+
+/**
+ * Round 10 — loading-skeleton tests.
+ *
+ * While `api.firmen.detail` is in-flight, the page now renders three
+ * skeleton blocks (header / defaults / Ausschreibungen) inside an
+ * aria-busy region instead of a single spinner. The original
+ * German "Lade Firma…" announcement is preserved (sr-only).
+ */
+describe('Firma.tsx — loading skeleton', () => {
+  test('renders skeleton blocks (incl. 3 project-row skeletons) while detail is in-flight', async () => {
+    let resolve: (v: unknown) => void = () => {};
+    detailMock.mockReturnValueOnce(new Promise((r) => (resolve = r as never)));
+    renderFirma();
+    const projectSkels = document.querySelectorAll('[data-testid=firma-skeleton-project]');
+    expect(projectSkels.length).toBe(3);
+    resolve(buildDetail());
+  });
+
+  test('loading region carries aria-busy="true" + aria-live="polite"', async () => {
+    let resolve: (v: unknown) => void = () => {};
+    detailMock.mockReturnValueOnce(new Promise((r) => (resolve = r as never)));
+    renderFirma();
+    const region = document.querySelector('[data-testid=firma-loading]') as HTMLElement;
+    expect(region).not.toBeNull();
+    expect(region.getAttribute('aria-busy')).toBe('true');
+    expect(region.getAttribute('aria-live')).toBe('polite');
+    resolve(buildDetail());
+  });
+
+  test('after data resolves, skeleton is gone + real header appears', async () => {
+    detailMock.mockResolvedValueOnce(buildDetail());
+    renderFirma();
+    await waitFor(() => expect(screen.getByText('Gesellchen GmbH')).toBeDefined());
+    expect(document.querySelector('[data-testid=firma-loading]')).toBeNull();
+    expect(document.querySelectorAll('[data-testid=firma-skeleton-project]').length).toBe(0);
+  });
+});
+
+/**
+ * Round 10 — optimistic-save tests for the DefaultsCard form.
+ *
+ * The save flow now:
+ *   1) snapshots the form's previous values
+ *   2) applies the new values to local + parent state IMMEDIATELY
+ *   3) shows a toast.loading('Wird gespeichert…')
+ *   4) on success → toast.success('Gespeichert.', { id })
+ *   5) on failure → rolls back local + parent state + toast.error
+ */
+describe('Firma.tsx — optimistic defaults save', () => {
+  test('the form values update IMMEDIATELY — before api.firmen.updateDefaults resolves', async () => {
+    detailMock.mockResolvedValueOnce(buildDetail());
+    // A never-resolving promise: if the form is NOT optimistic, the inputs
+    // would stay at their initial values until forever. With optimistic UI,
+    // the parent's `onSaved` is called synchronously inside `submit()` so
+    // the rendered values reflect the user's edit immediately.
+    updateDefaultsMock.mockReturnValueOnce(new Promise(() => {}));
+
+    renderFirma();
+    await waitFor(() => expect(screen.getByText('Gesellchen GmbH')).toBeDefined());
+
+    // Modify all four inputs to obviously-new values.
+    const inputs = Array.from(
+      document.querySelectorAll<HTMLInputElement>('input[type=number]'),
+    );
+    fireEvent.change(inputs[0], { target: { value: '25' } });   // 0.25
+    fireEvent.change(inputs[1], { target: { value: '20' } });   // 0.20
+    fireEvent.change(inputs[2], { target: { value: '99.99' } });
+    fireEvent.change(inputs[3], { target: { value: '1.23' } });
+    fireEvent.click(screen.getByRole('button', { name: /Speichern/ }));
+
+    // The api call fired ONCE with the new body…
+    await waitFor(() => expect(updateDefaultsMock).toHaveBeenCalledTimes(1));
+    const [, , body] = updateDefaultsMock.mock.calls[0];
+    expect(body).toMatchObject({
+      materialZuschlag: 0.25,
+      nuZuschlag: 0.2,
+      verrechnungslohn: 99.99,
+      geraeteStundensatz: 1.23,
+    });
+    // …and the inputs reflect the new values IMMEDIATELY (parent re-rendered
+    // via the optimistic onSaved call, before the api ever resolved).
+    const after = Array.from(
+      document.querySelectorAll<HTMLInputElement>('input[type=number]'),
+    );
+    expect(after[0].value).toBe('25');
+    expect(after[1].value).toBe('20');
+    expect(after[2].value).toBe('99.99');
+    expect(after[3].value).toBe('1.23');
+  });
+
+  test('on api failure, form state ROLLS BACK to pre-save values + toast.error fires', async () => {
+    detailMock.mockResolvedValueOnce(buildDetail());
+    updateDefaultsMock.mockRejectedValueOnce(new Error('upstream 500'));
+
+    const toast = (await import('react-hot-toast')).default as unknown as {
+      error: ReturnType<typeof vi.fn>;
+    };
+
+    renderFirma();
+    await waitFor(() => expect(screen.getByText('Gesellchen GmbH')).toBeDefined());
+
+    // Pre-save values from the buildDetail fixture (matZ=18, nuZ=15, vl=72.51, gs=0.5).
+    const inputs = Array.from(
+      document.querySelectorAll<HTMLInputElement>('input[type=number]'),
+    );
+    fireEvent.change(inputs[0], { target: { value: '99' } });   // optimistic 99
+    fireEvent.click(screen.getByRole('button', { name: /Speichern/ }));
+
+    // After the rejection settles, the form snaps BACK to '18'.
+    await waitFor(() => {
+      const after = Array.from(
+        document.querySelectorAll<HTMLInputElement>('input[type=number]'),
+      );
+      expect(after[0].value).toBe('18');
+    });
+    expect(toast.error).toHaveBeenCalled();
+    // Toast message includes the German prefix.
+    expect(
+      toast.error.mock.calls.some(
+        (args) => typeof args[0] === 'string' && args[0].startsWith('Speichern fehlgeschlagen'),
+      ),
+    ).toBe(true);
+  });
+
+  test('on success: toast.loading then toast.success are both invoked', async () => {
+    detailMock.mockResolvedValueOnce(buildDetail());
+    updateDefaultsMock.mockResolvedValueOnce({
+      ok: true,
+      defaults: {
+        materialZuschlag: 0.18,
+        nuZuschlag: 0.15,
+        verrechnungslohn: 72.51,
+        geraeteStundensatz: 0.5,
+        isCustom: true,
+      },
+    });
+
+    const toast = (await import('react-hot-toast')).default as unknown as {
+      loading: ReturnType<typeof vi.fn>;
+      success: ReturnType<typeof vi.fn>;
+      error: ReturnType<typeof vi.fn>;
+    };
+
+    renderFirma();
+    await waitFor(() => expect(screen.getByText('Gesellchen GmbH')).toBeDefined());
+    fireEvent.click(screen.getByRole('button', { name: /Speichern/ }));
+
+    await waitFor(() => expect(updateDefaultsMock).toHaveBeenCalledTimes(1));
+    // toast.loading was called with the German "saving" message…
+    expect(toast.loading).toHaveBeenCalledWith('Wird gespeichert…');
+    // …and toast.success with the German "saved" copy + the loading id so
+    // it replaces the loading toast in place.
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    const successArgs = toast.success.mock.calls[0];
+    expect(successArgs[0]).toBe('Gespeichert.');
+    expect(successArgs[1]).toEqual({ id: 'toast-id-stub' });
+    expect(toast.error).not.toHaveBeenCalled();
   });
 });

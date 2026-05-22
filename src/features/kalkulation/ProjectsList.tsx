@@ -4,7 +4,8 @@ import { FolderOpen, Plus, Trash2, ArrowRight, Loader2, AlertTriangle, FileText 
 import toast from 'react-hot-toast';
 import { api } from '@/lib/api';
 import type { ProjectSummary } from './types';
-import { Skeleton, Breadcrumb } from '@/pages/panel/ui';
+import { Breadcrumb } from '@/pages/panel/ui';
+import { Skeleton } from '@/components/panel/Skeleton';
 
 export default function ProjectsList() {
   const navigate = useNavigate();
@@ -105,7 +106,11 @@ export default function ProjectsList() {
       ) : projects.length === 0 ? (
         <EmptyState onCreate={onCreateBlank} disabled={creating} />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div
+          role="list"
+          aria-label="Projekte"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+        >
           {projects.map((p) => (
             <ProjectCard key={p.id} project={p} onDelete={() => setDeleteTarget(p)} />
           ))}
@@ -128,6 +133,8 @@ function ProjectCard({ project, onDelete }: { project: ProjectSummary; onDelete:
   return (
     <Link
       to={`/panel/kalkulation/${project.id}`}
+      role="listitem"
+      aria-label={`Projekt ${project.name || 'Unbenanntes Projekt'}`}
       className="group relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 hover:border-primary-300 dark:hover:border-primary-500/50 hover:shadow-md dark:hover:shadow-slate-950/50 transition-all"
     >
       <button
@@ -176,9 +183,20 @@ function ProjectCard({ project, onDelete }: { project: ProjectSummary; onDelete:
 
 function SkeletonGrid() {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div
+      aria-live="polite"
+      aria-busy="true"
+      data-testid="projects-loading"
+      className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+    >
+      {/* Note: the page subtitle ("Lade…") already conveys the loading
+          state to screen-reader users — no second announcement needed here. */}
       {[1, 2, 3, 4, 5, 6].map((i) => (
-        <div key={i} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-3">
+        <div
+          key={i}
+          data-testid="projects-skeleton-card"
+          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-3"
+        >
           <div className="flex items-center gap-3">
             <Skeleton className="w-9 h-9 rounded-lg" />
             <div className="flex-1 space-y-1.5">

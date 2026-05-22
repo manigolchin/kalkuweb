@@ -14,6 +14,32 @@ sqlite.pragma('foreign_keys = ON');
 
 export const db = drizzle(sqlite, { schema });
 
+/**
+ * Cheap liveness probe for the SQLite handle. Used by the health endpoint
+ * + graceful-shutdown logic. Returns true if the DB answers within ~1 ms.
+ */
+export function pingDb(): boolean {
+  try {
+    const row = sqlite.prepare('SELECT 1 AS ok').get() as { ok: number } | undefined;
+    return row?.ok === 1;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Closes the underlying SQLite handle. Used by the graceful-shutdown path
+ * after the HTTP server has stopped accepting new requests. Safe to call
+ * multiple times — better-sqlite3 throws on a double close, so we swallow.
+ */
+export function closeDb(): void {
+  try {
+    sqlite.close();
+  } catch {
+    /* already closed */
+  }
+}
+
 export function runMigrations() {
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS users (

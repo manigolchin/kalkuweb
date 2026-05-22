@@ -11,8 +11,8 @@
  * See: docs/v2_redesign/multi_company_integration_architecture.md
  */
 
-import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import {
   Building2,
@@ -27,6 +27,7 @@ import {
 import clsx from 'clsx';
 import { api, ApiError } from '@/lib/api';
 import { formatEUR } from '@/features/kalkulation/calc';
+import { Skeleton } from '@/components/panel/Skeleton';
 
 type FirmaRow = Awaited<ReturnType<typeof api.firmen.list>>['rows'][number];
 
@@ -41,11 +42,15 @@ const TRADE_LABEL: Record<string, string> = {
 };
 
 export default function Firmen() {
+  const navigate = useNavigate();
   const [data, setData] = useState<Awaited<ReturnType<typeof api.firmen.list>> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'managed' | 'external' | 'won-recent'>('all');
+  // Keyboard-nav: index into filteredRows. -1 = no row highlighted.
+  const [highlight, setHighlight] = useState<number>(-1);
+  const searchRef = useRef<HTMLInputElement | null>(null);
 
   async function load() {
     setLoading(true);
@@ -117,6 +122,76 @@ export default function Firmen() {
       });
   }, [data, search, filter, nowSnapshot]);
 
+  // Keep highlight inside bounds when filteredRows shrinks.
+  useEffect(() => {
+    if (highlight >= filteredRows.length) setHighlight(filteredRows.length - 1);
+  }, [filteredRows.length, highlight]);
+
+  // Page-level keyboard navigation for the Firmen table.
+  //   ArrowDown / ArrowUp  — move highlight (wraps at edges)
+  //   Enter                 — open the highlighted Firma
+  //   /                     — focus the search input (overrides palette hotkey)
+  //   Esc                   — clear highlight
+  // While focus is inside the search input we let the user type letters
+  // freely — only Enter/Esc still work on the search (Enter opens the first
+  // hit, Esc blurs).
+  useEffect(() => {
+    function isTypingTarget(el: EventTarget | null) {
+      const node = el as HTMLElement | null;
+      if (!node) return false;
+      const tag = node.tagName;
+      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || node.isContentEditable;
+    }
+    function onKey(e: KeyboardEvent) {
+      // "/" — always focus the search box (pre-empts the panel-wide palette).
+      if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (isTypingTarget(e.target)) return; // already typing → let it through
+        e.preventDefault();
+        e.stopPropagation();
+        searchRef.current?.focus();
+        return;
+      }
+
+      // Inside the search input, only Esc clears the highlight and blurs.
+      if (isTypingTarget(e.target)) {
+        if (e.key === 'Escape') {
+          setHighlight(-1);
+          (e.target as HTMLElement).blur();
+        }
+        return;
+      }
+
+      if (filteredRows.length === 0) return;
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setHighlight((h) => (h < 0 ? 0 : (h + 1) % filteredRows.length));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setHighlight((h) => (h <= 0 ? filteredRows.length - 1 : h - 1));
+        return;
+      }
+      if (e.key === 'Enter') {
+        if (highlight < 0 || highlight >= filteredRows.length) return;
+        e.preventDefault();
+        const row = filteredRows[highlight];
+        navigate(`/panel/firmen/${row.kind}/${row.id}`);
+        return;
+      }
+      if (e.key === 'Escape') {
+        if (highlight >= 0) {
+          e.preventDefault();
+          setHighlight(-1);
+        }
+      }
+    }
+    // Capture phase so "/" wins over PanelLayout's window-level handler.
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [filteredRows, highlight, navigate]);
+
   return (
     <div className="space-y-6">
       <Helmet>
@@ -164,8 +239,9 @@ export default function Firmen() {
       {/* Filter row */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-2.5">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" aria-hidden />
           <input
+            ref={searchRef}
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -174,7 +250,11 @@ export default function Firmen() {
             aria-label="Firmen durchsuchen"
           />
         </div>
-        <div className="inline-flex rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-0.5">
+        <div
+          role="group"
+          aria-label="Filter"
+          className="inline-flex rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-0.5"
+        >
           {[
             { id: 'all', label: 'Alle' },
             { id: 'managed', label: 'Verwaltet' },
@@ -184,6 +264,7 @@ export default function Firmen() {
             <button
               key={tab.id}
               onClick={() => setFilter(tab.id as typeof filter)}
+              aria-pressed={filter === tab.id}
               className={clsx(
                 'px-3 py-1.5 text-sm rounded-md transition-colors',
                 filter === tab.id
@@ -199,9 +280,34 @@ export default function Firmen() {
 
       {/* State */}
       {loading && !data && (
-        <div className="flex items-center justify-center py-12 text-slate-500">
-          <Loader2 className="w-5 h-5 animate-spin mr-2" />
-          Lade Firmen von preisanfrage…
+        <div
+          aria-live="polite"
+          aria-busy="true"
+          data-testid="firmen-loading"
+          className="space-y-3"
+        >
+          {/* Visually-hidden German announcement — kept verbatim so screen
+              readers still hear it and the original test selector matches. */}
+          <span className="sr-only" data-testid="firmen-loading-text">
+            <Loader2 className="w-5 h-5 animate-spin mr-2 inline" />
+            Lade Firmen von preisanfrage…
+          </span>
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <div
+                key={i}
+                className="flex items-center gap-3 px-4 py-3 border-b last:border-b-0 border-slate-100 dark:border-slate-800"
+                data-testid="firmen-skeleton-row"
+              >
+                <Skeleton className="h-4 w-1/4" />
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-4 w-10 ml-auto" />
+                <Skeleton className="h-4 w-12" />
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-4 w-20" />
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -218,7 +324,11 @@ export default function Firmen() {
       {/* Table */}
       {!loading && !error && data && (
         <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-          <table className="w-full text-sm" data-testid="firmen-table">
+          <table
+            className="w-full text-sm"
+            data-testid="firmen-table"
+            aria-label="Firmen-Liste"
+          >
             <thead className="bg-slate-50 dark:bg-slate-800/60 text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">
               <tr>
                 <th className="text-left px-4 py-2.5 font-medium">Firma</th>
@@ -238,8 +348,13 @@ export default function Firmen() {
                   </td>
                 </tr>
               )}
-              {filteredRows.map((row) => (
-                <FirmaRowEl key={`${row.kind}:${row.id}`} row={row} />
+              {filteredRows.map((row, idx) => (
+                <FirmaRowEl
+                  key={`${row.kind}:${row.id}`}
+                  row={row}
+                  selected={highlight === idx}
+                  onHover={() => setHighlight(idx)}
+                />
               ))}
             </tbody>
           </table>
@@ -255,11 +370,29 @@ export default function Firmen() {
   );
 }
 
-function FirmaRowEl({ row }: { row: FirmaRow }) {
+function FirmaRowEl({
+  row,
+  selected = false,
+  onHover,
+}: {
+  row: FirmaRow;
+  selected?: boolean;
+  onHover?: () => void;
+}) {
   const isExternal = row.kind === 'external';
   const isUnadopted = isExternal && !row.adoptedCompanyId;
   return (
-    <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+    <tr
+      aria-selected={selected}
+      data-selected={selected ? 'true' : undefined}
+      onMouseEnter={onHover}
+      className={clsx(
+        'transition-colors',
+        selected
+          ? 'bg-primary-50 dark:bg-primary-500/15 ring-2 ring-primary-500 ring-inset outline-none'
+          : 'hover:bg-slate-50 dark:hover:bg-slate-800/40',
+      )}
+    >
       <td className="px-4 py-3 align-top">
         <Link
           to={`/panel/firmen/${row.kind}/${row.id}`}

@@ -25,6 +25,7 @@ import { useAuth } from '@/lib/auth';
 import { api, ApiError } from '@/lib/api';
 import { usePanelTheme, StatusBadge, Kbd } from './ui';
 import CommandPalette from './CommandPalette';
+import PanelErrorBoundary from '@/components/panel/PanelErrorBoundary';
 
 type NavItem = {
   to: string;
@@ -193,6 +194,16 @@ export default function PanelLayout() {
         <meta name="robots" content="noindex,nofollow" />
       </Helmet>
 
+      {/* Skip-to-content link — first focusable element. Visible on keyboard
+          focus so Tab-from-page-load users (and screen readers) can jump
+          past the sidebar straight into the route outlet. */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[60] focus:px-3 focus:py-2 focus:rounded-lg focus:bg-primary-600 focus:text-white focus:font-medium focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-primary-300"
+      >
+        Zum Hauptinhalt springen
+      </a>
+
       {/* ─── Sidebar (desktop) ─────────────────────────────────────── */}
       <Sidebar
         collapsed={collapsed}
@@ -257,8 +268,14 @@ export default function PanelLayout() {
           <div className="flex items-center gap-1 ml-auto" />
         </header>
 
-        <main className="flex-1 px-4 sm:px-6 py-6 max-w-[1600px] w-full mx-auto">
-          <Outlet />
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className="flex-1 px-4 sm:px-6 py-6 max-w-[1600px] w-full mx-auto focus:outline-none"
+        >
+          <PanelErrorBoundary>
+            <Outlet />
+          </PanelErrorBoundary>
         </main>
       </div>
 

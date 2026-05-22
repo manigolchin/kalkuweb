@@ -11,7 +11,7 @@
  * Source of truth split: see docs/v2_redesign/multi_company_integration_architecture.md.
  */
 
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useId, useMemo, useState, type FormEvent } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import {
@@ -34,6 +34,7 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { api, ApiError } from '@/lib/api';
 import { formatEUR } from '@/features/kalkulation/calc';
+import { Skeleton } from '@/components/panel/Skeleton';
 
 type FirmaDetail = Awaited<ReturnType<typeof api.firmen.detail>>;
 
@@ -114,9 +115,72 @@ export default function Firma() {
       </div>
 
       {loading && !data && (
-        <div className="flex items-center justify-center py-12 text-slate-500">
-          <Loader2 className="w-5 h-5 animate-spin mr-2" />
-          Lade Firma…
+        <div
+          aria-live="polite"
+          aria-busy="true"
+          data-testid="firma-loading"
+          className="space-y-4"
+        >
+          <span className="sr-only" data-testid="firma-loading-text">
+            <Loader2 className="w-5 h-5 animate-spin mr-2 inline" />
+            Lade Firma…
+          </span>
+
+          {/* Header skeleton (mirrors Header layout) */}
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+              <div className="min-w-0 space-y-2">
+                <Skeleton className="h-7 w-64" />
+                <Skeleton className="h-3 w-40" />
+                <div className="flex gap-3 pt-1">
+                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-4 w-28" />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3 shrink-0">
+                <Skeleton className="h-12 w-20" />
+                <Skeleton className="h-12 w-20" />
+                <Skeleton className="h-12 w-24" />
+              </div>
+            </div>
+          </div>
+
+          {/* Defaults-form skeleton */}
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-4">
+            <Skeleton className="h-5 w-72" />
+            <Skeleton className="h-3 w-full max-w-xl" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <Skeleton className="h-10" />
+              <Skeleton className="h-10" />
+              <Skeleton className="h-10" />
+              <Skeleton className="h-10" />
+            </div>
+            <div className="flex justify-end">
+              <Skeleton className="h-9 w-28" />
+            </div>
+          </div>
+
+          {/* Ausschreibungen skeleton (3 rows) */}
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+            <div className="px-5 py-3 border-b border-slate-100 dark:border-slate-800">
+              <Skeleton className="h-5 w-48" />
+            </div>
+            <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+              {[0, 1, 2].map((i) => (
+                <li
+                  key={i}
+                  className="px-5 py-3 flex items-start justify-between gap-3"
+                  data-testid="firma-skeleton-project"
+                >
+                  <div className="space-y-2 min-w-0 flex-1">
+                    <Skeleton className="h-4 w-2/3" />
+                    <Skeleton className="h-3 w-1/2" />
+                  </div>
+                  <Skeleton className="h-7 w-36 shrink-0" />
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       )}
 
@@ -263,19 +327,58 @@ function DefaultsCard({
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+
+    // ── Optimistic UI ────────────────────────────────────────────────
+    // 1) Snapshot pre-save state so we can roll back on failure.
+    // 2) Apply the new values to local state IMMEDIATELY (parent + form).
+    // 3) Show a "Wird gespeichert…" toast that mutates into success/error.
+    const prev = {
+      matZ,
+      nuZ,
+      vl,
+      gs,
+      defaults: initial,
+    };
+    const nextDefaults = {
+      materialZuschlag: matZ / 100,
+      nuZuschlag: nuZ / 100,
+      verrechnungslohn: vl,
+      geraeteStundensatz: gs,
+      isCustom: true,
+    };
+    onSaved(nextDefaults);
+
+    // toast.loading exists in react-hot-toast v2+ but the existing tests
+    // historically only mocked .success/.error. Call it defensively so a
+    // stubbed environment without .loading still goes through (id stays
+    // undefined; subsequent .success/.error fall back to a fresh toast).
+    const loadingId =
+      typeof (toast as unknown as { loading?: (m: string) => string }).loading === 'function'
+        ? (toast as unknown as { loading: (m: string) => string }).loading('Wird gespeichert…')
+        : undefined;
+
     setSaving(true);
     try {
       const res = await api.firmen.updateDefaults(kind, id, {
-        materialZuschlag: matZ / 100,
-        nuZuschlag: nuZ / 100,
-        verrechnungslohn: vl,
-        geraeteStundensatz: gs,
+        materialZuschlag: nextDefaults.materialZuschlag,
+        nuZuschlag: nextDefaults.nuZuschlag,
+        verrechnungslohn: nextDefaults.verrechnungslohn,
+        geraeteStundensatz: nextDefaults.geraeteStundensatz,
         displayName,
       });
-      toast.success('Eigene Defaults gespeichert.');
+      toast.success('Gespeichert.', loadingId ? { id: loadingId } : undefined);
       onSaved({ ...res.defaults });
     } catch (e) {
-      toast.error(`Speichern fehlgeschlagen: ${String(e)}`);
+      // Rollback local form state AND parent-held defaults to pre-save values.
+      setMatZ(prev.matZ);
+      setNuZ(prev.nuZ);
+      setVl(prev.vl);
+      setGs(prev.gs);
+      onSaved(prev.defaults);
+      toast.error(
+        `Speichern fehlgeschlagen: ${String(e)}`,
+        loadingId ? { id: loadingId } : undefined,
+      );
     } finally {
       setSaving(false);
     }
@@ -300,6 +403,7 @@ function DefaultsCard({
   return (
     <form
       onSubmit={submit}
+      aria-label="Kalkulations-Defaults"
       className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-4"
     >
       <div className="flex items-start justify-between gap-3">
@@ -397,22 +501,37 @@ function NumberField({
   onChange: (n: number) => void;
   hint?: string;
 }) {
+  // useId() gives a stable, unique id per render-tree position — preferred
+  // over Math.random() which would force re-renders and break ref equality.
+  const inputId = useId();
+  const hintId = useId();
   return (
-    <label className="block">
-      <span className="text-xs font-medium text-slate-600 dark:text-slate-300">{label}</span>
+    <div className="block">
+      <label
+        htmlFor={inputId}
+        className="text-xs font-medium text-slate-600 dark:text-slate-300"
+      >
+        {label}
+      </label>
       <div className="mt-1 flex items-center gap-1.5">
         <input
+          id={inputId}
           type="number"
           inputMode="decimal"
           step={step}
           value={Number.isFinite(value) ? value : ''}
           onChange={(e) => onChange(Number(e.target.value))}
+          aria-describedby={hint ? hintId : undefined}
           className="input flex-1 text-right tabular-nums"
         />
         <span className="text-xs text-slate-500 dark:text-slate-400 w-8 shrink-0">{suffix}</span>
       </div>
-      {hint && <span className="block text-[10px] text-slate-400 mt-0.5">{hint}</span>}
-    </label>
+      {hint && (
+        <span id={hintId} className="block text-[10px] text-slate-400 mt-0.5">
+          {hint}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -535,7 +654,10 @@ function ProjectsCard({
   }
 
   return (
-    <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+    <section
+      aria-label="Ausschreibungen"
+      className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
+    >
       <header className="px-5 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
         <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
           <CalendarDays className="w-4 h-4 text-slate-500" />

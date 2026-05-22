@@ -2,8 +2,9 @@ import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
+import { compress } from 'hono/compress';
 import { bodyLimit } from 'hono/body-limit';
-import { runMigrations } from './db.js';
+import { runMigrations, pingDb, closeDb } from './db.js';
 import { ensureSeedUser } from './seed.js';
 import { authRoute } from './routes/auth.js';
 import { projectsRoute } from './routes/projects.js';
@@ -15,13 +16,27 @@ import { presetsRoute } from './routes/presets.js';
 import { templatesRoute } from './routes/templates.js';
 import { firmenRoute } from './routes/firmen.js';
 import { rateLimit } from './lib/ratelimit.js';
+import { securityHeaders } from './lib/securityHeaders.js';
+import { requestId } from './lib/requestId.js';
+import { getVersion } from './lib/version.js';
+import { isPreisanfrageEnabled, isPreisanfrageMock } from './lib/preisanfrage.js';
 
 runMigrations();
 await ensureSeedUser();
 
 const app = new Hono();
 
+// Order matters. Each middleware can short-circuit, so we apply them in
+// the order:
+//   1. requestId   — assign correlation id FIRST so logger + downstream see it
+//   2. logger      — log the request with the id already on context
+//   3. securityHeaders — set headers AFTER handler runs (sticks even on errors)
+//   4. compress    — compress AFTER security headers so the headers go on the wire uncompressed
+//   5. cors        — CORS preflight handling for browser clients
+app.use('*', requestId());
 app.use('*', logger());
+app.use('*', securityHeaders());
+app.use('*', compress());
 
 const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5174,http://localhost:4173')
   .split(',')
@@ -62,9 +77,30 @@ const loginLimiter = rateLimit({
   message: 'too_many_login_attempts',
 });
 
-app.get('/api/panel/health', (c) =>
-  c.json({ ok: true, service: 'kalku-panel-api', ts: Date.now() }),
-);
+/**
+ * Deeper health probe — includes a SQLite SELECT 1 + reports the
+ * preisanfrage integration mode. Returns 503 if the DB is unreachable so
+ * orchestrators (Docker healthcheck, Traefik) can pull traffic.
+ */
+app.get('/api/panel/health', (c) => {
+  const dbOk = pingDb();
+  const preisanfrage = !isPreisanfrageEnabled()
+    ? 'disabled'
+    : isPreisanfrageMock()
+      ? 'mock'
+      : 'enabled';
+  const body = {
+    ok: dbOk,
+    service: 'kalku-panel-api',
+    ts: Date.now(),
+    version: getVersion(),
+    checks: {
+      db: dbOk ? 'ok' : 'error',
+      preisanfrage,
+    },
+  };
+  return c.json(body, dbOk ? 200 : 503);
+});
 
 // Order matters: limiter + body cap must run before the route handler.
 app.use('/api/panel/auth/login', loginLimiter);
@@ -89,4 +125,54 @@ app.notFound((c) => c.json({ error: 'not_found', path: c.req.path }, 404));
 
 const port = Number(process.env.PORT || 3000);
 console.log(`[kalku-panel-api] listening on :${port}`);
-serve({ fetch: app.fetch, port, hostname: '0.0.0.0' });
+const server = serve({ fetch: app.fetch, port, hostname: '0.0.0.0' });
+
+/**
+ * Graceful shutdown — exported for tests + invoked on SIGTERM/SIGINT.
+ *
+ * Sequence:
+ *   1. Stop accepting new TCP connections (server.close stops listen socket).
+ *   2. Wait up to `drainMs` for in-flight handlers to settle. Node's
+ *      `Server.close()` invokes its callback once all connections close.
+ *   3. Close the SQLite handle so WAL flushes before exit.
+ *
+ * The promise resolves either when drain completes OR the timeout fires —
+ * we never hang the process. Returns true if drain completed cleanly,
+ * false if we hit the timeout (caller may log it).
+ */
+export async function gracefulShutdown(drainMs = 10_000): Promise<boolean> {
+  const drained = await new Promise<boolean>((resolve) => {
+    let settled = false;
+    const finish = (ok: boolean): void => {
+      if (settled) return;
+      settled = true;
+      resolve(ok);
+    };
+    const timer = setTimeout(() => finish(false), drainMs);
+    try {
+      server.close((err) => {
+        clearTimeout(timer);
+        finish(err == null);
+      });
+    } catch {
+      clearTimeout(timer);
+      finish(false);
+    }
+  });
+  // Close the DB regardless of drain outcome — we're exiting either way.
+  closeDb();
+  return drained;
+}
+
+let shuttingDown = false;
+async function handleSignal(signal: NodeJS.Signals): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[kalku-panel-api] received ${signal}, draining…`);
+  const ok = await gracefulShutdown(10_000);
+  console.log(`[kalku-panel-api] shutdown ${ok ? 'clean' : 'timed-out'}`);
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => void handleSignal('SIGTERM'));
+process.on('SIGINT', () => void handleSignal('SIGINT'));
