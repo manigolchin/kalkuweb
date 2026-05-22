@@ -5,6 +5,17 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-05-23 01:15 — Round 10 — best-practice hardening + a11y + UX (+80 tests)
+- Source: user "be expert and search good from good software what can you add more or optimierung the every part of panel you can use subagents and dont break sth and at the end debug"
+- Branch: claude-auto/v2-gaps-closeout (continued)
+- Result: committed 8ed311b → pushed feature branch
+- Notes: Coordinated 3 parallel subagents on 3 non-overlapping themes. Agents B+C did touch the same 3 product files (Firmen.tsx, Firma.tsx, ProjectsList.tsx) + their test files, but their changes were additive enough that the post-merge state passed all 969 tests cleanly without manual conflict resolution. Delivered:
+  - **Backend hardening** (Agent A, +30 tests in `panel-api/test/round10-hardening.test.ts`): security-headers middleware (X-Content-Type-Options/X-Frame-Options/Referrer-Policy/Permissions-Policy + conditional HSTS), request-id middleware (sanitised nanoid(16), echoed both ways), Hono compress middleware, deeper `/api/panel/health` (DB SELECT 1 + preisanfrage state + package.json version, 503 on DB fail), graceful shutdown (SIGTERM/SIGINT drain + closeDb). New files: `securityHeaders.ts`, `requestId.ts`, `version.ts`. Modified: `index.ts`, `db.ts` (added pingDb + closeDb).
+  - **Frontend reliability + UX** (Agent B, +27 tests): `PanelErrorBoundary` (class-component fallback wired around Outlet in PanelLayout, auto-resets on route change), `Skeleton` primitive, loading skeletons replace spinner-only states in Firmen/Firma/ProjectsList (all wrapped in aria-busy + aria-live), optimistic UI for Firma defaults save (toast.loading → success/rollback).
+  - **A11y + keyboard nav** (Agent C, +23 tests): skip-to-content link in PanelLayout, Firmen table keyboard nav (Arrow/Enter/Esc/"/" via capture-phase listener that pre-empts the palette hotkey, aria-selected on highlighted row + focus ring with wrap-around), ARIA labels audit across Firmen/Firma/ProjectsList (table aria-label, role=group on filter, aria-pressed on filter buttons, form aria-label, useId + htmlFor on every NumberField, section aria-label, role=list/listitem on cards).
+  - Live smoke-test via Claude Preview: logged in to local dev, /panel/firmen rendered with 10 firms, ArrowDown twice highlighted "Justus Tiefbau" (aria-selected=true), keyboard nav working visually. curl confirmed all security headers + request-id echo + HSTS-conditional-on-x-forwarded-proto + deeper /api/panel/health response.
+  - Final totals: frontend 572→620 (+48), panel-api 319→349 (+30), grand total 969. Lint 0 errors. TypeScript clean both sides. Build 3,92 s. No product code touched outside the 5 named files. Auto-classifier blocked one push to main this round (only pushed feature branch).
+
 ## 2026-05-23 00:50 — Round 9 — 5 parallel test agents, +288 tests, 2 real bugs fixed
 - Source: user "be expert and good analyser and check and do 200 complete and perfect test with subagents for all parts of panel do your best and then fix problems"
 - Branch: claude-auto/v2-gaps-closeout (continued)
