@@ -11,6 +11,8 @@ import {
   History,
   Check,
   AlertCircle,
+  Sparkles,
+  RotateCcw,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -26,10 +28,24 @@ import type {
 import { calcTotals, formatEUR, formatNum, DEFAULT_CALC_PARAMS, recalcAll } from './calc';
 import { Breadcrumb } from '@/pages/panel/ui';
 import PositionTable from './PositionTable';
+import PositionTableV2 from './PositionTableV2';
 import ShareDialog from './ShareDialog';
 import ImportDialog from './ImportDialog';
 
 const SAVE_DEBOUNCE_MS = 800;
+
+type TableVersion = 'v1' | 'v2';
+const TABLE_VERSION_KEY = 'kalku.tableVersion';
+
+function readSavedTableVersion(): TableVersion {
+  if (typeof window === 'undefined') return 'v1';
+  try {
+    const v = window.localStorage.getItem(TABLE_VERSION_KEY);
+    return v === 'v2' ? 'v2' : 'v1';
+  } catch {
+    return 'v1';
+  }
+}
 
 export default function ProjectDetail() {
   const { id = '' } = useParams<{ id: string }>();
@@ -43,6 +59,16 @@ export default function ProjectDetail() {
   const [showShare, setShowShare] = useState<{ parentShareId?: string } | false>(false);
   const [showImport, setShowImport] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [tableVersion, setTableVersion] = useState<TableVersion>(() => readSavedTableVersion());
+
+  const switchTableVersion = useCallback((v: TableVersion) => {
+    setTableVersion(v);
+    try {
+      window.localStorage.setItem(TABLE_VERSION_KEY, v);
+    } catch {
+      // ignore (private-mode browsers etc.)
+    }
+  }, []);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedRef = useRef<string>('');
   // Tracks the latest server `updatedAt` known to this tab. Used for optimistic
@@ -271,6 +297,7 @@ export default function ProjectDetail() {
 
         <div className="flex items-center gap-2 flex-wrap">
           <SaveIndicator state={savingState} />
+          <TableVersionToggle version={tableVersion} onChange={switchTableVersion} />
           <button
             onClick={() => setShowSettings((s) => !s)}
             className={clsx(
@@ -318,11 +345,27 @@ export default function ProjectDetail() {
               onParams={updateCalcParams}
             />
           )}
-          <PositionTable
-            positions={data.positions}
-            params={data.calcParams}
-            onChange={updatePositions}
-          />
+          {tableVersion === 'v2' ? (
+            <PositionTableV2
+              positions={data.positions}
+              params={data.calcParams}
+              onChange={updatePositions}
+              projectMeta={{
+                name: data.name,
+                client: data.client,
+                service: data.service,
+                tenderNumber: data.tenderNumber,
+                deadline: data.deadline,
+                bidder: data.bidder,
+              }}
+            />
+          ) : (
+            <PositionTable
+              positions={data.positions}
+              params={data.calcParams}
+              onChange={updatePositions}
+            />
+          )}
         </div>
 
         <aside className="space-y-4">
@@ -365,6 +408,40 @@ export default function ProjectDetail() {
         }}
       />
     </div>
+  );
+}
+
+function TableVersionToggle({
+  version,
+  onChange,
+}: {
+  version: TableVersion;
+  onChange: (v: TableVersion) => void;
+}) {
+  if (version === 'v2') {
+    return (
+      <button
+        onClick={() => onChange('v1')}
+        title="Zurück zur bisherigen Ansicht"
+        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 text-xs font-medium hover:bg-amber-100"
+      >
+        <RotateCcw className="w-3.5 h-3.5" />
+        Alte Ansicht
+      </button>
+    );
+  }
+  return (
+    <button
+      onClick={() => onChange('v2')}
+      title="Neue zweispaltige INTERN/KUNDEN-Ansicht testen"
+      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-primary-200 bg-primary-50 text-primary-700 text-xs font-medium hover:bg-primary-100"
+    >
+      <Sparkles className="w-3.5 h-3.5" />
+      Neue Ansicht
+      <span className="ml-0.5 px-1 rounded bg-primary-200/60 text-[9px] uppercase tracking-wider">
+        Beta
+      </span>
+    </button>
   );
 }
 
