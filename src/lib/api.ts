@@ -206,6 +206,110 @@ export const api = {
     delete: (presetId: string) =>
       request<{ ok: true }>(`/presets/${presetId}`, { method: 'DELETE' }),
   },
+  firmen: {
+    /** Liveness — tells the UI whether to render the Firmen page or
+     *  the "integration disabled" placeholder. */
+    health: () =>
+      request<{ enabled: boolean; hint: string }>(`/firmen/health`),
+    /** Big list — all 98 firmas from preisanfrage (managed + external)
+     *  + a `hasCustomDefaults` flag per row. */
+    list: () =>
+      request<{
+        rows: Array<{
+          kind: 'managed' | 'external';
+          id: number;
+          folderName: string | null;
+          displayName: string;
+          tradeType: string | null;
+          projectCount: number;
+          wonCount: number;
+          wonSumBrutto: number;
+          lastSubmissionDate: string | null;
+          adoptedCompanyId: number | null;
+          hasCustomDefaults: boolean;
+        }>;
+        managedCount: number;
+        externalCount: number;
+        totalProjects: number;
+        lastScanAt: string | null;
+        generatedAt: string;
+      }>(`/firmen`),
+    /** Per-Firma detail page payload: master row + defaults + projects. */
+    detail: (kind: 'managed' | 'external', id: number) =>
+      request<{
+        firma: {
+          kind: 'managed' | 'external';
+          id: number;
+          folderName: string | null;
+          displayName: string;
+          tradeType: string | null;
+          projectCount: number;
+          wonCount: number;
+          wonSumBrutto: number;
+          lastSubmissionDate: string | null;
+          adoptedCompanyId: number | null;
+        };
+        defaults: {
+          materialZuschlag: number;
+          nuZuschlag: number;
+          verrechnungslohn: number;
+          geraeteStundensatz: number;
+          isCustom: boolean;
+          lastEditedBy?: string;
+          updatedAt?: number;
+        };
+        projects: Array<{
+          source: 'managed' | 'external';
+          id: number;
+          projectNumber: string | null;
+          name: string | null;
+          folderName?: string;
+          baumassnahme?: string | null;
+          auftraggeberName: string | null;
+          anschriftPlzOrt: string | null;
+          submissionDate: string | null;
+          submissionTime?: string | null;
+          status?: string;
+          totalPositions?: number;
+          oneDriveShareUrl?: string | null;
+          teilnehmerCount?: number | null;
+          ourRank?: number | null;
+          winnerName?: string | null;
+          winnerNetto?: number | null;
+          winnerBrutto?: number | null;
+          ourNetto?: number | null;
+          ourBrutto?: number | null;
+          updatedAt?: string;
+          parsedAt?: string | null;
+        }>;
+      }>(`/firmen/${kind}/${id}`),
+    updateDefaults: (
+      kind: 'managed' | 'external',
+      id: number,
+      input: {
+        materialZuschlag: number;
+        nuZuschlag: number;
+        verrechnungslohn: number;
+        geraeteStundensatz: number;
+        displayName: string;
+      },
+    ) =>
+      request<{
+        ok: true;
+        defaults: {
+          materialZuschlag: number;
+          nuZuschlag: number;
+          verrechnungslohn: number;
+          geraeteStundensatz: number;
+          isCustom: boolean;
+        };
+      }>(`/firmen/${kind}/${id}/defaults`, {
+        method: 'PUT',
+        body: JSON.stringify(input),
+      }),
+    resetDefaults: (kind: 'managed' | 'external', id: number) =>
+      request<{ ok: true }>(`/firmen/${kind}/${id}/defaults`, { method: 'DELETE' }),
+  },
   templates: {
     list: () => request<{ templates: PositionTemplate[] }>(`/templates`),
     create: (input: {

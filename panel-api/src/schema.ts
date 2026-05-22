@@ -158,6 +158,43 @@ export const auditEvents = sqliteTable('audit_events', {
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
 });
 
+/**
+ * Per-Firma calculation defaults. Keyed by preisanfrage's `companies.id`
+ * (managed firms) OR `external_companies.id` (not-yet-adopted firms) —
+ * distinguished by `firmaKind`. We do NOT mirror preisanfrage's Firma
+ * master data here (that stays in preisanfrage); we only store the four
+ * calculation knobs the calculator actually overrides per Firma.
+ *
+ * Per user decision 2026-05-22 (multi_company_integration_architecture.md
+ * question 4): defaults live in panel-api, not in preisanfrage. Lets us
+ * ship without a cross-system deploy. Cost: bauki can't reuse these
+ * defaults from a single source.
+ *
+ * Cascade order in calc.ts (frontend):
+ *   DEFAULT_CALC_PARAMS  →  firma defaults  →  project.calcParams override
+ *
+ * The 4 fields mirror the canonical Excel Vorlage (see
+ * docs/v2_redesign/formula_audit_vs_real_excel.md).
+ */
+export const firmaCalcDefaults = sqliteTable('firma_calc_defaults', {
+  /** preisanfrage's company id or external_companies id. Composite key
+   *  with firmaKind — same numeric id can repeat across the two namespaces. */
+  preisanfrageFirmaId: integer('preisanfrage_firma_id').notNull(),
+  /** 'managed' = companies row, 'external' = external_companies row. */
+  firmaKind: text('firma_kind', { enum: ['managed', 'external'] }).notNull(),
+  /** Cached display name from preisanfrage so the panel can render the
+   *  Firma list without an extra round-trip. Re-synced on Firma page load. */
+  displayName: text('display_name').notNull().default(''),
+  materialZuschlag: integer('material_zuschlag_bp').notNull().default(1200), // basis points (1200 = 0.12)
+  nuZuschlag: integer('nu_zuschlag_bp').notNull().default(1200),
+  verrechnungslohnCents: integer('verrechnungslohn_cents').notNull().default(4990), // 49.90 €
+  geraeteSatzCents: integer('geraete_satz_cents').notNull().default(50), // 0.50 €/h
+  /** Calculator who last edited these defaults — for audit. */
+  lastEditedBy: text('last_edited_by').references(() => users.id),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+});
+
 export type User = typeof users.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type Share = typeof shares.$inferSelect;
@@ -167,6 +204,7 @@ export type ViewPreset = typeof viewPresets.$inferSelect;
 export type PositionTemplate = typeof positionTemplates.$inferSelect;
 export type ShareAccessLog = typeof shareAccessLog.$inferSelect;
 export type PositionComment = typeof positionComments.$inferSelect;
+export type FirmaCalcDefaults = typeof firmaCalcDefaults.$inferSelect;
 
 /**
  * PART K: customer comments per LV position. Routed via the share token

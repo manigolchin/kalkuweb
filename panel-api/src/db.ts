@@ -166,5 +166,23 @@ export function runMigrations() {
     );
     CREATE INDEX IF NOT EXISTS idx_pos_comments_share ON position_comments(share_id);
     CREATE INDEX IF NOT EXISTS idx_pos_comments_share_oz ON position_comments(share_id, position_oz);
+
+    -- Round 5 Firma integration — per-Firma calculation defaults.
+    -- Keyed by (preisanfrage_firma_id, firma_kind); panel-api owns these,
+    -- preisanfrage owns the rest of the Firma master data.
+    -- See docs/v2_redesign/multi_company_integration_architecture.md.
+    CREATE TABLE IF NOT EXISTS firma_calc_defaults (
+      preisanfrage_firma_id INTEGER NOT NULL,
+      firma_kind TEXT NOT NULL CHECK (firma_kind IN ('managed','external')),
+      display_name TEXT NOT NULL DEFAULT '',
+      material_zuschlag_bp INTEGER NOT NULL DEFAULT 1200,
+      nu_zuschlag_bp INTEGER NOT NULL DEFAULT 1200,
+      verrechnungslohn_cents INTEGER NOT NULL DEFAULT 4990,
+      geraete_satz_cents INTEGER NOT NULL DEFAULT 50,
+      last_edited_by TEXT REFERENCES users(id),
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (preisanfrage_firma_id, firma_kind)
+    );
   `);
 }

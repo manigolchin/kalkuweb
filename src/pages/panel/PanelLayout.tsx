@@ -17,6 +17,7 @@ import {
   Sun,
   Menu,
   X,
+  Building2,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -35,6 +36,7 @@ type NavItem = {
 
 const NAV: NavItem[] = [
   { to: '/panel', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/panel/firmen', label: 'Firmen', icon: Building2 },
   { to: '/panel/kalkulation', label: 'Kalkulation', icon: Calculator },
   { to: '/panel/feedback', label: 'Kunden-Feedback', icon: Inbox },
   { to: '/panel/archiv', label: 'Archiv', icon: FolderClosed, comingSoon: true },
