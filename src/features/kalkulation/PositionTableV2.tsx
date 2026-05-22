@@ -385,7 +385,14 @@ export default function PositionTableV2({
               <ColHead className="w-[80px] bg-slate-100/70" align="right" intern>Zeit min</ColHead>
               <ColHead className="w-[80px] bg-slate-100/70" align="right" intern>NU €</ColHead>
               <ColHead className="w-[110px] bg-slate-100/70" intern>Typ</ColHead>
-              <ColHead className="w-[44px] bg-slate-100/70" intern>{''}</ColHead>
+              {/* Header for the Vorrechnung toggle column. Was empty in
+                  prior versions — labeling it helps users discover the
+                  F1..F7 per-row scratch slots. */}
+              <ColHead className="w-[60px] bg-slate-100/70 text-center" intern>
+                <span title="Pro Zeile 7 Vorrechnungs-Felder (F1..F7) — Klick öffnet die Strip-Ansicht">
+                  Vorr.
+                </span>
+              </ColHead>
               <ColHead className="w-[44px] bg-slate-100/70" intern>{''}</ColHead>
             </tr>
           </thead>
@@ -878,25 +885,36 @@ function PositionRow({
               non-zero value (so the calculator can find rows with stashed
               pre-calcs at a glance). */}
           {togglePreCalc && (() => {
-            const hasAnySlot = p.preCalcs
-              ? Object.values(p.preCalcs).some((s) => s && (s.value !== 0 || s.formula))
-              : false;
+            const populatedCount = p.preCalcs
+              ? Object.values(p.preCalcs).filter((s) => s && (s.value !== 0 || s.formula)).length
+              : 0;
             return (
               <button
                 onClick={() => togglePreCalc(p.id)}
-                title={isPreCalcExpanded ? 'Vorrechnung (F1..F7) einklappen' : 'Vorrechnung (F1..F7) öffnen'}
+                title={
+                  isPreCalcExpanded
+                    ? 'Vorrechnung F1..F7 einklappen'
+                    : populatedCount > 0
+                      ? `Vorrechnung öffnen — ${populatedCount} von 7 Feldern befüllt`
+                      : 'Vorrechnung F1..F7 öffnen — 7 freie Felder pro Position für Zwischenergebnisse'
+                }
                 aria-label="Vorrechnung F1..F7"
                 data-testid={`precalc-toggle-${p.id}`}
                 className={clsx(
-                  'inline-flex items-center justify-center w-6 h-6 rounded text-[10px] font-mono font-bold transition-colors',
+                  // Always visible — no opacity gating. Discoverability >>
+                  // sparkle effect.
+                  'inline-flex items-center justify-center min-w-[28px] h-6 px-1 rounded text-[10px] font-mono font-bold transition-colors gap-0.5',
                   isPreCalcExpanded
                     ? 'bg-emerald-600 text-white'
-                    : hasAnySlot
+                    : populatedCount > 0
                       ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
-                      : 'text-slate-300 hover:text-emerald-700 hover:bg-emerald-50 opacity-0 group-hover:opacity-100',
+                      : 'bg-slate-100 text-slate-500 hover:bg-emerald-50 hover:text-emerald-700',
                 )}
               >
-                F₁₇
+                {isPreCalcExpanded ? '−' : '+'} F₁₇
+                {populatedCount > 0 && !isPreCalcExpanded && (
+                  <span className="text-emerald-700 font-bold">·{populatedCount}</span>
+                )}
               </button>
             );
           })()}
@@ -923,14 +941,15 @@ function PositionRow({
 
       {/* Per-row F1..F7 Vorrechnung sub-row — only renders when the
           calculator has expanded it via the F₁₇ toggle button. Spans the
-          full table width (14 columns). Commits each slot individually
-          through updateRow so unmodified slots stay untouched. */}
+          full table width. Commits each slot individually through
+          updateRow so unmodified slots stay untouched. */}
       {isPreCalcExpanded && (
         <PreCalcStrip
           preCalcs={p.preCalcs}
           colSpan={14}
           faktoren={faktoren}
           contextMenge={p.quantity}
+          positionLabel={`${(p.oz || '—').trim()} · ${p.shortText || ''}`.slice(0, 80)}
           onSlotCommit={(slot, value, formula) => {
             const nextPreCalcs = { ...(p.preCalcs ?? {}) };
             if (value === 0 && !formula) {

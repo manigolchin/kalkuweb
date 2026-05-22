@@ -30,6 +30,10 @@ export type PreCalcStripProps = {
   /** Column-span of the parent <table> — used to make the strip span the
    *  whole table. PositionTableV2 has 14 columns. */
   colSpan: number;
+  /** Human-readable position label (OZ + Bezeichnung) shown at the top of
+   *  the strip so the calculator knows which row these F1..F7 belong to —
+   *  important when the strip is open + the parent row scrolled away. */
+  positionLabel?: string;
 };
 
 export default function PreCalcStrip({
@@ -38,15 +42,22 @@ export default function PreCalcStrip({
   faktoren,
   contextMenge,
   colSpan,
+  positionLabel,
 }: PreCalcStripProps) {
   return (
     <tr data-testid="precalc-strip">
-      <td colSpan={colSpan} className="bg-emerald-50/30 border-t border-emerald-200/60 px-4 py-3">
+      <td colSpan={colSpan} className="bg-emerald-50/30 border-y-2 border-emerald-400 px-4 py-3">
+        {positionLabel && (
+          <div className="text-xs text-emerald-900 font-semibold mb-2 flex items-center gap-2">
+            <span className="inline-block w-1 h-3 bg-emerald-500 rounded-sm" />
+            Vorrechnung für: <span className="font-normal text-emerald-800/80">{positionLabel}</span>
+          </div>
+        )}
         <div className="flex items-start gap-3">
           <div className="text-[10px] uppercase tracking-wider text-emerald-700 font-semibold pt-2 shrink-0 leading-tight w-[80px]">
-            Vorrechnung
+            F1..F7
             <div className="font-normal lowercase tracking-normal text-emerald-700/60 mt-0.5">
-              F1..F7 — in den Formeln links per Name nutzbar
+              In den Formeln links per Name nutzbar
             </div>
           </div>
           <div className="flex-1 grid grid-cols-7 gap-2">
