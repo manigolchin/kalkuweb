@@ -13,7 +13,7 @@ type Stat = {
 const STATS: Stat[] = [
   {
     icon: Clock,
-    to: 48,
+    to: 24,
     suffix: ' h',
     label: 'durchschnittliche Bearbeitungszeit pro LV',
   },
