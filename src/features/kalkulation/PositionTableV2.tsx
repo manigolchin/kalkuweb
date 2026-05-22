@@ -1,7 +1,9 @@
 import {
+  memo,
   useCallback,
   useMemo,
   useState,
+  type ChangeEvent,
 } from 'react';
 import {
   ChevronDown,
@@ -594,12 +596,14 @@ type PositionRowProps = {
 function PositionRow({
   position: p,
   params,
-  // updateRow + updateNumber + setPositionType retained in the type so
-  // GroupRows + the parent still pass them, but PART O made LV-position
-  // fields read-only — these handlers are now unreferenced inside this
-  // component. Underscore-prefix tells TS+lint to allow the unused param.
+  // updateRow stays unused — Pos/Bezeichnung/Menge/Einheit are PART O
+  // locked (LV is read-only, edit the Excel and re-import to change).
+  // updateNumber IS used for the per-position cost inputs (Material EK,
+  // Min/Einheit, NU EK) — calculators enter these after a GAEB import.
+  // PART O's "EK per cost type" lock refers to the row-aggregated totals
+  // in the Zuschlag matrix strip, not these per-row inputs.
   updateRow: _updateRow,
-  updateNumber: _updateNumber,
+  updateNumber,
   removeRow,
   toggleVisibility,
   setPositionType,
@@ -749,18 +753,24 @@ function PositionRow({
           <div className="h-full w-px bg-slate-200 mx-auto" aria-hidden />
         </td>
 
-        {/* PART O: EK per cost type is LOCKED. Edit the Excel and re-import
-            to change. Top-aligned so a multi-line Bezeichnung doesn't push
-            these off-row. */}
-        <td className="bg-slate-50/70 border-t border-slate-100 px-2 py-[10px] align-top text-right tabular-nums text-slate-700">
-          <div data-readonly="materialCost">{p.materialCost ? formatNum(p.materialCost, p.materialCost % 1 === 0 ? 0 : 2) : ''}</div>
-        </td>
-        <td className="bg-slate-50/70 border-t border-slate-100 px-2 py-[10px] align-top text-right tabular-nums text-slate-700">
-          <div data-readonly="timeMinutes">{p.timeMinutes ? formatNum(p.timeMinutes, p.timeMinutes % 1 === 0 ? 0 : 2) : ''}</div>
-        </td>
-        <td className="bg-slate-50/70 border-t border-slate-100 px-2 py-[10px] align-top text-right tabular-nums text-slate-700">
-          <div data-readonly="nuCost">{p.nuCost ? formatNum(p.nuCost, p.nuCost % 1 === 0 ? 0 : 2) : ''}</div>
-        </td>
+        {/* Per-position cost INPUTS — editable. The calculator enters
+            Material EK / Min/Einheit / NU EK after a GAEB import or from
+            supplier quotes; this is the core workflow. PART O's "EK per
+            cost type" lock refers to the row-aggregated J4/J5/J6/J7 TOTALS
+            in the Zuschlag matrix strip (top of INTERN view), NOT these
+            per-row inputs. Top-aligned via NumCellEditable's td styling. */}
+        <NumCellEditable
+          value={p.materialCost}
+          onChange={(v) => updateNumber(p.id, 'materialCost', v)}
+        />
+        <NumCellEditable
+          value={p.timeMinutes}
+          onChange={(v) => updateNumber(p.id, 'timeMinutes', v)}
+        />
+        <NumCellEditable
+          value={p.nuCost}
+          onChange={(v) => updateNumber(p.id, 'nuCost', v)}
+        />
 
         <td className="bg-slate-50/70 border-t border-slate-100 px-1 py-[10px] align-top">
           <PositionTypeSelect
@@ -818,11 +828,71 @@ function PositionRow({
   );
 }
 
-// Round 4 PART O removed the NumCell editable component — LV-position
-// numeric fields (Menge, Material EK, Min/Einheit, NU EK) are now rendered
-// inline as read-only <div>s in PositionRow above. The only EDITABLE
-// numeric inputs in v2 are the ZSCHLG % cells in the matrix header strip
-// (PART O), which use a dedicated <ZschlgInput> defined further down.
+/**
+ * NumCellEditable — per-position cost INPUT cell (Material EK, Min/Einheit,
+ * NU EK in the internal zone of INTERN view). The calculator NEEDS to edit
+ * these after a GAEB import — they're the heart of the workflow.
+ *
+ * Local draft state during focus so decimal entry works ("1,2" doesn't
+ * round-trip to "1" mid-typing). Top-aligned via the <td>'s `align-top` +
+ * `py-[10px]` (PART N: a multi-line Bezeichnung in the same row doesn't
+ * push these off-row).
+ *
+ * NOT used for customer-zone cells (Pos / Bezeichnung / Menge / Einheit /
+ * EP / GP) — those are PART O read-only divs. Also NOT used for the
+ * Zuschlag matrix row-totals (J4-J7), which are PART O locked too and
+ * displayed read-only in <ZuschlagMatrixStrip>.
+ */
+const NumCellEditable = memo(function NumCellEditable({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (raw: string) => void;
+}) {
+  const d = value % 1 === 0 ? 0 : 2;
+  const formatted = value === 0 ? '' : formatNum(value, d);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+
+  return (
+    <td className="bg-slate-50/70 border-t border-slate-100 px-1 py-[10px] align-top">
+      <input
+        value={editing ? draft : formatted}
+        placeholder="0"
+        inputMode="decimal"
+        onChange={(e: ChangeEvent<HTMLInputElement>) => setDraft(e.target.value)}
+        onFocus={(e) => {
+          setEditing(true);
+          setDraft(formatted);
+          e.target.select();
+        }}
+        onBlur={(e) => {
+          const final = e.currentTarget.value;
+          if (final !== formatted) onChange(final);
+          setEditing(false);
+          setDraft('');
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+          else if (e.key === 'Escape') {
+            setEditing(false);
+            setDraft('');
+            e.currentTarget.blur();
+          }
+        }}
+        className={clsx(
+          'w-full px-1.5 py-1 rounded text-right tabular-nums outline-none transition-colors',
+          'placeholder:text-slate-300 cursor-text border border-transparent',
+          value === 0
+            ? 'text-slate-500 hover:border-slate-300 hover:bg-white'
+            : 'text-slate-900',
+          'focus:bg-white focus:border-primary-400 focus:ring-1 focus:ring-primary-200',
+        )}
+      />
+    </td>
+  );
+});
 
 function PositionTypeSelect({
   value,

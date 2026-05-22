@@ -139,9 +139,13 @@ describe('Round 4 PART N — Bezeichnung renders in FULL (no truncation)', () =>
 
 describe('Round 4 PART O — LV position fields are read-only', () => {
   // Fields rendered on EVERY position row (always present in DOM).
+  // Customer-zone (A:G) fields: read-only display per PART O.
+  // Material EK / Min/Einheit / NU EK are PER-POSITION INPUTS that the
+  // calculator NEEDS to edit after a GAEB import — they're NOT in the
+  // locked list. (PART O's "EK per cost type" refers to the row-totals
+  // J4/J5/J6/J7 in the Zuschlag matrix, displayed read-only there.)
   const ALWAYS_RENDERED_LOCKED_FIELDS = [
     'oz', 'bezeichnung', 'menge', 'einheit',
-    'materialCost', 'timeMinutes', 'nuCost',
   ];
 
   // Fields rendered CONDITIONALLY (only when the user expands the row /
