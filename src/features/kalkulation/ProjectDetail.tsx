@@ -378,6 +378,8 @@ export default function ProjectDetail() {
               zuschlagOriginal={data.zuschlagOriginal}
               zuschlagAktuell={data.zuschlagAktuell}
               headerExtras={data.headerExtras}
+              // Faktoren-Bibliothek for the per-cell CalcPopover.
+              faktoren={data.faktoren}
               onZschlgChange={(cost, decimal) => {
                 // PART O: persist the override AND sync the corresponding
                 // CalcParams field so live EP/GP recompute cascades through

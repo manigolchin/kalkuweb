@@ -27,11 +27,13 @@ import {
   POSITION_TYPES,
   POSITION_TYPE_LABELS,
   type CalcParams,
+  type FaktorEntry,
   type HeaderExtras,
   type Position,
   type PositionType,
   type ZuschlagMatrix,
 } from './types';
+import CalcPopover from './CalcPopover';
 import {
   calculatePosition,
   calcTotals,
@@ -81,6 +83,11 @@ type Props = {
   onZschlgChange?: (cost: CostType, decimal: number) => void;
   /** Round 4 PART O — fires when the calculator clicks "Zurücksetzen" on a row. */
   onZschlgReset?: (cost: CostType) => void;
+  /** Round 4 PART P — Faktoren-Bibliothek extracted from the imported
+   *  Vorlage's N–W × 2–12 grid. Surfaces in the CalcPopover next to each
+   *  editable per-position cost cell (Material EK, Min/Einheit, NU EK)
+   *  so the calculator can write expressions like `schlitz + Q*querschnitt`. */
+  faktoren?: FaktorEntry[];
 };
 
 type Group =
@@ -109,6 +116,7 @@ export default function PositionTableV2({
   headerExtras,
   onZschlgChange,
   onZschlgReset,
+  faktoren,
 }: Props) {
   const [uncontrolledView, setUncontrolledView] = useState<V2ViewMode>('intern');
   const view = controlledView ?? uncontrolledView;
@@ -398,6 +406,7 @@ export default function PositionTableV2({
                   commentCounts={commentCounts}
                   onOpenComments={onOpenComments}
                   duplicateOzKeys={duplicateOzKeys}
+                  faktoren={faktoren}
                 />
               ) : (
                 <PositionRow
@@ -414,6 +423,7 @@ export default function PositionTableV2({
                   commentCount={commentCounts?.[g.row.oz?.trim() ?? '']}
                   onOpenComments={onOpenComments}
                   isDuplicateOz={duplicateOzKeys.has((g.row.oz ?? '').trim())}
+                  faktoren={faktoren}
                 />
               ),
             )}
@@ -516,6 +526,8 @@ type GroupRowsProps = {
    *  position. Comments on these OZs hit ALL matching rows (back end
    *  stores by OZ text). The badge surfaces this with a hint. */
   duplicateOzKeys?: Set<string>;
+  /** Faktoren-Bibliothek surfaced in the per-cell CalcPopover. */
+  faktoren?: FaktorEntry[];
 };
 
 function GroupRows({
@@ -533,6 +545,7 @@ function GroupRows({
   commentCounts,
   onOpenComments,
   duplicateOzKeys,
+  faktoren,
 }: GroupRowsProps) {
   return (
     <>
@@ -597,6 +610,7 @@ function GroupRows({
             commentCount={commentCounts?.[p.oz?.trim() ?? '']}
             onOpenComments={onOpenComments}
             isDuplicateOz={duplicateOzKeys?.has((p.oz ?? '').trim()) ?? false}
+            faktoren={faktoren}
           />
         ))}
     </>
@@ -619,6 +633,9 @@ type PositionRowProps = {
    *  position in the project. Comments persist by OZ text — surface that
    *  ambiguity in the badge title so the calculator knows. */
   isDuplicateOz?: boolean;
+  /** Faktoren-Bibliothek surfaced in the per-cell CalcPopover for the
+   *  three editable cost cells in this row. */
+  faktoren?: FaktorEntry[];
 };
 
 function PositionRow({
@@ -640,6 +657,7 @@ function PositionRow({
   commentCount,
   onOpenComments,
   isDuplicateOz,
+  faktoren,
 }: PositionRowProps) {
   const calc = useMemo(() => calculatePosition(p, params), [p, params]);
   const pt = (p.positionType ?? 'standard') as PositionType;
@@ -799,14 +817,20 @@ function PositionRow({
         <NumCellEditable
           value={p.materialCost}
           onChange={(v) => updateNumber(p.id, 'materialCost', v)}
+          calcContext={{ label: 'Material EK', faktoren, menge: p.quantity }}
+          onCalcApply={(v) => updateNumber(p.id, 'materialCost', String(v))}
         />
         <NumCellEditable
           value={p.timeMinutes}
           onChange={(v) => updateNumber(p.id, 'timeMinutes', v)}
+          calcContext={{ label: 'Min/Einheit', faktoren, menge: p.quantity }}
+          onCalcApply={(v) => updateNumber(p.id, 'timeMinutes', String(v))}
         />
         <NumCellEditable
           value={p.nuCost}
           onChange={(v) => updateNumber(p.id, 'nuCost', v)}
+          calcContext={{ label: 'NU EK', faktoren, menge: p.quantity }}
+          onCalcApply={(v) => updateNumber(p.id, 'nuCost', String(v))}
         />
 
         <td className="bg-slate-50/70 border-t border-slate-100 px-1 py-[10px] align-top">
@@ -883,9 +907,15 @@ function PositionRow({
 const NumCellEditable = memo(function NumCellEditable({
   value,
   onChange,
+  calcContext,
+  onCalcApply,
 }: {
   value: number;
   onChange: (raw: string) => void;
+  /** Optional scratch-calculator context — when set, a Σ trigger renders
+   *  next to the input. */
+  calcContext?: { label: string; faktoren?: FaktorEntry[]; menge: number };
+  onCalcApply?: (value: number) => void;
 }) {
   const d = value % 1 === 0 ? 0 : 2;
   const formatted = value === 0 ? '' : formatNum(value, d);
@@ -894,39 +924,50 @@ const NumCellEditable = memo(function NumCellEditable({
 
   return (
     <td className="bg-slate-50/70 border-t border-slate-100 px-1 py-[10px] align-top">
-      <input
-        value={editing ? draft : formatted}
-        placeholder="0"
-        inputMode="decimal"
-        onChange={(e: ChangeEvent<HTMLInputElement>) => setDraft(e.target.value)}
-        onFocus={(e) => {
-          setEditing(true);
-          setDraft(formatted);
-          e.target.select();
-        }}
-        onBlur={(e) => {
-          const final = e.currentTarget.value;
-          if (final !== formatted) onChange(final);
-          setEditing(false);
-          setDraft('');
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') e.currentTarget.blur();
-          else if (e.key === 'Escape') {
+      <div className="flex items-center gap-1">
+        <input
+          value={editing ? draft : formatted}
+          placeholder="0"
+          inputMode="decimal"
+          onChange={(e: ChangeEvent<HTMLInputElement>) => setDraft(e.target.value)}
+          onFocus={(e) => {
+            setEditing(true);
+            setDraft(formatted);
+            e.target.select();
+          }}
+          onBlur={(e) => {
+            const final = e.currentTarget.value;
+            if (final !== formatted) onChange(final);
             setEditing(false);
             setDraft('');
-            e.currentTarget.blur();
-          }
-        }}
-        className={clsx(
-          'w-full px-1.5 py-1 rounded text-right tabular-nums outline-none transition-colors',
-          'placeholder:text-slate-300 cursor-text border border-transparent',
-          value === 0
-            ? 'text-slate-500 hover:border-slate-300 hover:bg-white'
-            : 'text-slate-900',
-          'focus:bg-white focus:border-primary-400 focus:ring-1 focus:ring-primary-200',
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') e.currentTarget.blur();
+            else if (e.key === 'Escape') {
+              setEditing(false);
+              setDraft('');
+              e.currentTarget.blur();
+            }
+          }}
+          className={clsx(
+            'flex-1 min-w-0 px-1.5 py-1 rounded text-right tabular-nums outline-none transition-colors',
+            'placeholder:text-slate-300 cursor-text border border-transparent',
+            value === 0
+              ? 'text-slate-500 hover:border-slate-300 hover:bg-white'
+              : 'text-slate-900',
+            'focus:bg-white focus:border-primary-400 focus:ring-1 focus:ring-primary-200',
+          )}
+        />
+        {calcContext && onCalcApply && (
+          <CalcPopover
+            initialValue={value}
+            label={calcContext.label}
+            faktoren={calcContext.faktoren}
+            contextMenge={calcContext.menge}
+            onApply={onCalcApply}
+          />
         )}
-      />
+      </div>
     </td>
   );
 });
