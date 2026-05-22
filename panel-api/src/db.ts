@@ -66,6 +66,9 @@ export function runMigrations() {
   if (!sharesHas('snapshot_version')) sqlite.exec('ALTER TABLE shares ADD COLUMN snapshot_version INTEGER NOT NULL DEFAULT 1');
   if (!sharesHas('parent_share_id')) sqlite.exec('ALTER TABLE shares ADD COLUMN parent_share_id TEXT');
   if (!sharesHas('nachtrag_number')) sqlite.exec('ALTER TABLE shares ADD COLUMN nachtrag_number INTEGER NOT NULL DEFAULT 0');
+  // PART J (Round 3) — password gate + expiry.
+  if (!sharesHas('password_hash')) sqlite.exec('ALTER TABLE shares ADD COLUMN password_hash TEXT');
+  if (!sharesHas('expires_at')) sqlite.exec('ALTER TABLE shares ADD COLUMN expires_at INTEGER');
 
   const usersCols = sqlite.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>;
   const usersHas = (n: string) => usersCols.some((c) => c.name === n);
@@ -133,5 +136,35 @@ export function runMigrations() {
       created_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_position_templates_user ON position_templates(user_id);
+
+    -- PART J (Round 3) — share password gate access log.
+    CREATE TABLE IF NOT EXISTS share_access_log (
+      id TEXT PRIMARY KEY,
+      share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
+      ip TEXT,
+      success INTEGER NOT NULL,
+      reason TEXT NOT NULL,
+      user_agent TEXT,
+      ts INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_access_log_share_ts ON share_access_log(share_id, ts);
+    CREATE INDEX IF NOT EXISTS idx_access_log_share_ip_ts ON share_access_log(share_id, ip, ts);
+
+    -- PART K (Round 3) — per-position customer comments.
+    CREATE TABLE IF NOT EXISTS position_comments (
+      id TEXT PRIMARY KEY,
+      share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
+      position_oz TEXT NOT NULL,
+      intent TEXT NOT NULL,
+      text TEXT NOT NULL,
+      author_name TEXT,
+      author_email TEXT,
+      ip TEXT,
+      user_agent TEXT,
+      created_at INTEGER NOT NULL,
+      resolved_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_pos_comments_share ON position_comments(share_id);
+    CREATE INDEX IF NOT EXISTS idx_pos_comments_share_oz ON position_comments(share_id, position_oz);
   `);
 }

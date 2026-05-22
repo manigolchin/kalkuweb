@@ -37,7 +37,15 @@ export async function ensureSeedUser(): Promise<void> {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  ensureSeedUser().catch((e) => {
+  (async () => {
+    // Ensure the schema exists before inserting the seed user. Idempotent —
+    // safe to call on an already-migrated DB. Added for the Round 3 e2e
+    // setup where Playwright runs `seed` before `dev`, and only `dev`'s
+    // bootstrap was previously calling runMigrations.
+    const { runMigrations } = await import('./db.js');
+    runMigrations();
+    await ensureSeedUser();
+  })().catch((e) => {
     console.error(e);
     process.exit(1);
   });

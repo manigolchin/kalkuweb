@@ -11,6 +11,8 @@ import {
   History,
   Check,
   AlertCircle,
+  Sparkles,
+  RotateCcw,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -26,10 +28,24 @@ import type {
 import { calcTotals, formatEUR, formatNum, DEFAULT_CALC_PARAMS, recalcAll } from './calc';
 import { Breadcrumb } from '@/pages/panel/ui';
 import PositionTable from './PositionTable';
+import PositionTableV2 from './PositionTableV2';
 import ShareDialog from './ShareDialog';
 import ImportDialog from './ImportDialog';
 
 const SAVE_DEBOUNCE_MS = 800;
+
+type TableVersion = 'v1' | 'v2';
+const TABLE_VERSION_KEY = 'kalku.tableVersion';
+
+function readSavedTableVersion(): TableVersion {
+  if (typeof window === 'undefined') return 'v1';
+  try {
+    const v = window.localStorage.getItem(TABLE_VERSION_KEY);
+    return v === 'v2' ? 'v2' : 'v1';
+  } catch {
+    return 'v1';
+  }
+}
 
 export default function ProjectDetail() {
   const { id = '' } = useParams<{ id: string }>();
@@ -43,12 +59,40 @@ export default function ProjectDetail() {
   const [showShare, setShowShare] = useState<{ parentShareId?: string } | false>(false);
   const [showImport, setShowImport] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [tableVersion, setTableVersion] = useState<TableVersion>(() => readSavedTableVersion());
+  // PART K: per-OZ customer-comment counts. Refreshed on project load and
+  // whenever an auto-save lands (in case the customer commented in the
+  // meantime). Empty {} = no badges render.
+  const [commentCounts, setCommentCounts] = useState<Record<string, { total: number; unresolved: number }>>({});
+
+  const switchTableVersion = useCallback((v: TableVersion) => {
+    setTableVersion(v);
+    try {
+      window.localStorage.setItem(TABLE_VERSION_KEY, v);
+    } catch {
+      // ignore (private-mode browsers etc.)
+    }
+  }, []);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedRef = useRef<string>('');
   // Tracks the latest server `updatedAt` known to this tab. Used for optimistic
   // locking — read inside the debounced save so rapid edits don't carry a stale
   // value from when the effect was queued.
   const updatedAtRef = useRef<number>(0);
+
+  // PART K: fetch comment counts (cheap aggregate, safe to call on every
+  // project mount + after each save). Silent on failure — badges just stay
+  // hidden if the endpoint isn't reachable. Wraps in a named function so
+  // the auto-save effect below can call it after a successful PUT too.
+  const refreshCommentCounts = useCallback(async () => {
+    if (!id) return;
+    try {
+      const { counts } = await api.shares.commentCounts(id);
+      setCommentCounts(counts);
+    } catch {
+      // Endpoint may not exist on older servers — silent.
+    }
+  }, [id]);
 
   useEffect(() => {
     let alive = true;
@@ -62,6 +106,8 @@ export default function ProjectDetail() {
         setData(normalizeProject(detail.data));
         lastSavedRef.current = JSON.stringify(detail.data);
         updatedAtRef.current = new Date(detail.updatedAt).getTime();
+        // Fire-and-forget — runs in parallel with the initial render.
+        refreshCommentCounts();
       } catch (err) {
         if (err instanceof ApiError && err.status === 404) {
           setError('Projekt nicht gefunden.');
@@ -75,7 +121,7 @@ export default function ProjectDetail() {
     return () => {
       alive = false;
     };
-  }, [id]);
+  }, [id, refreshCommentCounts]);
 
   // auto-save: server is now the source of truth for derived EP/GP (P1-2) — it
   // recomputes on PUT. We still recalc client-side for instant feedback.
@@ -271,6 +317,7 @@ export default function ProjectDetail() {
 
         <div className="flex items-center gap-2 flex-wrap">
           <SaveIndicator state={savingState} />
+          <TableVersionToggle version={tableVersion} onChange={switchTableVersion} />
           <button
             onClick={() => setShowSettings((s) => !s)}
             className={clsx(
@@ -318,11 +365,33 @@ export default function ProjectDetail() {
               onParams={updateCalcParams}
             />
           )}
-          <PositionTable
-            positions={data.positions}
-            params={data.calcParams}
-            onChange={updatePositions}
-          />
+          {tableVersion === 'v2' ? (
+            <PositionTableV2
+              positions={data.positions}
+              params={data.calcParams}
+              onChange={updatePositions}
+              projectMeta={{
+                name: data.name,
+                client: data.client,
+                service: data.service,
+                tenderNumber: data.tenderNumber,
+                deadline: data.deadline,
+                bidder: data.bidder,
+              }}
+              commentCounts={commentCounts}
+              onOpenComments={(oz) => {
+                // For now, route the click into the existing Kunden-Feedback
+                // inbox tab. A future iteration may open an in-panel thread.
+                window.open(`/panel/feedback?oz=${encodeURIComponent(oz)}`, '_self');
+              }}
+            />
+          ) : (
+            <PositionTable
+              positions={data.positions}
+              params={data.calcParams}
+              onChange={updatePositions}
+            />
+          )}
         </div>
 
         <aside className="space-y-4">
@@ -363,8 +432,73 @@ export default function ProjectDetail() {
               : `${rows.length} Position${rows.length === 1 ? '' : 'en'} importiert (Projekt ersetzt).`,
           );
         }}
+        onImportKalku={(parsed, mode) => {
+          if (!parsed.project) return;
+          const rows = parsed.project.positions;
+          const merged = mode === 'append' ? [...data.positions, ...rows] : rows;
+          // Kalkulation-template import also lifts meta + CalcParams from
+          // the file. We replace those on 'replace' mode; on 'append' we
+          // keep the existing project's meta but adopt the new CalcParams
+          // if they differ (most useful when the user re-imports a freshly
+          // edited template).
+          if (mode === 'replace') {
+            setData({
+              ...parsed.project,
+              positions: rows,
+              notes: data.notes,
+            });
+          } else {
+            setData({
+              ...data,
+              positions: merged,
+              calcParams: parsed.derivedCalcParams,
+            });
+          }
+          // Auto-flip to v2 — the user just imported a Kalkulation-template,
+          // they get the new layout to enjoy it (per Round 2 spec PART F.3).
+          switchTableVersion('v2');
+          toast.success(
+            mode === 'append'
+              ? `${rows.length} Position${rows.length === 1 ? '' : 'en'} aus Vorlage angehängt — neue Ansicht aktiviert.`
+              : `${rows.length} Position${rows.length === 1 ? '' : 'en'} aus Vorlage importiert (ersetzt) — neue Ansicht aktiviert.`,
+          );
+        }}
       />
     </div>
+  );
+}
+
+function TableVersionToggle({
+  version,
+  onChange,
+}: {
+  version: TableVersion;
+  onChange: (v: TableVersion) => void;
+}) {
+  if (version === 'v2') {
+    return (
+      <button
+        onClick={() => onChange('v1')}
+        title="Zurück zur bisherigen Ansicht"
+        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 text-xs font-medium hover:bg-amber-100"
+      >
+        <RotateCcw className="w-3.5 h-3.5" />
+        Alte Ansicht
+      </button>
+    );
+  }
+  return (
+    <button
+      onClick={() => onChange('v2')}
+      title="Neue zweispaltige INTERN/KUNDEN-Ansicht testen"
+      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-primary-200 bg-primary-50 text-primary-700 text-xs font-medium hover:bg-primary-100"
+    >
+      <Sparkles className="w-3.5 h-3.5" />
+      Neue Ansicht
+      <span className="ml-0.5 px-1 rounded bg-primary-200/60 text-[9px] uppercase tracking-wider">
+        Beta
+      </span>
+    </button>
   );
 }
 

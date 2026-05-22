@@ -11,12 +11,14 @@ import {
   ArrowLeft,
   ArrowRight,
   RotateCcw,
+  Sparkles,
+  ShieldAlert,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { nanoid } from 'nanoid';
 import { ACCEPTED_EXTENSIONS, parseGaebFile, type ParsedGaeb } from '@/lib/gaeb';
 import { makeBlankPosition } from './calc';
-import type { Position } from './types';
+import type { CalcParams, Position } from './types';
 import {
   KALKU_FIELDS,
   autoMapColumns,
@@ -29,10 +31,11 @@ import {
   type PreviewRow,
   type SheetParse,
 } from './excelImport';
+import { parseKalkulationWorkbook, type ParseResult as KalkuParseResult } from '@/lib/kalku-xlsx/parse';
 
 const SHEET_EXTS = ['.xlsx', '.xls', '.csv', '.ods'];
 
-type Step = 'drop' | 'parsing' | 'map' | 'preview' | 'done';
+type Step = 'drop' | 'parsing' | 'map' | 'preview' | 'kalku-preview' | 'done';
 
 type Mode = 'append' | 'replace';
 
@@ -40,10 +43,15 @@ type Props = {
   open: boolean;
   onClose: () => void;
   onImport: (positions: Position[], mode: Mode) => void;
+  /** Optional richer callback for the Kalkulation-template fast-path.
+   *  Receives the full ParseResult (positions + meta + lifted CalcParams).
+   *  When provided, the importer offers a "Vorlagen-Import" path that
+   *  bypasses the column-mapping wizard. */
+  onImportKalku?: (parsed: KalkuParseResult, mode: Mode) => void;
   existingCount: number;
 };
 
-export default function ImportDialog({ open, onClose, onImport, existingCount }: Props) {
+export default function ImportDialog({ open, onClose, onImport, onImportKalku, existingCount }: Props) {
   const [step, setStep] = useState<Step>('drop');
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -55,6 +63,8 @@ export default function ImportDialog({ open, onClose, onImport, existingCount }:
   const [sheet, setSheet] = useState<SheetParse | null>(null);
   const [mapping, setMapping] = useState<MappingSelection | null>(null);
   const [preview, setPreview] = useState<PreviewRow[]>([]);
+  // Kalkulation-template fast-path
+  const [kalku, setKalku] = useState<KalkuParseResult | null>(null);
   const [mode, setMode] = useState<Mode>('append');
   const [skipErrors, setSkipErrors] = useState(true);
 
@@ -69,6 +79,7 @@ export default function ImportDialog({ open, onClose, onImport, existingCount }:
     setSheet(null);
     setMapping(null);
     setPreview([]);
+    setKalku(null);
     setFilename('');
     setMode('append');
     setSkipErrors(true);
@@ -112,6 +123,29 @@ export default function ImportDialog({ open, onClose, onImport, existingCount }:
       return;
     }
     if (kind === 'spreadsheet') {
+      // Kalkulation-template fast-path: try our template-aware parser first.
+      // It detects the canonical header anchors (`AG:`, `Leistung:`, `BV:`,
+      // `Bieter:`). If most anchors are present AND a Kalkulation callback
+      // is wired, route through this path (skips column mapping, lifts
+      // CalcParams, surfaces formula-error report). Otherwise fall back to
+      // the generic SheetJS mapping wizard.
+      if (onImportKalku) {
+        try {
+          const kalkuResult = await parseKalkulationWorkbook(file);
+          const anchorMisses = kalkuResult.issues.filter(
+            (i) => i.code === 'header_anchor_missing',
+          ).length;
+          // ≤2 misses (out of 7 anchors) → confident it's our template.
+          // 3+ misses → not our template, fall back to generic wizard.
+          if (anchorMisses <= 2 && kalkuResult.project && kalkuResult.project.positions.length > 0) {
+            setKalku(kalkuResult);
+            setStep('kalku-preview');
+            return;
+          }
+        } catch {
+          // Not a Kalkulation template — fall through to generic flow.
+        }
+      }
       try {
         const result = await parseSheet(file);
         setSheet(result);
@@ -125,7 +159,7 @@ export default function ImportDialog({ open, onClose, onImport, existingCount }:
     }
     setError('Dateityp wird nicht unterstützt. Erlaubt: GAEB (X81–X86, D81–D89, P81–P94), Excel (.xlsx, .xls, .ods) und CSV.');
     setStep('drop');
-  }, []);
+  }, [onImportKalku]);
 
   function onPick(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -238,6 +272,10 @@ export default function ImportDialog({ open, onClose, onImport, existingCount }:
             />
           )}
 
+          {step === 'kalku-preview' && kalku && (
+            <KalkuPreview parsed={kalku} filename={filename} />
+          )}
+
           {step === 'done' && (
             <div className="py-16 grid place-items-center text-emerald-600 dark:text-emerald-400">
               <CheckCircle2 className="w-8 h-8 mb-2" />
@@ -251,7 +289,7 @@ export default function ImportDialog({ open, onClose, onImport, existingCount }:
 
         {/* Footer */}
         <footer className="flex items-center justify-between gap-3 px-5 h-14 border-t border-slate-200 dark:border-slate-800 flex-shrink-0">
-          {step === 'preview' || step === 'map' ? (
+          {step === 'preview' || step === 'map' || step === 'kalku-preview' ? (
             <ModeSwitch mode={mode} onChange={setMode} existingCount={existingCount} />
           ) : (
             <span className="text-xs text-slate-400 dark:text-slate-500">
@@ -262,7 +300,7 @@ export default function ImportDialog({ open, onClose, onImport, existingCount }:
           )}
 
           <div className="flex items-center gap-2">
-            {(step === 'map' || step === 'preview') && (
+            {(step === 'map' || step === 'preview' || step === 'kalku-preview') && (
               <button
                 type="button"
                 onClick={() => {
@@ -271,6 +309,7 @@ export default function ImportDialog({ open, onClose, onImport, existingCount }:
                   setSheet(null);
                   setMapping(null);
                   setPreview([]);
+                  setKalku(null);
                   setError(null);
                 }}
                 className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-300 dark:hover:text-slate-100 dark:hover:bg-slate-800"
@@ -278,6 +317,35 @@ export default function ImportDialog({ open, onClose, onImport, existingCount }:
                 <ArrowLeft className="w-3.5 h-3.5" />
                 Andere Datei
               </button>
+            )}
+
+            {step === 'kalku-preview' && kalku && (
+              (() => {
+                const hasBlockingErrors = kalku.issues.some((i) => i.severity === 'error');
+                return (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (hasBlockingErrors || !onImportKalku) return;
+                      onImportKalku(kalku, mode);
+                      setStep('done');
+                    }}
+                    disabled={hasBlockingErrors}
+                    className={clsx(
+                      'inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg text-sm font-semibold',
+                      hasBlockingErrors
+                        ? 'bg-rose-100 text-rose-400 cursor-not-allowed dark:bg-rose-950/40 dark:text-rose-700'
+                        : 'bg-primary-600 text-white hover:bg-primary-700',
+                    )}
+                    title={hasBlockingErrors ? 'Bitte erst die Formelfehler beheben.' : undefined}
+                  >
+                    {hasBlockingErrors ? <ShieldAlert className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
+                    {hasBlockingErrors
+                      ? 'Import blockiert'
+                      : mode === 'append' ? 'In v2 anhängen' : 'In v2 ersetzen'}
+                  </button>
+                );
+              })()
             )}
 
             {step === 'map' && (
@@ -341,11 +409,17 @@ export default function ImportDialog({ open, onClose, onImport, existingCount }:
 /* ─── Substeps ──────────────────────────────────────────────────────────── */
 
 function Steps({ step }: { step: Step }) {
-  const items: { key: Step; label: string }[] = [
-    { key: 'drop', label: 'Datei' },
-    { key: 'map', label: 'Spalten' },
-    { key: 'preview', label: 'Vorschau' },
-  ];
+  // Kalkulation-template path skips the column-mapping step.
+  const items: { key: Step; label: string }[] = step === 'kalku-preview'
+    ? [
+        { key: 'drop', label: 'Datei' },
+        { key: 'kalku-preview', label: 'Vorlagen-Vorschau' },
+      ]
+    : [
+        { key: 'drop', label: 'Datei' },
+        { key: 'map', label: 'Spalten' },
+        { key: 'preview', label: 'Vorschau' },
+      ];
   const idx = items.findIndex((i) => i.key === step);
   return (
     <ol className="hidden md:flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500 ml-4">
@@ -759,3 +833,191 @@ function gaebToPositions(gaeb: ParsedGaeb, startSortOrder: number, _skipErrors: 
 function formatNum(n: number): string {
   return new Intl.NumberFormat('de-DE', { maximumFractionDigits: 2 }).format(n);
 }
+
+/**
+ * Kalkulation-template preview. Shows lifted meta, derived CalcParams, and
+ * the parser issue list. The footer's import button is blocked when ANY
+ * error-severity issue is present (formula errors in the customer zone).
+ */
+function KalkuPreview({ parsed, filename }: { parsed: KalkuParseResult; filename: string }) {
+  const { project, issues, derivedCalcParams, faktorenLookup, meta } = parsed;
+  const positionCount = project?.positions.filter((p) => !p.isHeader).length ?? 0;
+  const headerCount = project?.positions.filter((p) => p.isHeader).length ?? 0;
+  const errors = issues.filter((i) => i.severity === 'error');
+  const warnings = issues.filter((i) => i.severity === 'warning');
+  const infos = issues.filter((i) => i.severity === 'info');
+  return (
+    <div className="space-y-5 text-sm">
+      <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-primary-50 dark:bg-primary-500/10 border border-primary-200 dark:border-primary-500/30">
+        <Sparkles className="w-4 h-4 text-primary-600 dark:text-primary-300 mt-0.5 flex-shrink-0" />
+        <div className="flex-1">
+          <p className="font-semibold text-primary-900 dark:text-primary-100">
+            Kalkulation-Vorlage erkannt — direkter Import in v2-Ansicht.
+          </p>
+          <p className="text-xs text-primary-700/80 dark:text-primary-300/80 mt-0.5">
+            <span className="font-mono">{filename}</span> · {positionCount} Position{positionCount === 1 ? '' : 'en'}
+            {headerCount > 0 && ` · ${headerCount} Gruppe${headerCount === 1 ? '' : 'n'}`}
+            {' · '} Mittellohn / Stundensatz / ZSCHLG werden automatisch übernommen.
+          </p>
+        </div>
+      </div>
+
+      {errors.length > 0 && (
+        <div className="rounded-xl border border-rose-300 dark:border-rose-700 bg-rose-50 dark:bg-rose-950/30 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <ShieldAlert className="w-4 h-4 text-rose-600 dark:text-rose-300" />
+            <h3 className="font-semibold text-rose-900 dark:text-rose-100">
+              Import blockiert — {errors.length} kritische{errors.length === 1 ? 'r' : ''} Fehler in der Datei
+            </h3>
+          </div>
+          <p className="text-xs text-rose-700 dark:text-rose-300 mb-2">
+            Bitte die Datei in Excel korrigieren und erneut hochladen.
+            Solange Formelfehler in den Kundenspalten stehen, wäre das Angebot
+            für den Kunden nicht plausibel.
+          </p>
+          <IssueTable issues={errors} severity="error" />
+        </div>
+      )}
+
+      {warnings.length > 0 && (
+        <details className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/20 px-4 py-3" open>
+          <summary className="cursor-pointer font-semibold text-amber-900 dark:text-amber-100 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4" />
+            {warnings.length} Warnung{warnings.length === 1 ? '' : 'en'} (Import läuft trotzdem)
+          </summary>
+          <p className="text-xs text-amber-800/80 dark:text-amber-300/80 mt-2 mb-2">
+            Diese Zellen liegen außerhalb der Kunden-Spalten (A:G). Sie
+            beeinflussen das Angebot nicht, aber die Faktoren-Lookup-Werte
+            sind nicht verlässlich.
+          </p>
+          <IssueTable issues={warnings} severity="warning" />
+        </details>
+      )}
+
+      <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <MetaCard
+          title="Projekt-Stammdaten"
+          rows={[
+            ['AG', meta.client],
+            ['Leistung', meta.service],
+            ['BV', meta.bv],
+            ['Bieter', meta.bidder],
+            ['Vergabe-Nr.', meta.tenderNumber],
+            ['Abgabe', meta.deadline],
+          ]}
+        />
+        <MetaCard
+          title="Lifted CalcParams"
+          rows={[
+            ['Mittellohn (€/h)', formatNum(derivedCalcParams.mittellohn)],
+            ['Stundensatz (€/h)', formatNum(derivedCalcParams.verrechnungslohn)],
+            ['ZSCHLG Material', (derivedCalcParams.materialZuschlag * 100).toFixed(1) + ' %'],
+            ['ZSCHLG NU', (derivedCalcParams.nuZuschlag * 100).toFixed(1) + ' %'],
+            ['ZSCHLG Geräte', (derivedCalcParams.geraeteZuschlagPct * 100).toFixed(1) + ' %'],
+            ['Zeitabzug', derivedCalcParams.zeitabzug.toFixed(1) + ' %'],
+            ['MwSt', (derivedCalcParams.mwst * 100).toFixed(0) + ' %'],
+          ]}
+        />
+      </section>
+
+      {faktorenLookup.length > 0 && (
+        <details className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 px-4 py-3">
+          <summary className="cursor-pointer font-semibold text-slate-700 dark:text-slate-200">
+            Faktoren-Lookup ({faktorenLookup.length} Zeilen)
+          </summary>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+            Wird mit dem Projekt gespeichert. Lookup-Zellen mit Formelfehler
+            werden als "—" eingelesen.
+          </p>
+        </details>
+      )}
+
+      {infos.length > 0 && (
+        <details className="rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2">
+          <summary className="cursor-pointer text-xs text-slate-500 dark:text-slate-400">
+            {infos.length} Info{infos.length === 1 ? '' : 's'} (anonyme Positionen, Mehrfach-Blätter…)
+          </summary>
+          <IssueTable issues={infos} severity="info" />
+        </details>
+      )}
+    </div>
+  );
+}
+
+function IssueTable({
+  issues,
+  severity,
+}: {
+  issues: KalkuParseResult['issues'];
+  severity: 'error' | 'warning' | 'info';
+}) {
+  const sevColor =
+    severity === 'error'
+      ? 'text-rose-700 dark:text-rose-300'
+      : severity === 'warning'
+        ? 'text-amber-700 dark:text-amber-300'
+        : 'text-slate-500 dark:text-slate-400';
+  return (
+    <div className="mt-2 overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead className="text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400">
+          <tr>
+            <th className="text-left py-1 pr-3 font-semibold">Blatt · Zelle</th>
+            <th className="text-left py-1 pr-3 font-semibold">Fehler</th>
+            <th className="text-left py-1 font-semibold">Vorschlag</th>
+          </tr>
+        </thead>
+        <tbody>
+          {issues.slice(0, 50).map((i, idx) => (
+            <tr key={idx} className="border-t border-slate-200/60 dark:border-slate-700/60">
+              <td className={clsx('py-1 pr-3 font-mono', sevColor)}>{i.location}</td>
+              <td className="py-1 pr-3 text-slate-700 dark:text-slate-300">{i.message}</td>
+              <td className="py-1 text-slate-500 dark:text-slate-400">{suggestion(i.code)}</td>
+            </tr>
+          ))}
+          {issues.length > 50 && (
+            <tr>
+              <td colSpan={3} className="py-2 text-center text-slate-400 italic">
+                …{issues.length - 50} weitere ausgeblendet
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function suggestion(code: string): string {
+  switch (code) {
+    case 'formula_error': return 'In Excel die Zelle öffnen und Formel reparieren oder als Festwert speichern.';
+    case 'header_anchor_missing': return 'Header-Bezeichnung an die Vorlage angleichen (z. B. "AG:" statt "Auftraggeber:").';
+    case 'col13_label_mismatch': return 'Zelle in Zeile 13 auf den erwarteten Label setzen.';
+    case 'unparseable_oz': return 'OZ-Nummer ergänzen, sonst wird die Zeile als anonyme Position importiert.';
+    case 'multiple_sheets': return 'Reines Info — Import nutzt das Blatt "Kalkulation".';
+    default: return '';
+  }
+}
+
+function MetaCard({ title, rows }: { title: string; rows: Array<[string, string | number]> }) {
+  return (
+    <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
+      <h4 className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
+        {title}
+      </h4>
+      <dl className="space-y-1">
+        {rows.map(([k, v]) => (
+          <div key={k} className="flex items-baseline justify-between gap-3 text-xs">
+            <dt className="text-slate-500 dark:text-slate-400">{k}</dt>
+            <dd className="text-slate-900 dark:text-slate-100 font-medium text-right truncate">{v || '—'}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+// Silence unused-import lint for the CalcParams type which IS used inside
+// KalkuParseResult but TS's `noUnusedParameters` flags the named import.
+// (Re-exported via the parse.ts module for downstream callers.)
+export type { CalcParams };

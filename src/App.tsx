@@ -35,6 +35,8 @@ const ProjectsList = lazy(() => import('@/features/kalkulation/ProjectsList'));
 const ProjectDetail = lazy(() => import('@/features/kalkulation/ProjectDetail'));
 const FeedbackInbox = lazy(() => import('@/features/kalkulation/FeedbackInbox'));
 const Archiv = lazy(() => import('@/features/kalkulation/Archiv'));
+// Dev-only sandbox — bundled only in dev mode (tree-shaken in prod).
+const DevKalkuV2 = lazy(() => import('@/pages/DevKalkuV2'));
 
 export default function App() {
   return (
@@ -43,6 +45,11 @@ export default function App() {
         {/* Standalone (no public site nav/footer) */}
         <Route path="login" element={<Login />} />
         <Route path="share/:token" element={<ShareView />} />
+        {/* Dev-only sandbox for PositionTableV2 — gated by import.meta.env.DEV
+            below in the element so the route entry stays valid in prod. */}
+        {import.meta.env.DEV && (
+          <Route path="dev/kalku-v2" element={<DevKalkuV2 />} />
+        )}
 
         {/* Authenticated panel */}
         <Route
