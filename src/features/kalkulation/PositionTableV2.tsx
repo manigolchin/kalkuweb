@@ -1,9 +1,7 @@
 import {
-  memo,
   useCallback,
   useMemo,
   useState,
-  type ChangeEvent,
 } from 'react';
 import {
   ChevronDown,
@@ -33,7 +31,7 @@ import {
   type PositionType,
   type ZuschlagMatrix,
 } from './types';
-import CalcPopover from './CalcPopover';
+import FormulaCell from './FormulaCell';
 import {
   calculatePosition,
   calcTotals,
@@ -641,14 +639,12 @@ type PositionRowProps = {
 function PositionRow({
   position: p,
   params,
-  // updateRow stays unused — Pos/Bezeichnung/Menge/Einheit are PART O
-  // locked (LV is read-only, edit the Excel and re-import to change).
-  // updateNumber IS used for the per-position cost inputs (Material EK,
-  // Min/Einheit, NU EK) — calculators enter these after a GAEB import.
-  // PART O's "EK per cost type" lock refers to the row-aggregated totals
-  // in the Zuschlag matrix strip, not these per-row inputs.
-  updateRow: _updateRow,
-  updateNumber,
+  // updateRow IS used now — FormulaCell commits both the cached value AND
+  // the (optional) stored formula via a single { materialCost, materialFormula }
+  // patch. updateNumber is no longer needed on this row since FormulaCell
+  // handles its own numeric commit through the patch shape.
+  updateRow,
+  updateNumber: _updateNumber,
   removeRow,
   toggleVisibility,
   setPositionType,
@@ -814,23 +810,29 @@ function PositionRow({
             cost type" lock refers to the row-aggregated J4/J5/J6/J7 TOTALS
             in the Zuschlag matrix strip (top of INTERN view), NOT these
             per-row inputs. Top-aligned via NumCellEditable's td styling. */}
-        <NumCellEditable
+        <FormulaCell
           value={p.materialCost}
-          onChange={(v) => updateNumber(p.id, 'materialCost', v)}
-          calcContext={{ label: 'Material EK', faktoren, menge: p.quantity }}
-          onCalcApply={(v) => updateNumber(p.id, 'materialCost', String(v))}
+          formula={p.materialFormula}
+          onCommit={(v, f) => updateRow(p.id, { materialCost: v, materialFormula: f })}
+          faktoren={faktoren}
+          contextMenge={p.quantity}
+          label="Material EK"
         />
-        <NumCellEditable
+        <FormulaCell
           value={p.timeMinutes}
-          onChange={(v) => updateNumber(p.id, 'timeMinutes', v)}
-          calcContext={{ label: 'Min/Einheit', faktoren, menge: p.quantity }}
-          onCalcApply={(v) => updateNumber(p.id, 'timeMinutes', String(v))}
+          formula={p.timeMinutesFormula}
+          onCommit={(v, f) => updateRow(p.id, { timeMinutes: v, timeMinutesFormula: f })}
+          faktoren={faktoren}
+          contextMenge={p.quantity}
+          label="Min/Einheit"
         />
-        <NumCellEditable
+        <FormulaCell
           value={p.nuCost}
-          onChange={(v) => updateNumber(p.id, 'nuCost', v)}
-          calcContext={{ label: 'NU EK', faktoren, menge: p.quantity }}
-          onCalcApply={(v) => updateNumber(p.id, 'nuCost', String(v))}
+          formula={p.nuFormula}
+          onCommit={(v, f) => updateRow(p.id, { nuCost: v, nuFormula: f })}
+          faktoren={faktoren}
+          contextMenge={p.quantity}
+          label="NU EK"
         />
 
         <td className="bg-slate-50/70 border-t border-slate-100 px-1 py-[10px] align-top">
@@ -889,88 +891,12 @@ function PositionRow({
   );
 }
 
-/**
- * NumCellEditable — per-position cost INPUT cell (Material EK, Min/Einheit,
- * NU EK in the internal zone of INTERN view). The calculator NEEDS to edit
- * these after a GAEB import — they're the heart of the workflow.
- *
- * Local draft state during focus so decimal entry works ("1,2" doesn't
- * round-trip to "1" mid-typing). Top-aligned via the <td>'s `align-top` +
- * `py-[10px]` (PART N: a multi-line Bezeichnung in the same row doesn't
- * push these off-row).
- *
- * NOT used for customer-zone cells (Pos / Bezeichnung / Menge / Einheit /
- * EP / GP) — those are PART O read-only divs. Also NOT used for the
- * Zuschlag matrix row-totals (J4-J7), which are PART O locked too and
- * displayed read-only in <ZuschlagMatrixStrip>.
- */
-const NumCellEditable = memo(function NumCellEditable({
-  value,
-  onChange,
-  calcContext,
-  onCalcApply,
-}: {
-  value: number;
-  onChange: (raw: string) => void;
-  /** Optional scratch-calculator context — when set, a Σ trigger renders
-   *  next to the input. */
-  calcContext?: { label: string; faktoren?: FaktorEntry[]; menge: number };
-  onCalcApply?: (value: number) => void;
-}) {
-  const d = value % 1 === 0 ? 0 : 2;
-  const formatted = value === 0 ? '' : formatNum(value, d);
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState('');
-
-  return (
-    <td className="bg-slate-50/70 border-t border-slate-100 px-1 py-[10px] align-top">
-      <div className="flex items-center gap-1">
-        <input
-          value={editing ? draft : formatted}
-          placeholder="0"
-          inputMode="decimal"
-          onChange={(e: ChangeEvent<HTMLInputElement>) => setDraft(e.target.value)}
-          onFocus={(e) => {
-            setEditing(true);
-            setDraft(formatted);
-            e.target.select();
-          }}
-          onBlur={(e) => {
-            const final = e.currentTarget.value;
-            if (final !== formatted) onChange(final);
-            setEditing(false);
-            setDraft('');
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') e.currentTarget.blur();
-            else if (e.key === 'Escape') {
-              setEditing(false);
-              setDraft('');
-              e.currentTarget.blur();
-            }
-          }}
-          className={clsx(
-            'flex-1 min-w-0 px-1.5 py-1 rounded text-right tabular-nums outline-none transition-colors',
-            'placeholder:text-slate-300 cursor-text border border-transparent',
-            value === 0
-              ? 'text-slate-500 hover:border-slate-300 hover:bg-white'
-              : 'text-slate-900',
-            'focus:bg-white focus:border-primary-400 focus:ring-1 focus:ring-primary-200',
-          )}
-        />
-        {calcContext && onCalcApply && (
-          <CalcPopover
-            initialValue={value}
-            label={calcContext.label}
-            faktoren={calcContext.faktoren}
-            contextMenge={calcContext.menge}
-            onApply={onCalcApply}
-          />
-        )}
-      </div>
-    </td>
-  );
-});
+// NumCellEditable + CalcPopover were superseded by FormulaCell — the
+// inline-formula pattern matches what Excel / Nevaris / California.pro
+// actually do. The modal-popover Σ was a UX dead end (users had to
+// discover it, click to open, lose the inline rhythm). FormulaCell
+// activates formula mode by typing `=` as the first character — same
+// affordance as Excel — and shows the live preview + fx badge inline.
 
 function PositionTypeSelect({
   value,

@@ -41,6 +41,16 @@ export type Position = {
   /** REB-23.003-lite Aufmaß formula. When non-empty, quantity is computed
    *  from it (client preview + server-authoritative re-parse on save). */
   aufmassFormula?: string;
+  /** Inline formula for Material EK (per-cell scratch calc — type `=` in
+   *  the cell to enter, autocomplete factor names, Enter to commit). When
+   *  non-empty, materialCost is the evaluated total + the formula is shown
+   *  in the cell's hover tooltip + fx badge. Re-evaluates on ZSCHLG/factor
+   *  changes. Same pattern as Excel's stored-formula-with-cached-value. */
+  materialFormula?: string;
+  /** Inline formula for Min/Einheit. Same semantics as materialFormula. */
+  timeMinutesFormula?: string;
+  /** Inline formula for NU EK. Same semantics as materialFormula. */
+  nuFormula?: string;
 };
 
 export type CalcParams = {
