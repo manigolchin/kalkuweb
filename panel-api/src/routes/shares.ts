@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { and, desc, eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
+import bcrypt from 'bcryptjs';
 import { db } from '../db.js';
 import { projects, shares, shareResponses } from '../schema.js';
 import { requireAuth, clientIp, type AuthVariables } from '../lib/middleware.js';
@@ -21,6 +22,14 @@ const createShareSchema = z.object({
     showTotals: z.boolean().default(true),
     showMwst: z.boolean().default(true),
     bindefristDays: z.number().int().min(1).max(365).optional(),
+    /** PART J: optional gate password. Plaintext over TLS, server hashes
+     *  with bcrypt cost 12. Never returned to the client.
+     *  Range: 4..200 — keeps it usable as a one-time code, prevents
+     *  pathologically long inputs that would hash slowly. */
+    password: z.string().min(4).max(200).optional(),
+    /** PART J: optional ISO 8601 expiry. After this point GET returns 410.
+     *  Past dates are rejected (would create an immediately-dead link). */
+    expiresAt: z.string().datetime().optional(),
   }),
 });
 
@@ -60,6 +69,29 @@ export const sharesRoute = new Hono<{ Variables: AuthVariables }>()
     const token = nanoid(32);
     const now = new Date();
 
+    // PART J: hash the password (if provided) BEFORE building the share row.
+    // Strip it from settings so it never persists in the JSON blob — only the
+    // hash lives, and only in the dedicated column. Same treatment for
+    // expiresAt (kept as a real column for query-friendly comparison).
+    let passwordHash: string | null = null;
+    let expiresAtDate: Date | null = null;
+    const settingsToStore = { ...parsed.data.settings };
+    if (settingsToStore.password) {
+      // bcrypt cost 12 ≈ ~250ms on commodity hardware — acceptable for a
+      // one-shot create-share path. argon2id would be marginally better but
+      // would add a native build dep (argon2 needs node-gyp + libargon2).
+      passwordHash = await bcrypt.hash(settingsToStore.password, 12);
+      delete settingsToStore.password;
+    }
+    if (settingsToStore.expiresAt) {
+      const t = new Date(settingsToStore.expiresAt);
+      if (Number.isFinite(t.getTime()) && t.getTime() > now.getTime()) {
+        expiresAtDate = t;
+      }
+      // Leave settings.expiresAt in the JSON for client display; the column
+      // is the load-bearing copy.
+    }
+
     // Freeze the customer-visible content at share-creation time so the owner
     // editing the project later does NOT change what the customer sees or
     // approves. The snapshot is the legal source of truth for the share.
@@ -84,12 +116,14 @@ export const sharesRoute = new Hono<{ Variables: AuthVariables }>()
       projectId,
       token,
       visiblePositionIds: parsed.data.visiblePositionIds,
-      settings: parsed.data.settings,
+      settings: settingsToStore,
       snapshotData: snapshot,
       snapshotHash: hash,
       snapshotVersion: 1,
       parentShareId,
       nachtragNumber,
+      passwordHash,
+      expiresAt: expiresAtDate,
       createdAt: now,
       viewCount: 0,
     });

@@ -2,13 +2,50 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
+import bcrypt from 'bcryptjs';
 import { db } from '../db.js';
-import { projects, shares, shareResponses, users, auditEvents } from '../schema.js';
+import {
+  projects,
+  shares,
+  shareResponses,
+  users,
+  auditEvents,
+  shareAccessLog,
+  positionComments,
+} from '../schema.js';
 import { clientIp, clientFingerprint } from '../lib/middleware.js';
 import { buildLegacySnapshot, snapshotHash } from '../lib/snapshot.js';
 import { recordAuditEvent } from '../lib/audit.js';
 import { renderQuotePdf, renderCertificatePdf } from '../lib/pdf.js';
 import { sendMail } from '../lib/mailer.js';
+import { checkAndRecordFailure, resetFailureCounter } from '../lib/ratelimit.js';
+
+// PART J: rate-limit window for failed unlock attempts. Spec: 5 per (token, ip)
+// per 15 minutes → 429 with Retry-After.
+const UNLOCK_RATELIMIT = { windowMs: 15 * 60 * 1000, max: 5 };
+
+async function logAccess(
+  shareId: string,
+  ip: string | undefined,
+  success: boolean,
+  reason: string,
+  userAgent: string | undefined,
+): Promise<void> {
+  try {
+    await db.insert(shareAccessLog).values({
+      id: nanoid(16),
+      shareId,
+      ip: ip ?? null,
+      success,
+      reason,
+      userAgent: userAgent ?? null,
+      ts: new Date(),
+    });
+  } catch (err) {
+    // Don't fail the request if logging fails.
+    console.warn(`[share-access-log] insert failed: ${(err as Error).message}`);
+  }
+}
 
 const approveSchema = z.object({
   customerName: z.string().trim().min(1).max(200),
@@ -35,9 +72,62 @@ const changesSchema = z.object({
 export const publicRoute = new Hono()
   .get('/share/:token', async (c) => {
     const token = c.req.param('token');
+    const ip = clientIp(c);
+    const ua = (c.req.header('user-agent') || '').slice(0, 500);
     const share = await db.query.shares.findFirst({ where: eq(shares.token, token) });
     if (!share) return c.json({ error: 'not_found' }, 404);
-    if (share.revokedAt) return c.json({ error: 'revoked' }, 410);
+    if (share.revokedAt) {
+      await logAccess(share.id, ip, false, 'revoked', ua);
+      return c.json({ error: 'revoked', reason: 'revoked' }, 410);
+    }
+
+    // PART J: expiry check. Past expiresAt → 410 with reason='expired'.
+    // Distinct copy from 'revoked' so the customer knows whether to ask for
+    // an extension or assume the offer was withdrawn.
+    if (share.expiresAt && share.expiresAt.getTime() < Date.now()) {
+      await logAccess(share.id, ip, false, 'expired', ua);
+      return c.json({ error: 'expired', reason: 'expired' }, 410);
+    }
+
+    // PART J: password gate. If a hash is set, require X-Share-Password
+    // header. Constant-time compare via bcrypt.compare. Rate-limit failures
+    // per (token, ip) per 15 min. Reset counter on success.
+    if (share.passwordHash) {
+      const providedPwd = c.req.header('X-Share-Password') || c.req.header('x-share-password');
+      if (!providedPwd) {
+        await logAccess(share.id, ip, false, 'gate_hit', ua);
+        return c.json({ error: 'password_required', reason: 'password_required' }, 401);
+      }
+      // Rate-limit BEFORE the bcrypt compare so a brute-force attacker can't
+      // amortize CPU cost — they hit 429 first.
+      const limit = checkAndRecordFailure('share-unlock', token, ip || 'unknown', UNLOCK_RATELIMIT);
+      if (!limit.allowed) {
+        await logAccess(share.id, ip, false, 'rate_limited', ua);
+        c.header('Retry-After', String(limit.retryAfter));
+        return c.json(
+          {
+            error: 'rate_limited',
+            reason: 'rate_limited',
+            retryAfter: limit.retryAfter,
+            message: 'too_many_password_attempts',
+          },
+          429,
+        );
+      }
+      const ok = await bcrypt.compare(providedPwd, share.passwordHash);
+      if (!ok) {
+        await logAccess(share.id, ip, false, 'wrong_password', ua);
+        return c.json({ error: 'password_required', reason: 'password_required' }, 401);
+      }
+      // Success — clear the failure counter so a customer who got the
+      // password right on the 4th try doesn't get locked out on reload.
+      resetFailureCounter('share-unlock', token, ip || 'unknown');
+      await logAccess(share.id, ip, true, 'unlock_attempt', ua);
+    } else {
+      // Unprotected share — log the OK access without contributing to any
+      // rate-limit counter.
+      await logAccess(share.id, ip, true, 'ok', ua);
+    }
 
     const project = await db.query.projects.findFirst({ where: eq(projects.id, share.projectId) });
     if (!project) return c.json({ error: 'not_found' }, 404);
@@ -110,6 +200,13 @@ export const publicRoute = new Hono()
       }
     }
 
+    // PART J: revision tracking. The snapshot the customer is viewing was
+    // taken at project versionNumber `snapshot.projectVersionNumber`. If the
+    // calculator has bumped the project's version since (via PUT /projects/:id
+    // with bumpVersion or via the resnapshot flow), surface a banner.
+    const latestVersionNumber = project.versionNumber;
+    const hasNewerVersion = latestVersionNumber > snapshot.projectVersionNumber;
+
     return c.json({
       shareId: share.id,
       token: share.token,
@@ -134,6 +231,14 @@ export const publicRoute = new Hono()
       },
       positions: snapshot.positions,
       createdAt: share.createdAt,
+      // PART J: gate metadata for the frontend. `passwordRequired` is
+      // intentionally `false` here — if it were `true` the request would
+      // have been rejected at the gate above. The flag is kept in the type
+      // so re-fetching with a stored password doesn't have to special-case.
+      passwordRequired: false,
+      expiresAt: share.expiresAt ? share.expiresAt.toISOString() : null,
+      hasNewerVersion,
+      latestVersionNumber,
     });
   })
 
