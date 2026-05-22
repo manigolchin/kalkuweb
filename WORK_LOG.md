@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-05-22 22:15 — Architecture proposal: preisanfrage as Firmen-source
+- Source: user "we caan bring all information [...] from preisanfrage.kalkus.de [...] fetch Ausschreibungen [...] make all companies from server"
+- Branch: claude-auto/v2-gaps-closeout (continued)
+- Result: committed 6ea675b (docs-only)
+- Notes: Used 3 parallel Explore agents (preisanfrage backend models, OneDrive directory layout, preisanfrage frontend Firma workflow) + 1 follow-up agent for exact API JSON shapes. The OneDrive agent hit a sandbox boundary; ran ls directly instead — confirmed 98 firm folders under KT01 - Documents/, pattern `NNNN_FirmName/YYMMDD_ProjectName/01_Pläne_u_Gaeb/*.X83`. Gesellchen has 36 projects. Findings: preisanfrage already owns `companies` (with SharePoint/SMTP/classifier), `external_companies` (98 OneDrive-discovered BI view), `projects` (Auschreibungen with GAEB file paths, submission results), and runs n8n every 5 min to scan OneDrive + parse GAEB. JWT Bearer auth. CORS currently doesn't allow kalku.kalkus.de. Drafted `docs/v2_redesign/multi_company_integration_architecture.md` proposing: preisanfrage = source-of-truth (Firmen + Auschreibungen + GAEB-parsed positions), kalku-website = calculation layer (consumes via service-account JWT). 3-phase rollout. Posed 4 decision questions back to user (live-API vs mirror, all-98 vs adopted-only, per-user vs service-account JWT, where to put calc-default columns). Supersedes the earlier greenfield Firma proposal (commit b3077d4).
+
 ## 2026-05-22 22:00 — Cross-project formula audit (kalku-website vs bauki/kalku-ki)
 - Source: user followup "check formula in bauki toll in projects that for claculation that we system have like that calculation formular"
 - Branch: claude-auto/v2-gaps-closeout (continued)
