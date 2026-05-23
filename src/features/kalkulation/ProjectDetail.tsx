@@ -13,6 +13,7 @@ import {
   AlertCircle,
   Sparkles,
   RotateCcw,
+  GitCompareArrows,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -31,6 +32,7 @@ import PositionTable from './PositionTable';
 import PositionTableV2 from './PositionTableV2';
 import ShareDialog from './ShareDialog';
 import ImportDialog from './ImportDialog';
+import SnapshotDiffDialog from './SnapshotDiffDialog';
 
 const SAVE_DEBOUNCE_MS = 800;
 
@@ -58,6 +60,7 @@ export default function ProjectDetail() {
   );
   const [showShare, setShowShare] = useState<{ parentShareId?: string } | false>(false);
   const [showImport, setShowImport] = useState(false);
+  const [showDiff, setShowDiff] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [tableVersion, setTableVersion] = useState<TableVersion>(() => readSavedTableVersion());
   // PART K: per-OZ customer-comment counts. Refreshed on project load and
@@ -325,6 +328,16 @@ export default function ProjectDetail() {
             <History className="w-4 h-4" />
             v{project.versionNumber}
           </button>
+          {project.shares.filter((s) => !s.revokedAt).length >= 2 && (
+            <button
+              onClick={() => setShowDiff(true)}
+              className="btn btn-secondary flex items-center gap-2"
+              title="Snapshot-Versionen vergleichen"
+            >
+              <GitCompareArrows className="w-4 h-4" />
+              Vergleichen
+            </button>
+          )}
           <button
             onClick={() => setShowImport(true)}
             className="btn btn-secondary flex items-center gap-2"
@@ -469,6 +482,14 @@ export default function ProjectDetail() {
           onRequestNachtrag={(parentShareId) => setShowShare({ parentShareId })}
         />
       )}
+
+      <SnapshotDiffDialog
+        open={showDiff}
+        onClose={() => setShowDiff(false)}
+        projectId={project.id}
+        projectName={data.name || 'Projekt'}
+        shares={project.shares}
+      />
 
       <ImportDialog
         open={showImport}

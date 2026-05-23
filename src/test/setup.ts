@@ -28,8 +28,9 @@ beforeAll(() => {
     HTMLButtonElement.prototype.click = function patchedClick() {
       original.call(this);
       const btn = this as HTMLButtonElement;
-      const isSubmit =
-        btn.type === 'submit' || (btn.type === '' && btn.form !== null);
+      // Per HTML spec the default type for buttons inside a form is 'submit',
+      // but the DOM property always reports one of 'submit' | 'button' | 'reset'.
+      const isSubmit = btn.type === 'submit';
       if (isSubmit && btn.form && !btn.disabled) {
         const form = btn.form;
         if (typeof form.requestSubmit === 'function') {

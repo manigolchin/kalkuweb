@@ -5,7 +5,7 @@
  * tested end-to-end against real data.
  */
 
-import { describe, test, expect, beforeAll } from 'vitest';
+import { describe, test, expect } from 'vitest';
 import { join } from 'node:path';
 import { readFileSync, existsSync } from 'node:fs';
 import XLSX from 'xlsx';

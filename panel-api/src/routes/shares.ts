@@ -277,6 +277,67 @@ export const sharesRoute = new Hono<{ Variables: AuthVariables }>()
     });
   })
 
+  /** Feature #3 — arbitrary snapshot-vs-snapshot diff.
+   *  Compares two shares' frozen snapshots so the owner can answer
+   *  "what changed between version N1 and N2 of this Angebot?" in one
+   *  view. Both shareIds must belong to the same project, and that
+   *  project must be owned by the caller.
+   *
+   *  Query: ?from=<shareId>&to=<shareId>
+   *  Response: { from: {...}, to: {...}, diff: SnapshotDiff } */
+  .get('/projects/:id/snapshots/diff', requireAuth, async (c) => {
+    const projectId = c.req.param('id');
+    const userId = c.get('userId');
+    const fromId = c.req.query('from');
+    const toId = c.req.query('to');
+    if (!fromId || !toId) {
+      return c.json({ error: 'missing_from_or_to' }, 400);
+    }
+    if (fromId === toId) {
+      return c.json({ error: 'same_snapshot' }, 400);
+    }
+
+    const project = await db.query.projects.findFirst({
+      where: and(eq(projects.id, projectId), eq(projects.ownerId, userId)),
+    });
+    if (!project) return c.json({ error: 'not_found' }, 404);
+
+    const fromShare = await db.query.shares.findFirst({ where: eq(shares.id, fromId) });
+    const toShare = await db.query.shares.findFirst({ where: eq(shares.id, toId) });
+    if (!fromShare || !toShare) return c.json({ error: 'share_not_found' }, 404);
+    // Both shares MUST belong to the project we just verified ownership of —
+    // closes the cross-project IDOR vector.
+    if (fromShare.projectId !== projectId || toShare.projectId !== projectId) {
+      return c.json({ error: 'share_wrong_project' }, 400);
+    }
+    if (!fromShare.snapshotData || !toShare.snapshotData) {
+      return c.json({ error: 'snapshot_missing' }, 409);
+    }
+
+    const diff = diffSnapshots(fromShare.snapshotData, toShare.snapshotData);
+    return c.json({
+      from: {
+        id: fromShare.id,
+        token: fromShare.token,
+        snapshotVersion: fromShare.snapshotVersion,
+        snapshotHash: fromShare.snapshotHash,
+        snapshottedAt: fromShare.snapshotData.snapshottedAt,
+        nachtragNumber: fromShare.nachtragNumber,
+        createdAt: fromShare.createdAt,
+      },
+      to: {
+        id: toShare.id,
+        token: toShare.token,
+        snapshotVersion: toShare.snapshotVersion,
+        snapshotHash: toShare.snapshotHash,
+        snapshottedAt: toShare.snapshotData.snapshottedAt,
+        nachtragNumber: toShare.nachtragNumber,
+        createdAt: toShare.createdAt,
+      },
+      diff,
+    });
+  })
+
   /** PART K: per-project comment list grouped by positionOz. Owner-auth
    *  required (the calculator views this on the INTERN side). Aggregates
    *  across ALL non-revoked shares of the project so a multi-share
