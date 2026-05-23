@@ -7,6 +7,7 @@ import { users } from '../schema.js';
 import {
   COOKIE_MAX_AGE_DAYS,
   COOKIE_NAME,
+  DUMMY_PASSWORD_HASH,
   hashPassword,
   signToken,
   verifyPassword,
@@ -41,6 +42,10 @@ export const authRoute = new Hono<{ Variables: AuthVariables }>()
     const { email, password } = parsed.data;
     const user = await db.query.users.findFirst({ where: eq(users.email, email.toLowerCase()) });
     if (!user) {
+      // Run a dummy bcrypt compare so response time is indistinguishable from
+      // valid-email-wrong-password. Closes the timing oracle that lets an
+      // attacker enumerate registered emails.
+      await verifyPassword(password, DUMMY_PASSWORD_HASH);
       return c.json({ error: 'invalid_credentials' }, 401);
     }
     const ok = await verifyPassword(password, user.passwordHash);
@@ -104,6 +109,11 @@ export const authRoute = new Hono<{ Variables: AuthVariables }>()
     if (!user) return c.json({ error: 'unauthorized' }, 401);
     const ok = await verifyPassword(parsed.data.current, user.passwordHash);
     if (!ok) return c.json({ error: 'invalid_current_password' }, 400);
+    // Reject reuse — accepting next == current would clear the
+    // mustChangePassword gate without a real change.
+    if (parsed.data.current === parsed.data.next) {
+      return c.json({ error: 'password_unchanged' }, 400);
+    }
     const newHash = await hashPassword(parsed.data.next);
     await db
       .update(users)
