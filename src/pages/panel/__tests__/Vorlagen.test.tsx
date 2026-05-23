@@ -187,3 +187,281 @@ describe('Vorlagen', () => {
     expect(screen.getByText('12×')).toBeTruthy();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Round-2 extension — coverage gaps in sort-order preservation, partial-edit
+// diffing, multi-row edit cycles, search-by-oz/unit, toast wiring on delete,
+// the parse-german-num early-return for "no changes", and post-save row state.
+// ---------------------------------------------------------------------------
+
+import toastMod from 'react-hot-toast';
+const toastSuccessMock = (toastMod as unknown as { success: ReturnType<typeof vi.fn> }).success;
+const toastErrorMock = (toastMod as unknown as { error: ReturnType<typeof vi.fn> }).error;
+
+describe('Vorlagen — extended coverage', () => {
+  beforeEach(() => {
+    toastSuccessMock.mockClear();
+    toastErrorMock.mockClear();
+  });
+
+  test('templates render in the order returned by the API (no client-side re-sort)', async () => {
+    // Provide a mixed order — high useCount LAST, freshest lastUsedAt FIRST,
+    // alphabetically reversed — to assert that the component does not sort.
+    listMock.mockResolvedValue({
+      templates: [
+        tpl({ id: 'z-newest', shortText: 'Zementarbeiten', useCount: 1, lastUsedAt: '2026-05-22T00:00:00Z' }),
+        tpl({ id: 'a-popular', shortText: 'Abbrucharbeiten', useCount: 99, lastUsedAt: '2026-01-01T00:00:00Z' }),
+        tpl({ id: 'm-unused', shortText: 'Mauerwerk', useCount: 0, lastUsedAt: null }),
+      ],
+    });
+    renderVorlagen();
+    await waitFor(() => expect(screen.getByText('Zementarbeiten')).toBeTruthy());
+    const rows = document.querySelectorAll('tbody tr');
+    // Three rows in exactly the API-provided order.
+    expect(rows).toHaveLength(3);
+    expect(rows[0].textContent).toContain('Zementarbeiten');
+    expect(rows[1].textContent).toContain('Abbrucharbeiten');
+    expect(rows[2].textContent).toContain('Mauerwerk');
+  });
+
+  test('after save, the row reflects the updated values from the api response (no refetch)', async () => {
+    listMock.mockResolvedValue({
+      templates: [tpl({ id: 'a', shortText: 'Bodenaushub', defaultMaterialCost: 12.5 })],
+    });
+    updateMock.mockResolvedValue(
+      tpl({ id: 'a', shortText: 'Bodenaushub', defaultMaterialCost: 99.0 }),
+    );
+    renderVorlagen();
+    await waitFor(() => expect(screen.getByText('Bodenaushub')).toBeTruthy());
+    fireEvent.click(screen.getByText('Bodenaushub').closest('tr')!);
+    const matInput = screen.getByDisplayValue('12.5') as HTMLInputElement;
+    fireEvent.change(matInput, { target: { value: '99' } });
+    fireEvent.click(screen.getByLabelText('Speichern'));
+    await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(1));
+    // formatEUR renders "99,00 €" — the new value is visible in the view row.
+    await waitFor(() => expect(screen.getByText(/99,00/)).toBeTruthy());
+    // list() must have been called only once (initial mount, no refetch).
+    expect(listMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('save → setEditing(null): the row is back in view mode after save', async () => {
+    listMock.mockResolvedValue({ templates: [tpl({ id: 'a' })] });
+    updateMock.mockResolvedValue(tpl({ id: 'a', shortText: 'Bodenaushub neu' }));
+    renderVorlagen();
+    await waitFor(() => expect(screen.getByText('Bodenaushub')).toBeTruthy());
+    fireEvent.click(screen.getByText('Bodenaushub').closest('tr')!);
+    // Sanity — we're in edit mode now.
+    expect(screen.getByDisplayValue('Bodenaushub')).toBeTruthy();
+    const shortInput = screen.getByDisplayValue('Bodenaushub') as HTMLInputElement;
+    fireEvent.change(shortInput, { target: { value: 'Bodenaushub neu' } });
+    fireEvent.click(screen.getByLabelText('Speichern'));
+    await waitFor(() => expect(updateMock).toHaveBeenCalled());
+    // Edit row is gone — the Speichern button no longer exists.
+    await waitFor(() => expect(screen.queryByLabelText('Speichern')).toBeNull());
+    // View row shows the new text.
+    expect(screen.getByText('Bodenaushub neu')).toBeTruthy();
+  });
+
+  test('partial edit: changing only OZ sends update({oz: "1.20"}) with no other fields', async () => {
+    listMock.mockResolvedValue({
+      templates: [tpl({ id: 'a', oz: '1.10', shortText: 'Bodenaushub', defaultMaterialCost: 12.5 })],
+    });
+    updateMock.mockResolvedValue(tpl({ id: 'a', oz: '1.20' }));
+    renderVorlagen();
+    await waitFor(() => expect(screen.getByText('Bodenaushub')).toBeTruthy());
+    fireEvent.click(screen.getByText('Bodenaushub').closest('tr')!);
+    const ozInput = screen.getByDisplayValue('1.10') as HTMLInputElement;
+    fireEvent.change(ozInput, { target: { value: '1.20' } });
+    fireEvent.click(screen.getByLabelText('Speichern'));
+    await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(1));
+    expect(updateMock).toHaveBeenCalledWith('a', { oz: '1.20' });
+  });
+
+  test('partial edit: changing only time-minutes sends update({defaultTimeMinutes: N}) with no other fields', async () => {
+    listMock.mockResolvedValue({
+      templates: [tpl({ id: 'a', defaultTimeMinutes: 30 })],
+    });
+    updateMock.mockResolvedValue(tpl({ id: 'a', defaultTimeMinutes: 45 }));
+    renderVorlagen();
+    await waitFor(() => expect(screen.getByText('Bodenaushub')).toBeTruthy());
+    fireEvent.click(screen.getByText('Bodenaushub').closest('tr')!);
+    const minInput = screen.getByDisplayValue('30') as HTMLInputElement;
+    fireEvent.change(minInput, { target: { value: '45' } });
+    fireEvent.click(screen.getByLabelText('Speichern'));
+    await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(1));
+    expect(updateMock).toHaveBeenCalledWith('a', { defaultTimeMinutes: 45 });
+  });
+
+  test('multiple sequential edits: edit row A → save → edit row B → save (no state leaks)', async () => {
+    listMock.mockResolvedValue({
+      templates: [
+        tpl({ id: 'a', shortText: 'Bodenaushub', defaultMaterialCost: 12.5 }),
+        // Distinct field values so getByDisplayValue resolves unambiguously.
+        tpl({
+          id: 'b',
+          shortText: 'Pflasterarbeiten',
+          oz: '2.10',
+          unit: 'm²',
+          defaultMaterialCost: 77,
+          defaultNuCost: 5,
+          defaultTimeMinutes: 42,
+        }),
+      ],
+    });
+    updateMock
+      .mockResolvedValueOnce(tpl({ id: 'a', shortText: 'Bodenaushub', defaultMaterialCost: 13.0 }))
+      .mockResolvedValueOnce(
+        tpl({ id: 'b', shortText: 'Pflasterarbeiten', oz: '2.10', unit: 'm²', defaultMaterialCost: 88 }),
+      );
+    renderVorlagen();
+    await waitFor(() => expect(screen.getByText('Bodenaushub')).toBeTruthy());
+
+    // Edit row A.
+    fireEvent.click(screen.getByText('Bodenaushub').closest('tr')!);
+    const matA = screen.getByDisplayValue('12.5') as HTMLInputElement;
+    fireEvent.change(matA, { target: { value: '13' } });
+    fireEvent.click(screen.getByLabelText('Speichern'));
+    await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(1));
+    expect(updateMock).toHaveBeenNthCalledWith(1, 'a', { defaultMaterialCost: 13 });
+
+    // Edit row B.
+    await waitFor(() => expect(screen.getByText('Pflasterarbeiten')).toBeTruthy());
+    fireEvent.click(screen.getByText('Pflasterarbeiten').closest('tr')!);
+    const matB = screen.getByDisplayValue('77') as HTMLInputElement;
+    fireEvent.change(matB, { target: { value: '88' } });
+    fireEvent.click(screen.getByLabelText('Speichern'));
+    await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(2));
+    // The diff for B must only contain its OWN delta — no leftover field from A.
+    expect(updateMock).toHaveBeenNthCalledWith(2, 'b', { defaultMaterialCost: 88 });
+  });
+
+  test('search clears when query is empty (all rows visible again)', async () => {
+    listMock.mockResolvedValue({
+      templates: [
+        tpl({ id: 'a', shortText: 'Bodenaushub' }),
+        tpl({ id: 'b', shortText: 'Pflasterarbeiten' }),
+        tpl({ id: 'c', shortText: 'Estrich' }),
+      ],
+    });
+    renderVorlagen();
+    await waitFor(() => expect(screen.getByText('Bodenaushub')).toBeTruthy());
+    const input = screen.getByPlaceholderText(/Suchen/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'pflaster' } });
+    expect(screen.queryByText('Bodenaushub')).toBeNull();
+    // Clear the search.
+    fireEvent.change(input, { target: { value: '' } });
+    expect(screen.getByText('Bodenaushub')).toBeTruthy();
+    expect(screen.getByText('Pflasterarbeiten')).toBeTruthy();
+    expect(screen.getByText('Estrich')).toBeTruthy();
+  });
+
+  test('search by oz string ("1.20") filters the table', async () => {
+    listMock.mockResolvedValue({
+      templates: [
+        tpl({ id: 'a', oz: '1.10', shortText: 'Bodenaushub' }),
+        tpl({ id: 'b', oz: '1.20', shortText: 'Pflasterarbeiten' }),
+        tpl({ id: 'c', oz: '2.10', shortText: 'Estrich' }),
+      ],
+    });
+    renderVorlagen();
+    await waitFor(() => expect(screen.getByText('Bodenaushub')).toBeTruthy());
+    const input = screen.getByPlaceholderText(/Suchen/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '1.20' } });
+    expect(screen.queryByText('Bodenaushub')).toBeNull();
+    expect(screen.queryByText('Estrich')).toBeNull();
+    expect(screen.getByText('Pflasterarbeiten')).toBeTruthy();
+  });
+
+  test('search by unit ("m²") filters the table', async () => {
+    listMock.mockResolvedValue({
+      templates: [
+        tpl({ id: 'a', unit: 'm³', shortText: 'Bodenaushub' }),
+        tpl({ id: 'b', unit: 'm²', shortText: 'Pflasterarbeiten' }),
+        tpl({ id: 'c', unit: 'm³', shortText: 'Estrich' }),
+      ],
+    });
+    renderVorlagen();
+    await waitFor(() => expect(screen.getByText('Bodenaushub')).toBeTruthy());
+    const input = screen.getByPlaceholderText(/Suchen/i) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'm²' } });
+    expect(screen.queryByText('Bodenaushub')).toBeNull();
+    expect(screen.queryByText('Estrich')).toBeNull();
+    expect(screen.getByText('Pflasterarbeiten')).toBeTruthy();
+  });
+
+  test('toast.success is called after a successful delete', async () => {
+    listMock.mockResolvedValue({ templates: [tpl({ id: 'a' })] });
+    deleteMock.mockResolvedValue({ ok: true });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderVorlagen();
+    await waitFor(() => expect(screen.getByText('Bodenaushub')).toBeTruthy());
+    fireEvent.click(screen.getByLabelText(/Vorlage löschen/i));
+    await waitFor(() => expect(deleteMock).toHaveBeenCalled());
+    await waitFor(() => expect(toastSuccessMock).toHaveBeenCalledWith('Vorlage gelöscht.'));
+  });
+
+  test('toast.error is called when api.templates.delete rejects', async () => {
+    listMock.mockResolvedValue({ templates: [tpl({ id: 'a' })] });
+    deleteMock.mockRejectedValue(new Error('boom'));
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderVorlagen();
+    await waitFor(() => expect(screen.getByText('Bodenaushub')).toBeTruthy());
+    fireEvent.click(screen.getByLabelText(/Vorlage löschen/i));
+    await waitFor(() => expect(deleteMock).toHaveBeenCalled());
+    await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith('Löschen fehlgeschlagen.'));
+    // Row must still be present (delete failed, no optimistic removal).
+    expect(screen.getByText('Bodenaushub')).toBeTruthy();
+  });
+
+  test('after delete, the row is removed from the table without a refetch', async () => {
+    listMock.mockResolvedValue({
+      templates: [
+        tpl({ id: 'a', shortText: 'Bodenaushub' }),
+        tpl({ id: 'b', shortText: 'Pflasterarbeiten' }),
+      ],
+    });
+    deleteMock.mockResolvedValue({ ok: true });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderVorlagen();
+    await waitFor(() => expect(screen.getByText('Bodenaushub')).toBeTruthy());
+    expect(screen.getByText('Pflasterarbeiten')).toBeTruthy();
+    // Find the delete button on row A (the first one) and click it.
+    const deleteButtons = screen.getAllByLabelText(/Vorlage löschen/i);
+    fireEvent.click(deleteButtons[0]);
+    await waitFor(() => expect(screen.queryByText('Bodenaushub')).toBeNull());
+    // Row B is still there.
+    expect(screen.getByText('Pflasterarbeiten')).toBeTruthy();
+    // No refetch — list() called exactly once on mount.
+    expect(listMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('save with NO changes early-returns (no api call, exits edit mode)', async () => {
+    listMock.mockResolvedValue({ templates: [tpl({ id: 'a' })] });
+    renderVorlagen();
+    await waitFor(() => expect(screen.getByText('Bodenaushub')).toBeTruthy());
+    fireEvent.click(screen.getByText('Bodenaushub').closest('tr')!);
+    expect(screen.getByDisplayValue('Bodenaushub')).toBeTruthy();
+    // Click Speichern without touching any field.
+    fireEvent.click(screen.getByLabelText('Speichern'));
+    // No PATCH call (Object.keys(patch).length === 0 hits the early return).
+    expect(updateMock).not.toHaveBeenCalled();
+    // Out of edit mode — view row is back.
+    expect(screen.queryByDisplayValue('Bodenaushub')).toBeNull();
+    expect(screen.getByText('Bodenaushub')).toBeTruthy();
+  });
+
+  test('parseGermanNum edge case: "1.234,56" (thousands separator) parses to 1234.56', async () => {
+    listMock.mockResolvedValue({
+      templates: [tpl({ id: 'a', defaultMaterialCost: 10 })],
+    });
+    updateMock.mockResolvedValue(tpl({ id: 'a', defaultMaterialCost: 1234.56 }));
+    renderVorlagen();
+    await waitFor(() => expect(screen.getByText('Bodenaushub')).toBeTruthy());
+    fireEvent.click(screen.getByText('Bodenaushub').closest('tr')!);
+    const matInput = screen.getByDisplayValue('10') as HTMLInputElement;
+    fireEvent.change(matInput, { target: { value: '1.234,56' } });
+    fireEvent.click(screen.getByLabelText('Speichern'));
+    await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(1));
+    expect(updateMock).toHaveBeenCalledWith('a', { defaultMaterialCost: 1234.56 });
+  });
+});
