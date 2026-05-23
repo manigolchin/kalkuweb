@@ -389,6 +389,26 @@ function EmptyState() {
 function parseGermanNum(raw: string): number | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
-  const n = parseFloat(trimmed.replace(/\./g, '').replace(',', '.'));
+  // Disambiguate decimal separator:
+  //  - "1.234,56"  → DE: dots are thousands, comma is decimal → 1234.56
+  //  - "12,5"      → DE: comma is decimal → 12.5
+  //  - "12.5"      → US/JS-native (e.g. `String(12.5)`): dot is decimal → 12.5
+  //  - "1,234.56"  → US: comma is thousands, dot is decimal → 1234.56
+  // Rule: if BOTH separators are present, the rightmost is the decimal.
+  // If only one is present, treat it as the decimal point.
+  const hasComma = trimmed.includes(',');
+  const hasDot = trimmed.includes('.');
+  let normalised: string;
+  if (hasComma && hasDot) {
+    const decimalIsComma = trimmed.lastIndexOf(',') > trimmed.lastIndexOf('.');
+    normalised = decimalIsComma
+      ? trimmed.replace(/\./g, '').replace(',', '.')
+      : trimmed.replace(/,/g, '');
+  } else if (hasComma) {
+    normalised = trimmed.replace(',', '.');
+  } else {
+    normalised = trimmed;
+  }
+  const n = parseFloat(normalised);
   return Number.isFinite(n) ? n : null;
 }

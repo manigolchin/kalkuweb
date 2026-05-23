@@ -20,6 +20,7 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { Helmet } from 'react-helmet-async';
 import { api, ApiError, VersionConflictError } from '@/lib/api';
+import { useUnsavedWarning } from '@/lib/useUnsavedWarning';
 import { Breadcrumb } from '@/pages/panel/ui';
 import { calcTotals, calculatePosition, formatEUR, formatNum, recalcAll } from './calc';
 import type {
@@ -37,7 +38,9 @@ export default function ProjectActuals() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const updatedAtRef = useRef<number>(0);
+  useUnsavedWarning(dirty);
 
   useEffect(() => {
     let alive = true;
@@ -64,6 +67,7 @@ export default function ProjectActuals() {
   }, [id]);
 
   const updateActual = useCallback((posId: string, patch: Partial<PositionActual>) => {
+    setDirty(true);
     setActuals((prev) => {
       const existing = prev[posId] || {};
       const next: PositionActual = { ...existing, ...patch, recordedAt: new Date().toISOString() };
@@ -93,6 +97,7 @@ export default function ProjectActuals() {
       );
       updatedAtRef.current = new Date(updated.updatedAt).getTime();
       setProject((p) => (p ? { ...p, ...updated } : p));
+      setDirty(false);
       toast.success('Ist-Werte gespeichert.');
     } catch (err) {
       if (err instanceof VersionConflictError) {
@@ -195,8 +200,12 @@ export default function ProjectActuals() {
         <SummaryTile
           label="Marge-Delta"
           value={`${summary.delta >= 0 ? '+' : ''}${formatEUR(summary.delta)}`}
-          tone={summary.delta >= 0 ? 'positive' : 'negative'}
-          sub={summary.delta >= 0 ? 'Über Plan' : 'Unter Plan'}
+          // REAL BUG: previous logic was inverted — delta>0 means Ist > Soll
+          // (i.e. you spent MORE than planned, margin shrank). That should be
+          // negative/rose, not positive/emerald. The per-row Δ cell uses this
+          // (rose when delta>0); the tile now matches.
+          tone={summary.delta > 0 ? 'negative' : summary.delta < 0 ? 'positive' : undefined}
+          sub={summary.delta > 0 ? 'Überzogen' : summary.delta < 0 ? 'Eingespart' : 'Punktlandung'}
         />
         <SummaryTile
           label="Aufwand Soll → Ist (erfasst)"

@@ -59,6 +59,16 @@ export default function SubmitValidatorDialog({ open, onClose, positions, projec
     };
   }, [open, onClose]);
 
+  // SPA navigation can swap the parent project (and thus `positions` +
+  // `projectName`) without unmounting this dialog. Clear stale result so the
+  // user never sees Project A's validation paired with Project B's positions.
+  useEffect(() => {
+    setPhase('drop');
+    setTender(null);
+    setResult(null);
+    setError(null);
+  }, [projectName]);
+
   async function handleFile(file: File) {
     setError(null);
     setPhase('parsing');

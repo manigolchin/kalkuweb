@@ -22,6 +22,7 @@ const { sharesRoute } = await import('../src/routes/shares.js');
 const { signToken, COOKIE_NAME } = await import('../src/lib/auth.js');
 const { buildShareSnapshot, snapshotHash } = await import('../src/lib/snapshot.js');
 const { nanoid } = await import('nanoid');
+const { eq } = await import('drizzle-orm');
 
 import type { Position, CalcParams } from '../src/schema.js';
 
@@ -267,5 +268,261 @@ describe('GET /projects/:id/snapshots/diff', () => {
     const body = (await res.json()) as { diff: { delta: number; oldTotalNetto: number; newTotalNetto: number } };
     assert.ok(body.diff.delta < 0, `delta should be negative, got ${body.diff.delta}`);
     assert.equal(body.diff.delta, body.diff.newTotalNetto - body.diff.oldTotalNetto);
+  });
+
+  /* ─── Extended coverage ──────────────────────────────────────────── */
+
+  test('400 — malformed share ids: empty string for from', async () => {
+    const { ownerId, projectId, toShareId } = await seedProjectWithTwoSnapshots({
+      positionsBefore: [pos({ id: 'a' })],
+      positionsAfter: [pos({ id: 'a', quantity: 2 })],
+    });
+    const headers = await ownerCookie(ownerId, `${ownerId}@test.local`);
+    const res = await app.request(
+      `/api/projects/${projectId}/snapshots/diff?from=&to=${toShareId}`,
+      { headers },
+    );
+    // Empty string is falsy → caught by the missing_from_or_to branch.
+    assert.equal(res.status, 400);
+    const body = (await res.json()) as { error: string };
+    assert.equal(body.error, 'missing_from_or_to');
+  });
+
+  test('400 — malformed share ids: both empty strings', async () => {
+    const { ownerId, projectId } = await seedProjectWithTwoSnapshots({
+      positionsBefore: [pos({ id: 'a' })],
+      positionsAfter: [pos({ id: 'a' })],
+    });
+    const headers = await ownerCookie(ownerId, `${ownerId}@test.local`);
+    const res = await app.request(
+      `/api/projects/${projectId}/snapshots/diff?from=&to=`,
+      { headers },
+    );
+    assert.equal(res.status, 400);
+    const body = (await res.json()) as { error: string };
+    assert.equal(body.error, 'missing_from_or_to');
+  });
+
+  test('200 — revoked share as FROM is still diffable (route does NOT block revoked)', async () => {
+    // Documents current behaviour: the diff route compares frozen snapshots
+    // and does not check share.revokedAt — revocation only hides the public
+    // link from customers; the owner can still inspect a revoked snapshot.
+    // If product policy ever requires "no diffs on revoked", switch the
+    // expectation to a 4xx error.
+    const { ownerId, projectId, fromShareId, toShareId } = await seedProjectWithTwoSnapshots({
+      positionsBefore: [pos({ id: 'a', quantity: 1 })],
+      positionsAfter: [pos({ id: 'a', quantity: 5 })],
+    });
+    // Revoke the FROM share.
+    await db
+      .update(schema.shares)
+      .set({ revokedAt: new Date() })
+      .where(eq(schema.shares.id, fromShareId));
+
+    const headers = await ownerCookie(ownerId, `${ownerId}@test.local`);
+    const res = await app.request(
+      `/api/projects/${projectId}/snapshots/diff?from=${fromShareId}&to=${toShareId}`,
+      { headers },
+    );
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { diff: { changed: unknown[] } };
+    assert.equal(body.diff.changed.length, 1);
+  });
+
+  test('200 — revoked share as TO is still diffable (same documented behaviour)', async () => {
+    const { ownerId, projectId, fromShareId, toShareId } = await seedProjectWithTwoSnapshots({
+      positionsBefore: [pos({ id: 'a', quantity: 1 })],
+      positionsAfter: [pos({ id: 'a', quantity: 5 })],
+    });
+    await db
+      .update(schema.shares)
+      .set({ revokedAt: new Date() })
+      .where(eq(schema.shares.id, toShareId));
+
+    const headers = await ownerCookie(ownerId, `${ownerId}@test.local`);
+    const res = await app.request(
+      `/api/projects/${projectId}/snapshots/diff?from=${fromShareId}&to=${toShareId}`,
+      { headers },
+    );
+    assert.equal(res.status, 200);
+  });
+
+  test('409 snapshot_missing — share has null snapshotData (legacy row)', async () => {
+    const { ownerId, projectId, fromShareId, toShareId } = await seedProjectWithTwoSnapshots({
+      positionsBefore: [pos({ id: 'a' })],
+      positionsAfter: [pos({ id: 'a', quantity: 2 })],
+    });
+    // Simulate a legacy share row (pre-snapshot-column).
+    await db
+      .update(schema.shares)
+      .set({ snapshotData: null })
+      .where(eq(schema.shares.id, fromShareId));
+
+    const headers = await ownerCookie(ownerId, `${ownerId}@test.local`);
+    const res = await app.request(
+      `/api/projects/${projectId}/snapshots/diff?from=${fromShareId}&to=${toShareId}`,
+      { headers },
+    );
+    assert.equal(res.status, 409);
+    const body = (await res.json()) as { error: string };
+    assert.equal(body.error, 'snapshot_missing');
+  });
+
+  test('all positions unchanged → added/removed/changed empty, unchanged populated', async () => {
+    const same = [
+      pos({ id: 'a', oz: '1.1', shortText: 'X', quantity: 3, materialCost: 50, timeMinutes: 30 }),
+      pos({ id: 'b', oz: '1.2', shortText: 'Y', quantity: 2, materialCost: 10, timeMinutes: 5 }),
+    ];
+    const { ownerId, projectId, fromShareId, toShareId } = await seedProjectWithTwoSnapshots({
+      positionsBefore: same,
+      positionsAfter: same.map((p) => ({ ...p })), // structural copy
+    });
+    const headers = await ownerCookie(ownerId, `${ownerId}@test.local`);
+    const res = await app.request(
+      `/api/projects/${projectId}/snapshots/diff?from=${fromShareId}&to=${toShareId}`,
+      { headers },
+    );
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
+      diff: { added: unknown[]; removed: unknown[]; changed: unknown[]; unchanged: unknown[]; delta: number };
+    };
+    assert.equal(body.diff.added.length, 0);
+    assert.equal(body.diff.removed.length, 0);
+    assert.equal(body.diff.changed.length, 0);
+    assert.equal(body.diff.unchanged.length, 2);
+    assert.equal(body.diff.delta, 0);
+  });
+
+  test('from has 0 positions, to has N → all N in added, 0 elsewhere', async () => {
+    const after = [
+      pos({ id: 'x1', oz: '1', shortText: 'one' }),
+      pos({ id: 'x2', oz: '2', shortText: 'two' }),
+      pos({ id: 'x3', oz: '3', shortText: 'three' }),
+    ];
+    const { ownerId, projectId, fromShareId, toShareId } = await seedProjectWithTwoSnapshots({
+      positionsBefore: [],
+      positionsAfter: after,
+    });
+    const headers = await ownerCookie(ownerId, `${ownerId}@test.local`);
+    const res = await app.request(
+      `/api/projects/${projectId}/snapshots/diff?from=${fromShareId}&to=${toShareId}`,
+      { headers },
+    );
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
+      diff: { added: { id: string }[]; removed: unknown[]; changed: unknown[]; unchanged: unknown[]; delta: number };
+    };
+    assert.equal(body.diff.added.length, 3);
+    assert.equal(body.diff.removed.length, 0);
+    assert.equal(body.diff.changed.length, 0);
+    assert.equal(body.diff.unchanged.length, 0);
+    const ids = body.diff.added.map((p) => p.id).sort();
+    assert.deepEqual(ids, ['x1', 'x2', 'x3']);
+    // Going from empty to populated → delta should be positive.
+    assert.ok(body.diff.delta > 0, `delta should be positive, got ${body.diff.delta}`);
+  });
+
+  test('price-only change → changed.fields includes ep and gp (not quantity/unit)', async () => {
+    // Only materialCost changes → EP and GP change, quantity and unit do not.
+    const { ownerId, projectId, fromShareId, toShareId } = await seedProjectWithTwoSnapshots({
+      positionsBefore: [pos({ id: 'a', quantity: 4, unit: 'm²', materialCost: 100, timeMinutes: 0, nuCost: 0 })],
+      positionsAfter:  [pos({ id: 'a', quantity: 4, unit: 'm²', materialCost: 200, timeMinutes: 0, nuCost: 0 })],
+    });
+    const headers = await ownerCookie(ownerId, `${ownerId}@test.local`);
+    const res = await app.request(
+      `/api/projects/${projectId}/snapshots/diff?from=${fromShareId}&to=${toShareId}`,
+      { headers },
+    );
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
+      diff: { changed: Array<{ fields: string[] }> };
+    };
+    assert.equal(body.diff.changed.length, 1);
+    const fields = body.diff.changed[0].fields;
+    assert.ok(fields.includes('ep'), `expected fields to include 'ep', got ${JSON.stringify(fields)}`);
+    assert.ok(fields.includes('gp'), `expected fields to include 'gp', got ${JSON.stringify(fields)}`);
+    assert.ok(!fields.includes('quantity'), `quantity should NOT be in fields, got ${JSON.stringify(fields)}`);
+    assert.ok(!fields.includes('unit'), `unit should NOT be in fields, got ${JSON.stringify(fields)}`);
+  });
+
+  test('delta equals sum of (after.gp - before.gp) over all changed positions (within tolerance)', async () => {
+    // Three changed positions, varied quantity bumps. Compute the expected
+    // delta from the snapshot's frozen gp values and check it matches.
+    const before = [
+      pos({ id: 'p1', quantity: 2, materialCost: 100, timeMinutes: 0, nuCost: 0 }),
+      pos({ id: 'p2', quantity: 5, materialCost: 50,  timeMinutes: 0, nuCost: 0 }),
+      pos({ id: 'p3', quantity: 1, materialCost: 200, timeMinutes: 0, nuCost: 0 }),
+    ];
+    const after = [
+      pos({ id: 'p1', quantity: 3, materialCost: 100, timeMinutes: 0, nuCost: 0 }),
+      pos({ id: 'p2', quantity: 5, materialCost: 75,  timeMinutes: 0, nuCost: 0 }),
+      pos({ id: 'p3', quantity: 4, materialCost: 200, timeMinutes: 0, nuCost: 0 }),
+    ];
+    const { ownerId, projectId, fromShareId, toShareId } = await seedProjectWithTwoSnapshots({
+      positionsBefore: before,
+      positionsAfter: after,
+    });
+    const headers = await ownerCookie(ownerId, `${ownerId}@test.local`);
+    const res = await app.request(
+      `/api/projects/${projectId}/snapshots/diff?from=${fromShareId}&to=${toShareId}`,
+      { headers },
+    );
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
+      diff: {
+        changed: Array<{ before: { gp: number }; after: { gp: number } }>;
+        unchanged: Array<{ gp: number }>;
+        delta: number;
+        oldTotalNetto: number;
+        newTotalNetto: number;
+      };
+    };
+    // Sum of (after.gp - before.gp) across changed PLUS 0 for unchanged
+    // should equal the total delta (within float tolerance).
+    const sumChanged = body.diff.changed.reduce((s, c) => s + (c.after.gp - c.before.gp), 0);
+    assert.ok(
+      Math.abs(sumChanged - body.diff.delta) < 1e-6,
+      `sum of changed gp deltas (${sumChanged}) should match diff.delta (${body.diff.delta})`,
+    );
+    // Sanity: delta == newTotal - oldTotal.
+    assert.ok(Math.abs(body.diff.delta - (body.diff.newTotalNetto - body.diff.oldTotalNetto)) < 1e-6);
+  });
+
+  test('large snapshots — 60 positions on each side compute correctly', async () => {
+    // 50 unchanged, 5 changed, 5 removed-from-before / 5 added-in-after.
+    const before: ReturnType<typeof pos>[] = [];
+    const after: ReturnType<typeof pos>[] = [];
+    for (let i = 0; i < 50; i++) {
+      const p = pos({ id: `u${i}`, oz: `${i}`, quantity: 1, materialCost: 10, timeMinutes: 0, nuCost: 0 });
+      before.push(p);
+      after.push({ ...p });
+    }
+    for (let i = 0; i < 5; i++) {
+      before.push(pos({ id: `c${i}`, quantity: 1, materialCost: 100, timeMinutes: 0, nuCost: 0 }));
+      after.push(pos({ id: `c${i}`, quantity: 2, materialCost: 100, timeMinutes: 0, nuCost: 0 }));
+    }
+    for (let i = 0; i < 5; i++) {
+      before.push(pos({ id: `r${i}` }));
+      after.push(pos({ id: `n${i}` }));
+    }
+    // before: 60 (50 unchanged + 5 changed + 5 removed)
+    // after:  60 (50 unchanged + 5 changed + 5 added)
+    const { ownerId, projectId, fromShareId, toShareId } = await seedProjectWithTwoSnapshots({
+      positionsBefore: before,
+      positionsAfter: after,
+    });
+    const headers = await ownerCookie(ownerId, `${ownerId}@test.local`);
+    const res = await app.request(
+      `/api/projects/${projectId}/snapshots/diff?from=${fromShareId}&to=${toShareId}`,
+      { headers },
+    );
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
+      diff: { added: unknown[]; removed: unknown[]; changed: unknown[]; unchanged: unknown[] };
+    };
+    assert.equal(body.diff.unchanged.length, 50);
+    assert.equal(body.diff.changed.length, 5);
+    assert.equal(body.diff.added.length, 5);
+    assert.equal(body.diff.removed.length, 5);
   });
 });

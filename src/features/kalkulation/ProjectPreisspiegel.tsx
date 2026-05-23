@@ -25,6 +25,7 @@ import toast from 'react-hot-toast';
 import { Helmet } from 'react-helmet-async';
 import { nanoid } from 'nanoid';
 import { api, ApiError, VersionConflictError } from '@/lib/api';
+import { useUnsavedWarning } from '@/lib/useUnsavedWarning';
 import { Breadcrumb } from '@/pages/panel/ui';
 import { formatEUR, formatNum, recalcAll } from './calc';
 import type {
@@ -43,7 +44,9 @@ export default function ProjectPreisspiegel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const updatedAtRef = useRef<number>(0);
+  useUnsavedWarning(dirty);
 
   useEffect(() => {
     let alive = true;
@@ -70,6 +73,7 @@ export default function ProjectPreisspiegel() {
   }, [id]);
 
   const addSource = useCallback(() => {
+    setDirty(true);
     setSources((prev) => [
       ...prev,
       {
@@ -82,15 +86,18 @@ export default function ProjectPreisspiegel() {
   }, []);
 
   const renameSource = useCallback((sid: string, name: string) => {
+    setDirty(true);
     setSources((prev) => prev.map((s) => (s.id === sid ? { ...s, name } : s)));
   }, []);
 
   const removeSource = useCallback((sid: string) => {
     if (!window.confirm('Diesen Anbieter und alle Preise entfernen?')) return;
+    setDirty(true);
     setSources((prev) => prev.filter((s) => s.id !== sid));
   }, []);
 
   const updateQuote = useCallback((sid: string, posId: string, patch: Partial<NuQuote>) => {
+    setDirty(true);
     setSources((prev) =>
       prev.map((s) => {
         if (s.id !== sid) return s;
@@ -124,6 +131,7 @@ export default function ProjectPreisspiegel() {
           : p,
       );
       setData({ ...data, positions: recalcAll(patched, data.calcParams) });
+      setDirty(true);
       toast.success(`Preis von "${src.name}" auf ${position.oz || position.shortText} übernommen.`);
     },
     [data, sources],
@@ -140,6 +148,7 @@ export default function ProjectPreisspiegel() {
       );
       updatedAtRef.current = new Date(updated.updatedAt).getTime();
       setProject((p) => (p ? { ...p, ...updated } : p));
+      setDirty(false);
       toast.success('Preisspiegel gespeichert.');
     } catch (err) {
       if (err instanceof VersionConflictError) {

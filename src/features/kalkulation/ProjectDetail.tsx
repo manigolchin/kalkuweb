@@ -513,8 +513,13 @@ export default function ProjectDetail() {
         onClose={() => setShowImport(false)}
         existingCount={data.positions.length}
         onImport={(rows, mode) => {
-          const merged = mode === 'append' ? [...data.positions, ...rows] : rows;
-          updatePositions(merged);
+          if (mode === 'append') {
+            updatePositions([...data.positions, ...rows]);
+          } else {
+            // Replace: positions get new ids, so any `actuals` / `nuQuotes`
+            // keyed by old ids would become orphan garbage. Drop them.
+            setData({ ...data, positions: rows, actuals: undefined, nuQuotes: undefined });
+          }
           toast.success(
             mode === 'append'
               ? `${rows.length} Position${rows.length === 1 ? '' : 'en'} hinzugefügt.`
@@ -531,10 +536,14 @@ export default function ProjectDetail() {
           // if they differ (most useful when the user re-imports a freshly
           // edited template).
           if (mode === 'replace') {
+            // Drop actuals + nuQuotes on replace — they're keyed by old
+            // position ids which no longer exist after a template overwrite.
             setData({
               ...parsed.project,
               positions: rows,
               notes: data.notes,
+              actuals: undefined,
+              nuQuotes: undefined,
             });
           } else {
             setData({
@@ -557,7 +566,7 @@ export default function ProjectDetail() {
   );
 }
 
-function ToolsMenu({
+export function ToolsMenu({
   projectId,
   hasMultipleSnapshots,
   onValidate,

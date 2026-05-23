@@ -840,6 +840,76 @@ describe('routes/projects — PUT /projects/:id (updates + optimistic lock)', ()
     assert.equal(r.status, 200);
   });
 
+  test('REGRESSION 2026-05-23: actuals + nuQuotes survive PUT round-trip (previously stripped → data loss)', async () => {
+    const u = await seedUser();
+    const cookie = await makeAuthCookie(u.id, u.email);
+    const pid = await seedProject(u.id);
+    const dataWithFeatures = {
+      ...defaultProjectData({ name: 'Nachkalk + Preisspiegel project' }),
+      actuals: {
+        'pos-1': { hours: 8.5, materialCost: 1240.5, nuCost: 0, recordedAt: '2026-05-23T10:00:00Z' },
+        'pos-2': { note: 'Slow Lieferung — 3 Tage verspätet', recordedAt: '2026-05-23T10:30:00Z' },
+      },
+      nuQuotes: [
+        {
+          id: 'src-a',
+          name: 'Müller Tiefbau GmbH',
+          note: 'Saarbrücken',
+          receivedAt: '2026-05-22',
+          quotes: {
+            'pos-1': { materialCost: 14.5, nuCost: 0 },
+            'pos-2': { materialCost: 22.0, nuCost: 3.5, note: 'inkl. Anlieferung' },
+          },
+        },
+      ],
+    } as schema.ProjectData;
+    const r = await projectsApp.request(`/projects/${pid}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ data: dataWithFeatures }),
+    });
+    assert.equal(r.status, 200);
+    // Read back from DB to confirm persistence (not just response echo).
+    const row = await db.query.projects.findFirst({ where: eq(schema.projects.id, pid) });
+    assert.ok(row);
+    const persisted = row!.data as typeof dataWithFeatures;
+    assert.ok(persisted.actuals, 'actuals must survive PUT (regression: zod was stripping it)');
+    assert.equal(persisted.actuals['pos-1'].hours, 8.5);
+    assert.equal(persisted.actuals['pos-1'].materialCost, 1240.5);
+    assert.equal(persisted.actuals['pos-2'].note, 'Slow Lieferung — 3 Tage verspätet');
+    assert.ok(persisted.nuQuotes, 'nuQuotes must survive PUT');
+    assert.equal(persisted.nuQuotes!.length, 1);
+    assert.equal(persisted.nuQuotes![0].name, 'Müller Tiefbau GmbH');
+    assert.equal(persisted.nuQuotes![0].quotes['pos-1'].materialCost, 14.5);
+    assert.equal(persisted.nuQuotes![0].quotes['pos-2'].note, 'inkl. Anlieferung');
+  });
+
+  test('REGRESSION 2026-05-23: passthrough preserves unknown optional fields (zuschlagOriginal, headerExtras, faktoren)', async () => {
+    const u = await seedUser();
+    const cookie = await makeAuthCookie(u.id, u.email);
+    const pid = await seedProject(u.id);
+    const dataWithLegacyFields = {
+      ...defaultProjectData(),
+      // These shapes are declared on the frontend ProjectData type but NOT in
+      // projectDataSchema. Without .passthrough() they'd vanish on save.
+      zuschlagAktuell: { stoffe: 0.15, nu: 0.18 },
+      headerExtras: { someFutureField: 'data' },
+      faktoren: [{ name: 'Aushub-Faktor', einheit: 'm³', sourceCol: 'N', sourceRow: 3, raw: {} }],
+    } as schema.ProjectData;
+    const r = await projectsApp.request(`/projects/${pid}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ data: dataWithLegacyFields }),
+    });
+    assert.equal(r.status, 200);
+    const row = await db.query.projects.findFirst({ where: eq(schema.projects.id, pid) });
+    const persisted = row!.data as typeof dataWithLegacyFields;
+    assert.deepEqual(persisted.zuschlagAktuell, { stoffe: 0.15, nu: 0.18 });
+    assert.deepEqual(persisted.headerExtras, { someFutureField: 'data' });
+    assert.equal(persisted.faktoren!.length, 1);
+    assert.equal(persisted.faktoren![0].name, 'Aushub-Faktor');
+  });
+
   test('empty positions[] is allowed (not an error)', async () => {
     const u = await seedUser();
     const cookie = await makeAuthCookie(u.id, u.email);
