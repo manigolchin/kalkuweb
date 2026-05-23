@@ -34,6 +34,7 @@ const PanelSettings = lazy(() => import('@/pages/panel/PanelSettings'));
 const ProjectsList = lazy(() => import('@/features/kalkulation/ProjectsList'));
 const ProjectDetail = lazy(() => import('@/features/kalkulation/ProjectDetail'));
 const ProjectEfb = lazy(() => import('@/features/kalkulation/ProjectEfb'));
+const ProjectActuals = lazy(() => import('@/features/kalkulation/ProjectActuals'));
 const FeedbackInbox = lazy(() => import('@/features/kalkulation/FeedbackInbox'));
 const Archiv = lazy(() => import('@/features/kalkulation/Archiv'));
 const Firmen = lazy(() => import('@/pages/panel/Firmen'));
@@ -72,6 +73,7 @@ export default function App() {
             <Route index element={<ProjectsList />} />
             <Route path=":id" element={<ProjectDetail />} />
             <Route path=":id/efb" element={<ProjectEfb />} />
+            <Route path=":id/actuals" element={<ProjectActuals />} />
           </Route>
           <Route path="feedback" element={<FeedbackInbox />} />
           <Route path="archiv" element={<Archiv />} />

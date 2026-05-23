@@ -158,6 +158,23 @@ export type ProjectData = {
   }>;
   headerExtras?: HeaderExtras;
   faktoren?: FaktorEntry[];
+  /** Feature #5 — Nachkalkulation Lite. Map of position.id → actual cost.
+   *  Stored inside `data` so we don't need a new table or new backend route. */
+  actuals?: Record<string, PositionActual>;
+};
+
+/** Per-position actual / Ist costs captured after Auftragsausführung. */
+export type PositionActual = {
+  /** Actual hours worked on this position (may differ from kalkulierten Stunden). */
+  hours?: number;
+  /** Actual material cost paid (€) for this position's quantity. */
+  materialCost?: number;
+  /** Actual NU cost paid (€). */
+  nuCost?: number;
+  /** Free-text note explaining the deviation. */
+  note?: string;
+  /** ISO timestamp of last edit. */
+  recordedAt?: string;
 };
 
 export type ProjectSummary = {

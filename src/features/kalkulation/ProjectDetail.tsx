@@ -16,6 +16,7 @@ import {
   GitCompareArrows,
   ShieldCheck,
   FileText,
+  TrendingUp,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -357,6 +358,14 @@ export default function ProjectDetail() {
           >
             <FileText className="w-4 h-4" />
             EFB
+          </Link>
+          <Link
+            to={`/panel/kalkulation/${project.id}/actuals`}
+            className="btn btn-secondary flex items-center gap-2"
+            title="Nachkalkulation — Soll vs. Ist erfassen"
+          >
+            <TrendingUp className="w-4 h-4" />
+            Nachkalk
           </Link>
           <button
             onClick={() => setShowImport(true)}
