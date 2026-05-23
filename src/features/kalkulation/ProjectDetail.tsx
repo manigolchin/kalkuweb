@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   FileText,
   TrendingUp,
+  Scale,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -366,6 +367,14 @@ export default function ProjectDetail() {
           >
             <TrendingUp className="w-4 h-4" />
             Nachkalk
+          </Link>
+          <Link
+            to={`/panel/kalkulation/${project.id}/preisspiegel`}
+            className="btn btn-secondary flex items-center gap-2"
+            title="Preisspiegel — NU/Lieferant-Angebote vergleichen"
+          >
+            <Scale className="w-4 h-4" />
+            Preisspiegel
           </Link>
           <button
             onClick={() => setShowImport(true)}

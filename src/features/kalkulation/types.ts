@@ -161,6 +161,34 @@ export type ProjectData = {
   /** Feature #5 — Nachkalkulation Lite. Map of position.id → actual cost.
    *  Stored inside `data` so we don't need a new table or new backend route. */
   actuals?: Record<string, PositionActual>;
+  /** Feature #2 — Preisspiegel. Subunternehmer-Angebote nebeneinander.
+   *  Stored in the project_data JSON for the same zero-migration reason.
+   *  Each `NuQuoteSource` is one NU/Lieferant; each `quotes` map carries
+   *  the position-by-position prices that source quoted. */
+  nuQuotes?: NuQuoteSource[];
+};
+
+/** One subunternehmer / Lieferant and the prices they quoted. */
+export type NuQuoteSource = {
+  /** Stable id (nanoid). */
+  id: string;
+  /** Display name — e.g. "Müller Tiefbau GmbH". */
+  name: string;
+  /** Optional contact email / phone / Saarbrücken / etc. */
+  note?: string;
+  /** ISO date when the quote was received. */
+  receivedAt?: string;
+  /** position.id → quoted prices for that position. */
+  quotes: Record<string, NuQuote>;
+};
+
+export type NuQuote = {
+  /** €/EH the NU charges for material. Null if not quoted. */
+  materialCost?: number;
+  /** €/EH NU price (replaces our internal nuCost). Null if not quoted. */
+  nuCost?: number;
+  /** Optional row-specific note (Sonderkonditionen, Lieferzeit, etc.). */
+  note?: string;
 };
 
 /** Per-position actual / Ist costs captured after Auftragsausführung. */
