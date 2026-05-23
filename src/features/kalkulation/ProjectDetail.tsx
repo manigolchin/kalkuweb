@@ -14,6 +14,7 @@ import {
   Sparkles,
   RotateCcw,
   GitCompareArrows,
+  ShieldCheck,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -33,6 +34,7 @@ import PositionTableV2 from './PositionTableV2';
 import ShareDialog from './ShareDialog';
 import ImportDialog from './ImportDialog';
 import SnapshotDiffDialog from './SnapshotDiffDialog';
+import SubmitValidatorDialog from './SubmitValidatorDialog';
 
 const SAVE_DEBOUNCE_MS = 800;
 
@@ -61,6 +63,7 @@ export default function ProjectDetail() {
   const [showShare, setShowShare] = useState<{ parentShareId?: string } | false>(false);
   const [showImport, setShowImport] = useState(false);
   const [showDiff, setShowDiff] = useState(false);
+  const [showSubmit, setShowSubmit] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [tableVersion, setTableVersion] = useState<TableVersion>(() => readSavedTableVersion());
   // PART K: per-OZ customer-comment counts. Refreshed on project load and
@@ -339,6 +342,14 @@ export default function ProjectDetail() {
             </button>
           )}
           <button
+            onClick={() => setShowSubmit(true)}
+            className="btn btn-secondary flex items-center gap-2"
+            title="Original-LV gegen Kalkulation prüfen (Ausschlussrisiko abklären)"
+          >
+            <ShieldCheck className="w-4 h-4" />
+            Validieren
+          </button>
+          <button
             onClick={() => setShowImport(true)}
             className="btn btn-secondary flex items-center gap-2"
             title="GAEB · Excel · CSV importieren"
@@ -489,6 +500,19 @@ export default function ProjectDetail() {
         projectId={project.id}
         projectName={data.name || 'Projekt'}
         shares={project.shares}
+      />
+
+      <SubmitValidatorDialog
+        open={showSubmit}
+        onClose={() => setShowSubmit(false)}
+        positions={data.positions.map((p) => ({
+          oz: p.oz,
+          shortText: p.shortText,
+          quantity: p.quantity,
+          unit: p.unit,
+          isHeader: p.isHeader,
+        }))}
+        projectName={data.name || 'Projekt'}
       />
 
       <ImportDialog
