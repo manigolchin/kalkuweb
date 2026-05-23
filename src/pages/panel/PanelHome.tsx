@@ -14,6 +14,7 @@ import {
   Scale,
   TrendingUp,
   Wrench,
+  Library,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '@/lib/api';
@@ -135,6 +136,7 @@ export default function PanelHome() {
           <Card title="Schnellzugriff" icon={ArrowRight}>
             <ul className="-mx-1 -my-1.5 space-y-0.5">
               <ShortcutRow to="/panel/kalkulation" icon={Calculator} label="Projekte" hint="g p" />
+              <ShortcutRow to="/panel/vorlagen" icon={Library} label="Vorlagen-Bibliothek" />
               <ShortcutRow to="/panel/feedback" icon={Inbox} label="Kunden-Feedback" hint="g i" />
               <ShortcutRow to="/panel/einstellungen" icon={FileText} label="Profil & Logo" hint="g s" />
             </ul>

@@ -16,6 +16,19 @@ const createSchema = z.object({
   defaultNuCost: z.number().finite().min(-1e8).max(1e8).default(0),
 });
 
+// PATCH: all fields optional, at least one must be present.
+const patchSchema = z
+  .object({
+    oz: z.string().max(64).optional(),
+    shortText: z.string().trim().min(1).max(2000).optional(),
+    longText: z.string().max(20000).optional(),
+    unit: z.string().max(32).optional(),
+    defaultMaterialCost: z.number().finite().min(-1e8).max(1e8).optional(),
+    defaultTimeMinutes: z.number().finite().min(-1e8).max(1e8).optional(),
+    defaultNuCost: z.number().finite().min(-1e8).max(1e8).optional(),
+  })
+  .refine((o) => Object.keys(o).length > 0, { message: 'empty_patch' });
+
 // Cents-storage helpers (avoid float drift across the DB roundtrip).
 const toCents = (n: number) => Math.round(n * 100);
 const fromCents = (c: number) => c / 100;
@@ -85,6 +98,30 @@ export const templatesRoute = new Hono<{ Variables: AuthVariables }>()
       .set({ useCount: sql`use_count + 1`, lastUsedAt: new Date() })
       .where(eq(positionTemplates.id, id));
     return c.json({ ok: true });
+  })
+
+  .patch('/templates/:id', requireAuth, async (c) => {
+    const id = c.req.param('id');
+    const userId = c.get('userId');
+    const body = await c.req.json().catch(() => null);
+    const parsed = patchSchema.safeParse(body);
+    if (!parsed.success) return c.json({ error: 'invalid_input', detail: parsed.error.issues }, 400);
+    const t = await db.query.positionTemplates.findFirst({
+      where: and(eq(positionTemplates.id, id), eq(positionTemplates.userId, userId)),
+    });
+    if (!t) return c.json({ error: 'not_found' }, 404);
+    const patch = parsed.data;
+    const updates: Partial<typeof positionTemplates.$inferInsert> = {};
+    if (patch.oz != null) updates.oz = patch.oz;
+    if (patch.shortText != null) updates.shortText = patch.shortText;
+    if (patch.longText != null) updates.longText = patch.longText;
+    if (patch.unit != null) updates.unit = patch.unit;
+    if (patch.defaultMaterialCost != null) updates.defaultMaterialCost = toCents(patch.defaultMaterialCost);
+    if (patch.defaultTimeMinutes != null) updates.defaultTimeMinutes = Math.round(patch.defaultTimeMinutes);
+    if (patch.defaultNuCost != null) updates.defaultNuCost = toCents(patch.defaultNuCost);
+    await db.update(positionTemplates).set(updates).where(eq(positionTemplates.id, id));
+    const updated = await db.query.positionTemplates.findFirst({ where: eq(positionTemplates.id, id) });
+    return c.json(serialize(updated!));
   })
 
   .delete('/templates/:id', requireAuth, async (c) => {

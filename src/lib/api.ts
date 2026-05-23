@@ -508,6 +508,22 @@ export const api = {
       }),
     use: (id: string) =>
       request<{ ok: true }>(`/templates/${id}/use`, { method: 'POST' }),
+    update: (
+      id: string,
+      patch: Partial<{
+        oz: string;
+        shortText: string;
+        longText: string;
+        unit: string;
+        defaultMaterialCost: number;
+        defaultTimeMinutes: number;
+        defaultNuCost: number;
+      }>,
+    ) =>
+      request<PositionTemplate>(`/templates/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      }),
     delete: (id: string) =>
       request<{ ok: true }>(`/templates/${id}`, { method: 'DELETE' }),
   },

@@ -40,6 +40,7 @@ const FeedbackInbox = lazy(() => import('@/features/kalkulation/FeedbackInbox'))
 const Archiv = lazy(() => import('@/features/kalkulation/Archiv'));
 const Firmen = lazy(() => import('@/pages/panel/Firmen'));
 const Firma = lazy(() => import('@/pages/panel/Firma'));
+const Vorlagen = lazy(() => import('@/pages/panel/Vorlagen'));
 // Dev-only sandbox — bundled only in dev mode (tree-shaken in prod).
 const DevKalkuV2 = lazy(() => import('@/pages/DevKalkuV2'));
 
@@ -77,6 +78,7 @@ export default function App() {
             <Route path=":id/actuals" element={<ProjectActuals />} />
             <Route path=":id/preisspiegel" element={<ProjectPreisspiegel />} />
           </Route>
+          <Route path="vorlagen" element={<Vorlagen />} />
           <Route path="feedback" element={<FeedbackInbox />} />
           <Route path="archiv" element={<Archiv />} />
           <Route path="einstellungen" element={<PanelSettings />} />

@@ -18,6 +18,7 @@ import {
   Menu,
   X,
   Building2,
+  Library,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -39,6 +40,7 @@ const NAV: NavItem[] = [
   { to: '/panel', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/panel/firmen', label: 'Firmen', icon: Building2 },
   { to: '/panel/kalkulation', label: 'Kalkulation', icon: Calculator },
+  { to: '/panel/vorlagen', label: 'Vorlagen', icon: Library },
   { to: '/panel/feedback', label: 'Kunden-Feedback', icon: Inbox },
   { to: '/panel/archiv', label: 'Archiv', icon: FolderClosed, comingSoon: true },
   { to: '/panel/einstellungen', label: 'Einstellungen', icon: Settings },
