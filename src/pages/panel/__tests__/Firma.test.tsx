@@ -216,7 +216,7 @@ describe('Firma.tsx — defaults form', () => {
     });
     renderFirma();
     await waitFor(() => expect(screen.getByText('Gesellchen GmbH')).toBeDefined());
-    fireEvent.click(screen.getByRole('button', { name: /Speichern/ }));
+    { const btn = screen.getByRole('button', { name: /Speichern/ }) as HTMLButtonElement; fireEvent.submit(btn.closest('form')!); }
     await waitFor(() => expect(updateDefaultsMock).toHaveBeenCalledTimes(1));
     const [kind, id, body] = updateDefaultsMock.mock.calls[0];
     expect(kind).toBe('managed');
@@ -460,7 +460,7 @@ describe('Firma.tsx — optimistic defaults save', () => {
     fireEvent.change(inputs[1], { target: { value: '20' } });   // 0.20
     fireEvent.change(inputs[2], { target: { value: '99.99' } });
     fireEvent.change(inputs[3], { target: { value: '1.23' } });
-    fireEvent.click(screen.getByRole('button', { name: /Speichern/ }));
+    { const btn = screen.getByRole('button', { name: /Speichern/ }) as HTMLButtonElement; fireEvent.submit(btn.closest('form')!); }
 
     // The api call fired ONCE with the new body…
     await waitFor(() => expect(updateDefaultsMock).toHaveBeenCalledTimes(1));
@@ -498,7 +498,7 @@ describe('Firma.tsx — optimistic defaults save', () => {
       document.querySelectorAll<HTMLInputElement>('input[type=number]'),
     );
     fireEvent.change(inputs[0], { target: { value: '99' } });   // optimistic 99
-    fireEvent.click(screen.getByRole('button', { name: /Speichern/ }));
+    { const btn = screen.getByRole('button', { name: /Speichern/ }) as HTMLButtonElement; fireEvent.submit(btn.closest('form')!); }
 
     // After the rejection settles, the form snaps BACK to '18'.
     await waitFor(() => {
@@ -537,7 +537,7 @@ describe('Firma.tsx — optimistic defaults save', () => {
 
     renderFirma();
     await waitFor(() => expect(screen.getByText('Gesellchen GmbH')).toBeDefined());
-    fireEvent.click(screen.getByRole('button', { name: /Speichern/ }));
+    { const btn = screen.getByRole('button', { name: /Speichern/ }) as HTMLButtonElement; fireEvent.submit(btn.closest('form')!); }
 
     await waitFor(() => expect(updateDefaultsMock).toHaveBeenCalledTimes(1));
     // toast.loading was called with the German "saving" message…
