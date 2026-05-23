@@ -15,6 +15,7 @@ import {
   RotateCcw,
   GitCompareArrows,
   ShieldCheck,
+  FileText,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -349,6 +350,14 @@ export default function ProjectDetail() {
             <ShieldCheck className="w-4 h-4" />
             Validieren
           </button>
+          <Link
+            to={`/panel/kalkulation/${project.id}/efb`}
+            className="btn btn-secondary flex items-center gap-2"
+            title="EFB-Preisblätter 221/222/223 anzeigen"
+          >
+            <FileText className="w-4 h-4" />
+            EFB
+          </Link>
           <button
             onClick={() => setShowImport(true)}
             className="btn btn-secondary flex items-center gap-2"
