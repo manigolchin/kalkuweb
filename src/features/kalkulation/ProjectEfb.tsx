@@ -190,10 +190,11 @@ function Efb221({
   // Verrechnungslohn × Stunden total = Lohnkosten inkl. Zuschläge (was in totals.totalLohn).
   const stundenTotal = totals.totalHours;
   const lohnkostenMittellohn = params.mittellohn * stundenTotal;
-  const lohnZuschlagAbsolut = totals.totalLohn - lohnkostenMittellohn;
-  const lohnZuschlagPct = lohnkostenMittellohn > 0
+  const computable = lohnkostenMittellohn > 0 && stundenTotal > 0;
+  const lohnZuschlagAbsolut = computable ? totals.totalLohn - lohnkostenMittellohn : 0;
+  const lohnZuschlagPct = computable
     ? (lohnZuschlagAbsolut / lohnkostenMittellohn) * 100
-    : 0;
+    : null;
 
   return (
     <Form
@@ -203,10 +204,10 @@ function Efb221({
     >
       <Row label="Mittellohn AP (Aufgliederung Pos. 4.1)" value={`${formatNum(params.mittellohn)} €/h`} />
       <Row label="Aufwand laut Kalkulation" value={`${formatNum(stundenTotal, 1)} h`} />
-      <Row label="Lohnkosten (Mittellohn × Stunden)" value={formatEUR(lohnkostenMittellohn)} bold />
+      <Row label="Lohnkosten (Mittellohn × Stunden)" value={computable ? formatEUR(lohnkostenMittellohn) : '—'} bold />
       <Divider />
-      <Row label="Lohnzuschläge (Lohnnebenkosten + BGK + AGK + W&G auf Lohn)" value={formatEUR(lohnZuschlagAbsolut)} />
-      <Row label="Lohnzuschlagsfaktor effektiv" value={`${formatNum(lohnZuschlagPct, 1)} %`} muted />
+      <Row label="Lohnzuschläge (Lohnnebenkosten + BGK + AGK + W&G auf Lohn)" value={computable ? formatEUR(lohnZuschlagAbsolut) : '—'} />
+      <Row label="Lohnzuschlagsfaktor effektiv" value={lohnZuschlagPct != null ? `${formatNum(lohnZuschlagPct, 1)} %` : '—'} muted />
       <Row label="Verrechnungslohn (= Mittellohn × (1 + Faktor))" value={`${formatNum(params.verrechnungslohn)} €/h`} bold />
       <Divider />
       <Row label="Material-Zuschlag (Pos. 4.2)" value={`${formatNum(params.materialZuschlag * 100, 1)} %`} />
@@ -244,7 +245,7 @@ function Efb222({
       <Divider />
       <Row
         label="6. Allgemeine Geschäftskosten + Wagnis & Gewinn"
-        value="bereits in den Positions-EPs enthalten"
+        value="in den ZSCHLG-Sätzen je Kostenart enthalten (siehe EFB 221)"
         muted
       />
       <Row label="7. Angebotssumme netto" value={formatEUR(totals.totalNetto)} bold />

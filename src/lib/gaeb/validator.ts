@@ -24,7 +24,8 @@ export type ValidationIssue =
   | { kind: 'extra-in-bid'; oz: string; bidText: string; bidQuantity: number; bidUnit: string }
   | { kind: 'quantity-mismatch'; oz: string; tender: number; bid: number; tenderText: string }
   | { kind: 'unit-mismatch'; oz: string; tender: string; bid: string; tenderText: string }
-  | { kind: 'tender-qty-tbd'; oz: string; tenderText: string }; // Vergabestelle marked TBD
+  | { kind: 'tender-qty-tbd'; oz: string; tenderText: string } // Vergabestelle marked TBD
+  | { kind: 'tender-empty' }; // Uploaded file contained 0 Item-Positionen at all
 
 export type ValidationResult = {
   tenderCount: number;
@@ -44,7 +45,13 @@ function normalizeOz(s: string): string {
 }
 
 function normalizeUnit(s: string): string {
-  return (s || '').trim().toLowerCase().replace(/\s+/g, '');
+  // "m²" / "m2", "m³" / "m3", "MFL" / "mfl" — all considered equal.
+  return (s || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/²/g, '2')
+    .replace(/³/g, '3');
 }
 
 /**
@@ -73,6 +80,19 @@ export function validateBidAgainstTender(
   const issues: ValidationIssue[] = [];
   let matched = 0;
 
+  // Empty-tender guard — the uploaded file parsed but contained 0 Items. Without
+  // this every bid row becomes `extra-in-bid` and the banner falsely says "OK".
+  if (tenderItems.length === 0) {
+    issues.push({ kind: 'tender-empty' });
+    return {
+      tenderCount: 0,
+      bidCount: bidItems.length,
+      matched: 0,
+      issues,
+      ok: false,
+    };
+  }
+
   // Tender-driven pass: find missing or mismatched.
   for (const [oz, t] of tenderByOz) {
     const b = bidByOz.get(oz);
@@ -87,10 +107,11 @@ export function validateBidAgainstTender(
       continue;
     }
     let cleanRow = true;
-    // Quantity TBD on tender — flag as info, not a blocking error.
+    // Quantity TBD on tender — flag as info, but do NOT poison the match count:
+    // the position IS correctly answered (OZ + unit), we just can't verify the
+    // Menge because the Vergabestelle left it open.
     if (t.qtyTBD) {
       issues.push({ kind: 'tender-qty-tbd', oz, tenderText: t.kurztext || '' });
-      cleanRow = false;
     } else if (typeof t.menge === 'number' && Math.abs((b.quantity ?? 0) - t.menge) > QTY_TOLERANCE) {
       issues.push({
         kind: 'quantity-mismatch',
@@ -133,6 +154,7 @@ export function validateBidAgainstTender(
 
   // Severity ordering for the UI.
   const severityRank: Record<ValidationIssue['kind'], number> = {
+    'tender-empty': -1,
     'missing-in-bid': 0,
     'quantity-mismatch': 1,
     'unit-mismatch': 2,
@@ -142,7 +164,9 @@ export function validateBidAgainstTender(
   issues.sort((a, b) => {
     const s = severityRank[a.kind] - severityRank[b.kind];
     if (s !== 0) return s;
-    return normalizeOz(a.oz).localeCompare(normalizeOz(b.oz));
+    const aOz = 'oz' in a ? a.oz : '';
+    const bOz = 'oz' in b ? b.oz : '';
+    return normalizeOz(aOz).localeCompare(normalizeOz(bOz));
   });
 
   const blocking = issues.some(

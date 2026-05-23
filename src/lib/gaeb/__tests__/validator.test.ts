@@ -122,6 +122,53 @@ describe('validateBidAgainstTender', () => {
     expect(r.issues.some((i) => i.kind === 'tender-qty-tbd')).toBe(true);
   });
 
+  it('qtyTBD does NOT poison the match count (regression: previously matched=0)', () => {
+    // 3 tender positions, all qtyTBD, all answered correctly by the bid.
+    const t = tender([
+      { ...ti({ oz: '1.1', einheit: 'm³' }), qtyTBD: true },
+      { ...ti({ oz: '1.2', einheit: 'm²' }), qtyTBD: true },
+      { ...ti({ oz: '1.3', einheit: 'St' }), qtyTBD: true },
+    ]);
+    const b = [
+      bi({ oz: '1.1', quantity: 0, unit: 'm³' }),
+      bi({ oz: '1.2', quantity: 0, unit: 'm²' }),
+      bi({ oz: '1.3', quantity: 0, unit: 'St' }),
+    ];
+    const r = validateBidAgainstTender(t, b);
+    expect(r.matched).toBe(3); // before fix this was 0 → banner said "0/3 zugeordnet" → false alarm
+    expect(r.ok).toBe(true);
+  });
+
+  it('m² vs m2 (and m³ vs m3) — unicode superscripts normalize to ASCII digits', () => {
+    const t = tender([
+      ti({ oz: '1.1', menge: 10, einheit: 'm²' }),
+      ti({ oz: '1.2', menge: 20, einheit: 'm³' }),
+    ]);
+    const b = [
+      bi({ oz: '1.1', quantity: 10, unit: 'm2' }),
+      bi({ oz: '1.2', quantity: 20, unit: 'm3' }),
+    ];
+    const r = validateBidAgainstTender(t, b);
+    expect(r.issues.some((i) => i.kind === 'unit-mismatch')).toBe(false);
+    expect(r.ok).toBe(true);
+  });
+
+  it('empty tender (0 Items) does NOT silently pass — surfaces tender-empty', () => {
+    const t = tender([]);
+    const b = [bi({ oz: '1.1', quantity: 10, unit: 'm³' })];
+    const r = validateBidAgainstTender(t, b);
+    expect(r.ok).toBe(false);
+    expect(r.issues).toHaveLength(1);
+    expect(r.issues[0].kind).toBe('tender-empty');
+    expect(r.matched).toBe(0);
+  });
+
+  it('empty tender with empty bid still surfaces tender-empty (file-picker error)', () => {
+    const r = validateBidAgainstTender(tender([]), []);
+    expect(r.ok).toBe(false);
+    expect(r.issues[0].kind).toBe('tender-empty');
+  });
+
   it('issues sorted by severity (missing → qty → unit → extra → tbd)', () => {
     const t = tender([
       ti({ oz: 'A', menge: 1, einheit: 'St' }),

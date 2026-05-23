@@ -269,7 +269,7 @@ export default function ProjectPreisspiegel() {
                   <th className="px-3 py-2.5 text-left font-semibold min-w-[14rem]">Position</th>
                   <th className="px-3 py-2.5 text-right font-semibold w-20">Menge</th>
                   <th className="px-3 py-2.5 text-right font-semibold w-28">
-                    Aktuell
+                    EK netto
                     <br />
                     <span className="font-normal opacity-70">Mat + NU €/EH</span>
                   </th>
@@ -397,15 +397,18 @@ function QuoteRow({
       </td>
       {sources.map((s, i) => {
         const total = rowTotals[i];
-        const isMin = total != null && min != null && total === min && total < max!;
-        const isMax = total != null && max != null && total === max && total > min!;
+        // Highlight Min only when there's a real spread. With only one source,
+        // or when all sources quote the same price, no green badge.
+        const hasSpread = min != null && max != null && max > min;
+        const isMin = total != null && total === min && hasSpread;
+        const isMax = total != null && total === max && hasSpread;
         return (
           <td
             key={s.id}
             className={clsx(
               'px-2 py-1 border-l border-slate-100 dark:border-slate-800 align-top',
               isMin && 'bg-emerald-50/50 dark:bg-emerald-950/15',
-              isMax && presentTotals.length > 1 && 'bg-rose-50/40 dark:bg-rose-950/10',
+              isMax && 'bg-rose-50/40 dark:bg-rose-950/10',
             )}
           >
             <QuoteCell

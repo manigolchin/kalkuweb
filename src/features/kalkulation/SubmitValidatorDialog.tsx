@@ -44,9 +44,8 @@ export default function SubmitValidatorDialog({ open, onClose, positions, projec
 
   useEffect(() => {
     if (!open) return;
-    setPhase('drop');
-    setTender(null);
-    setResult(null);
+    // Don't wipe the parsed result if the user just closed + reopened — they may
+    // want to keep reviewing it. Only reset when "Andere Datei" is clicked.
     setError(null);
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -203,7 +202,11 @@ export default function SubmitValidatorDialog({ open, onClose, positions, projec
             {phase === 'result' && (
               <button
                 type="button"
-                onClick={() => setPhase('drop')}
+                onClick={() => {
+                  setPhase('drop');
+                  setTender(null);
+                  setResult(null);
+                }}
                 className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-300 dark:hover:text-slate-100 dark:hover:bg-slate-800"
               >
                 Andere Datei
@@ -327,7 +330,7 @@ function Tile({
 }
 
 function IssueRow({ issue }: { issue: ValidationIssue }) {
-  const tone = isBlocking(issue) ? 'rose' : 'amber';
+  const tone = isBlocking(issue) || issue.kind === 'tender-empty' ? 'rose' : 'amber';
   const Icon =
     issue.kind === 'missing-in-bid'
       ? FileQuestion
@@ -336,20 +339,24 @@ function IssueRow({ issue }: { issue: ValidationIssue }) {
         : issue.kind === 'tender-qty-tbd'
           ? AlertTriangle
           : FileWarning;
+  const oz = 'oz' in issue ? issue.oz : '—';
   const text =
     issue.kind === 'missing-in-bid' ? issue.tenderText :
     issue.kind === 'extra-in-bid' ? issue.bidText :
+    issue.kind === 'tender-empty' ? 'Datei enthält keine Positionen' :
     issue.tenderText;
   const message =
     issue.kind === 'missing-in-bid'
-      ? `Im Angebot nicht enthalten (Vergabestelle erwartet${issue.tenderQuantity != null ? ` ${issue.tenderQuantity} ${issue.tenderUnit}` : ''}).`
+      ? `Im Angebot nicht enthalten (Vergabestelle erwartet${issue.tenderQuantity != null ? ` ${formatGermanQty(issue.tenderQuantity)} ${issue.tenderUnit}` : ''}).`
       : issue.kind === 'extra-in-bid'
         ? `Im Original-LV nicht vorhanden — wird vermutlich ignoriert oder führt zu Aufklärungsbedarf.`
         : issue.kind === 'quantity-mismatch'
-          ? `Vergabestelle: ${issue.tender} · Angebot: ${issue.bid} — Mengen müssen identisch sein.`
+          ? `Vergabestelle: ${formatGermanQty(issue.tender)} · Angebot: ${formatGermanQty(issue.bid)} — Mengen müssen identisch sein.`
           : issue.kind === 'unit-mismatch'
             ? `Vergabestelle: "${issue.tender}" · Angebot: "${issue.bid}" — Einheiten müssen identisch sein.`
-            : `Vergabestelle hat die Menge offen gelassen — Eventualposition prüfen.`;
+            : issue.kind === 'tender-empty'
+              ? 'Es wurden keine Item-Positionen erkannt. Eventuell wurde die falsche Datei hochgeladen (z. B. ein leeres X81-Boilerplate statt eines X83/X84).'
+              : `Vergabestelle hat die Menge offen gelassen — Eventualposition prüfen.`;
   return (
     <tr className={clsx(
       tone === 'rose' && 'bg-rose-50/40 dark:bg-rose-950/15',
@@ -359,7 +366,7 @@ function IssueRow({ issue }: { issue: ValidationIssue }) {
         <Icon className={clsx('w-3.5 h-3.5 inline-block', tone === 'rose' ? 'text-rose-600 dark:text-rose-400' : 'text-amber-600 dark:text-amber-400')} />
       </td>
       <td className="px-2 py-1.5 font-mono text-[11px] text-slate-600 dark:text-slate-300 align-top whitespace-nowrap">
-        {issue.oz}
+        {oz}
       </td>
       <td className="px-2 py-1.5 text-slate-700 dark:text-slate-200 align-top truncate max-w-[14rem]">
         {text || '—'}
@@ -367,4 +374,8 @@ function IssueRow({ issue }: { issue: ValidationIssue }) {
       <td className="px-2 py-1.5 align-top text-slate-700 dark:text-slate-200">{message}</td>
     </tr>
   );
+}
+
+function formatGermanQty(n: number): string {
+  return new Intl.NumberFormat('de-DE', { maximumFractionDigits: 3 }).format(n);
 }

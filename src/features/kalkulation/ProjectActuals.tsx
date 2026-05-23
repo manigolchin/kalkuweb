@@ -131,7 +131,11 @@ export default function ProjectActuals() {
   }
 
   const rows = data.positions.filter((p) => !p.isHeader);
-  const filledCount = Object.keys(actuals).filter((k) => actuals[k]).length;
+  // "Erfasst" = the user gave us at least one numeric Ist value. Note-only rows
+  // still appear (with no numbers) but don't count toward the captured-rows KPI.
+  const filledCount = Object.values(actuals).filter(
+    (a) => a != null && (a.hours != null || a.materialCost != null || a.nuCost != null),
+  ).length;
 
   return (
     <div className="space-y-5">
@@ -195,9 +199,9 @@ export default function ProjectActuals() {
           sub={summary.delta >= 0 ? 'Über Plan' : 'Unter Plan'}
         />
         <SummaryTile
-          label="Aufwand Soll → Ist"
-          value={`${formatNum(summary.sollHours, 1)} → ${formatNum(summary.istHours, 1)} h`}
-          sub={`Δ ${summary.istHours - summary.sollHours >= 0 ? '+' : ''}${formatNum(summary.istHours - summary.sollHours, 1)} h`}
+          label="Aufwand Soll → Ist (erfasst)"
+          value={`${formatNum(summary.sollHoursCovered, 1)} → ${formatNum(summary.istHours, 1)} h`}
+          sub={`Δ ${summary.istHours - summary.sollHoursCovered >= 0 ? '+' : ''}${formatNum(summary.istHours - summary.sollHoursCovered, 1)} h · Soll-Std insgesamt ${formatNum(summary.sollHours, 1)} h`}
         />
       </div>
 
@@ -417,27 +421,32 @@ function SummaryTile({
 function computeSummary(data: ProjectData, actuals: Record<string, PositionActual>) {
   const totals = calcTotals(data.positions, data.calcParams);
   let istNetto = 0;
-  let istHours = 0;
+  let istHours = 0;          // sum of ACTUAL hours typed in (no Soll fallback)
+  let sollHoursCovered = 0;  // sum of Soll-hours for rows the user has at least started
   for (const p of data.positions) {
     if (p.isHeader) continue;
     const calc = calculatePosition(p, data.calcParams);
     const a = actuals[p.id];
     if (!a) {
       istNetto += calc.gp;
-      istHours += calc.hoursTotal;
       continue;
     }
     const hLohn = a.hours != null ? a.hours * data.calcParams.verrechnungslohn : calc.gpLohn;
     const hMat = a.materialCost != null ? a.materialCost : calc.gpMaterial;
     const hNu = a.nuCost != null ? a.nuCost : calc.gpNu;
     istNetto += hLohn + hMat + hNu + calc.gpGeraet;
-    istHours += a.hours ?? calc.hoursTotal;
+    if (a.hours != null) {
+      istHours += a.hours;
+      sollHoursCovered += calc.hoursTotal;
+    }
   }
   return {
     sollNetto: totals.totalNetto,
     sollHours: totals.totalHours,
     istNetto,
     istHours,
+    /** Soll-hours that correspond to positions the user has actually entered Ist-Std for. */
+    sollHoursCovered,
     delta: istNetto - totals.totalNetto,
   };
 }

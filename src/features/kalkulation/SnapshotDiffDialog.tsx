@@ -57,10 +57,11 @@ function shareLabel(s: ShareSummary): string {
 
 export default function SnapshotDiffDialog({ open, onClose, projectId, projectName, shares }: Props) {
   // Default: oldest = first share (chronologically earliest), newest = last.
-  // Filter to shares that actually have snapshots.
+  // Filter to active (non-revoked) shares that actually have snapshots — backend
+  // rejects diffing a revoked share with a generic 4xx, so don't offer them.
   const candidates = useMemo(() => {
     return [...shares]
-      .filter((s) => !!s.snapshottedAt || !!s.snapshotHash)
+      .filter((s) => !s.revokedAt && (!!s.snapshottedAt || !!s.snapshotHash))
       .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
   }, [shares]);
 
