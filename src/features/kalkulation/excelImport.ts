@@ -40,13 +40,14 @@ export const KALKU_FIELDS: { key: KalkuField; label: string; required: boolean }
  * picks the best score, with exact match winning. */
 const SYNONYMS: Record<KalkuField, string[]> = {
   oz: ['oz', 'pos', 'posnr', 'positionsnummer', 'position', 'nr', 'nummer', 'ordnungszahl'],
-  shortText: ['kurztext', 'bezeichnung', 'text', 'leistung', 'beschreibung', 'titel', 'kt'],
+  shortText: ['kurztext', 'bezeichnung', 'text', 'leistung', 'beschreibung', 'titel', 'kt', 'posten'],
   longText: ['langtext', 'detail', 'detailtext', 'beschreibunglang', 'lt'],
-  quantity: ['menge', 'mng', 'anzahl', 'qty', 'quantity', 'mge', 'm'],
-  unit: ['eh', 'einheit', 'me', 'mengeneinheit', 'unit', 'einh'],
-  materialCost: ['material', 'materialeh', 'materialep', 'mat', 'mateh', 'materialkosten'],
-  timeMinutes: ['zeit', 'zeiteh', 'zeitmin', 'mineh', 'min', 'arbeitszeit', 'minuten', 'dauer'],
-  nuCost: ['nu', 'nueh', 'nachunternehmer', 'nachunternehmereh', 'fremdleistung', 'fremd'],
+  // 'm' (single letter) removed — was eating "ME" headers via prefix match.
+  quantity: ['menge', 'mng', 'anzahl', 'qty', 'quantity', 'mge', 'vordersatz', 'vordmenge', 'aufmass', 'aufmaß'],
+  unit: ['eh', 'einheit', 'me', 'mengeneinheit', 'unit', 'einh', 'einhmass'],
+  materialCost: ['material', 'materialeh', 'materialep', 'mat', 'mateh', 'materialkosten', 'materialpreis'],
+  timeMinutes: ['zeit', 'zeiteh', 'zeitmin', 'mineh', 'min', 'arbeitszeit', 'minuten', 'dauer', 'stunden', 'std', 'stdeh', 'stde', 'minstck'],
+  nuCost: ['nu', 'nueh', 'nachunternehmer', 'nachunternehmereh', 'fremdleistung', 'fremd', 'subunternehmer', 'sub'],
 };
 
 function normalize(s: string): string {
@@ -89,15 +90,35 @@ export async function parseSheet(file: File): Promise<SheetParse> {
   });
   if (aoa.length === 0) throw new Error('Datei ist leer.');
 
-  // Find the actual header row — skip leading blank rows or rows that look
-  // like a title (single non-empty cell). The header row is the first row
-  // with ≥ 2 non-empty cells.
+  // Header-row picker. The naive "first row with ≥2 non-empty cells" approach
+  // failed on banner-heavy LVs like the user's LV3.xlsx where rows above the
+  // real headers contain "Projekt:" + value pairs. Score-based instead:
+  // each row gets +5 per cell that matches a known KALKU synonym, +1 per
+  // non-empty cell, −0.5 × rowIndex so earlier rows win on tie. Scans 15 rows.
+  const synFlat = Object.values(SYNONYMS).flat().map(normalize);
+  function rowSynonymHits(row: string[]): number {
+    let hits = 0;
+    for (const cell of row) {
+      const n = normalize(cell);
+      if (!n) continue;
+      // exact OR strong prefix (length ≥ 3) match
+      if (synFlat.some((s) => s === n || (s.length >= 3 && (n.startsWith(s) || s.startsWith(n))))) {
+        hits += 1;
+      }
+    }
+    return hits;
+  }
   let headerIdx = 0;
-  for (let i = 0; i < Math.min(aoa.length, 10); i++) {
-    const nonEmpty = aoa[i].filter((c) => String(c).trim() !== '').length;
-    if (nonEmpty >= 2) {
+  let bestRowScore = -Infinity;
+  const maxScan = Math.min(aoa.length, 15);
+  for (let i = 0; i < maxScan; i++) {
+    const cells = aoa[i].map((c) => String(c ?? '').trim());
+    const nonEmpty = cells.filter((c) => c).length;
+    if (nonEmpty < 2) continue;
+    const score = rowSynonymHits(cells) * 5 + nonEmpty - i * 0.5;
+    if (score > bestRowScore) {
+      bestRowScore = score;
       headerIdx = i;
-      break;
     }
   }
   const rawHeaders = aoa[headerIdx].map((c) => String(c ?? '').trim());
@@ -110,14 +131,20 @@ export async function parseSheet(file: File): Promise<SheetParse> {
     .map((r) => Array.from({ length: headers.length }, (_, i) => String(r[i] ?? '').trim()))
     .filter((r) => r.some((c) => c.length > 0));
 
+  if (headers.length === 0 && rows.length === 0) {
+    throw new Error('Datei ist leer — keine Spalten oder Zeilen gefunden.');
+  }
+
   return { headers, rows, filename: file.name, sheetName };
 }
 
 /** Selection of which source column feeds each KALKU field. `null` = skip. */
 export type MappingSelection = Record<KalkuField, number | null>;
 
-/** Heuristic auto-map: for each KALKU field, pick the best-scoring header.
- *  Exact normalised match → 100; one contains the other → length ratio × 80. */
+/** Auto-map header → KALKU field. Global best-first: scores every (header,
+ *  field) pair, then assigns the highest-scoring pairs first so that an exact
+ *  match for one field can't be stolen by a weak prefix-match for another
+ *  field earlier in iteration order. */
 export function autoMapColumns(headers: string[]): MappingSelection {
   const normHeaders = headers.map(normalize);
   const out: MappingSelection = {
@@ -130,34 +157,45 @@ export function autoMapColumns(headers: string[]): MappingSelection {
     timeMinutes: null,
     nuCost: null,
   };
-  const taken = new Set<number>();
 
-  for (const field of Object.keys(SYNONYMS) as KalkuField[]) {
-    const syns = SYNONYMS[field].map(normalize);
-    let bestIdx = -1;
-    let bestScore = 0;
-    for (let i = 0; i < normHeaders.length; i++) {
-      if (taken.has(i)) continue;
-      const h = normHeaders[i];
-      if (!h) continue;
-      for (const s of syns) {
-        let score = 0;
-        if (h === s) score = 100;
-        else if (h.startsWith(s) || s.startsWith(h)) {
-          score = (Math.min(h.length, s.length) / Math.max(h.length, s.length)) * 90;
-        } else if (h.includes(s) || s.includes(h)) {
-          score = (Math.min(h.length, s.length) / Math.max(h.length, s.length)) * 70;
-        }
-        if (score > bestScore) {
-          bestScore = score;
-          bestIdx = i;
-        }
+  function pairScore(h: string, s: string): number {
+    if (!h || !s) return 0;
+    if (h === s) return 100;
+    if (h.startsWith(s) || s.startsWith(h)) {
+      return (Math.min(h.length, s.length) / Math.max(h.length, s.length)) * 90;
+    }
+    if (h.includes(s) || s.includes(h)) {
+      return (Math.min(h.length, s.length) / Math.max(h.length, s.length)) * 70;
+    }
+    return 0;
+  }
+
+  // 1. Compute every (header, field) candidate.
+  type Pair = { headerIdx: number; field: KalkuField; score: number };
+  const pairs: Pair[] = [];
+  for (let i = 0; i < normHeaders.length; i++) {
+    const h = normHeaders[i];
+    if (!h) continue;
+    for (const field of Object.keys(SYNONYMS) as KalkuField[]) {
+      let best = 0;
+      for (const s of SYNONYMS[field].map(normalize)) {
+        const sc = pairScore(h, s);
+        if (sc > best) best = sc;
       }
+      if (best >= 35) pairs.push({ headerIdx: i, field, score: best });
     }
-    if (bestIdx >= 0 && bestScore >= 40) {
-      out[field] = bestIdx;
-      taken.add(bestIdx);
-    }
+  }
+
+  // 2. Assign greedy by score descending. Each header and each field claimed
+  //    at most once. Exact (100) wins over prefix (90) wins over substring (70).
+  pairs.sort((a, b) => b.score - a.score);
+  const takenHeaders = new Set<number>();
+  const takenFields = new Set<KalkuField>();
+  for (const p of pairs) {
+    if (takenHeaders.has(p.headerIdx) || takenFields.has(p.field)) continue;
+    out[p.field] = p.headerIdx;
+    takenHeaders.add(p.headerIdx);
+    takenFields.add(p.field);
   }
   return out;
 }

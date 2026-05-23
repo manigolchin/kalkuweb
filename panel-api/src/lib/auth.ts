@@ -25,6 +25,13 @@ export async function verifyPassword(plain: string, hash: string): Promise<boole
   return bcrypt.compare(plain, hash);
 }
 
+/** Pre-computed bcrypt hash of a random password. Used by the login route as
+ *  a constant-time decoy when the email is unknown, so unknown-user latency
+ *  matches valid-user-wrong-password latency. Prevents user-enumeration via
+ *  response time. */
+export const DUMMY_PASSWORD_HASH =
+  '$2a$10$CwTycUXWue0Thq9StjUM0uJ8.M.tZ/3FbDxhKfNmZ0w8GKqRLW2Ia';
+
 export async function signToken(payload: { sub: string; email: string }): Promise<string> {
   return new SignJWT(payload)
     .setProtectedHeader({ alg: 'HS256' })
