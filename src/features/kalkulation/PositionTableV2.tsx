@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { nanoid } from 'nanoid';
+import toast from 'react-hot-toast';
 import {
   INTERNAL_POSITION_TYPES,
   POSITION_TYPES,
@@ -509,17 +510,42 @@ export default function PositionTableV2({
 
   const bulkDelete = useCallback(() => {
     if (selectedIds.size === 0) return;
+    // Filter the selection down to rows that ARE actually deletable.
+    // GAEB / Excel / preisanfrage rows carry `importedFrom` — those are part
+    // of the AG's LV and must never disappear by accident. Silently skip
+    // them and report the count via toast so the user knows.
+    const protectedIds = new Set<string>();
+    const deletableIds = new Set<string>();
+    for (const p of positions) {
+      if (!selectedIds.has(p.id)) continue;
+      if (p.isHeader) continue; // headers were always preserved
+      if (p.importedFrom) protectedIds.add(p.id);
+      else deletableIds.add(p.id);
+    }
+    if (deletableIds.size === 0) {
+      if (typeof window !== 'undefined') {
+        toast.error(
+          `${protectedIds.size} ${protectedIds.size === 1 ? 'Position ist' : 'Positionen sind'} aus dem GAEB/Excel-Import und kann nicht gelöscht werden.`,
+        );
+      }
+      return;
+    }
     if (typeof window !== 'undefined') {
+      const note =
+        protectedIds.size > 0
+          ? ` (${protectedIds.size} aus GAEB/Excel werden NICHT gelöscht.)`
+          : '';
       const ok = window.confirm(
-        `${selectedIds.size} ${selectedIds.size === 1 ? 'Position' : 'Positionen'} wirklich löschen? Diese Aktion lässt sich nicht rückgängig machen.`,
+        `${deletableIds.size} ${deletableIds.size === 1 ? 'Position' : 'Positionen'} wirklich löschen?${note} Diese Aktion lässt sich nicht rückgängig machen.`,
       );
       if (!ok) return;
     }
-    const next = positions.filter(
-      (p) => p.isHeader || !selectedIds.has(p.id),
-    );
+    const next = positions.filter((p) => !deletableIds.has(p.id));
     onChange(next);
     clearSelection();
+    if (protectedIds.size > 0 && typeof window !== 'undefined') {
+      toast(`${protectedIds.size} GAEB-${protectedIds.size === 1 ? 'Position' : 'Positionen'} übersprungen (Quellschutz).`);
+    }
   }, [positions, onChange, selectedIds, clearSelection]);
 
   const updateRow = useCallback(
@@ -538,7 +564,20 @@ export default function PositionTableV2({
   );
 
   const removeRow = useCallback(
-    (id: string) => onChange(positions.filter((p) => p.id !== id)),
+    (id: string) => {
+      // Protect imported rows (GAEB / Excel / preisanfrage seed) from
+      // accidental deletion. The trash icon on these rows is already
+      // disabled in the UI, but the defensive check here guards against
+      // future programmatic callers, keyboard shortcut wiring, etc.
+      const pos = positions.find((p) => p.id === id);
+      if (pos?.importedFrom) {
+        if (typeof window !== 'undefined') {
+          toast.error('GAEB-Position kann nicht gelöscht werden — sie ist Teil des Auftraggeber-LV.');
+        }
+        return;
+      }
+      onChange(positions.filter((p) => p.id !== id));
+    },
     [positions, onChange],
   );
 
@@ -1361,13 +1400,34 @@ function PositionRow({
         </td>
 
         <td className="bg-slate-50/70 border-t border-slate-100 px-1 py-[10px] align-top">
-          <button
-            onClick={() => removeRow(p.id)}
-            className="p-1 rounded text-slate-300 hover:bg-red-50 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
-            title="Zeile löschen"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
+          {p.importedFrom ? (
+            // GAEB / Excel / preisanfrage-seeded row — protected from
+            // deletion. Disabled trash + descriptive tooltip so the
+            // calculator knows why the icon doesn't fire.
+            <span
+              className="inline-flex p-1 rounded text-slate-300 cursor-not-allowed opacity-0 group-hover:opacity-60"
+              title={`Aus ${
+                p.importedFrom === 'gaeb'
+                  ? 'GAEB-Import'
+                  : p.importedFrom === 'excel'
+                    ? 'Excel-Import'
+                    : 'preisanfrage'
+              } — kann nicht gelöscht werden (Teil des Auftraggeber-LV).`}
+              data-testid={`v2-trash-locked-${p.id}`}
+              aria-disabled="true"
+            >
+              <Lock className="w-3.5 h-3.5" />
+            </span>
+          ) : (
+            <button
+              onClick={() => removeRow(p.id)}
+              className="p-1 rounded text-slate-300 hover:bg-red-50 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+              title="Zeile löschen"
+              data-testid={`v2-trash-${p.id}`}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
         </td>
       </tr>
 

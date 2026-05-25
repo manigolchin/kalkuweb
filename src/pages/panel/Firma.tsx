@@ -664,6 +664,10 @@ function ProjectsCard({
               gp: 0,
               visibleToCustomer: true,
               positionType: 'standard',
+              // From preisanfrage's OneDrive GAEB parse — protected from
+              // deletion in PositionTableV2 (trash icon disabled + bulk-
+              // delete skips them). See Position type comment.
+              importedFrom: 'preisanfrage',
             });
           }
         } catch (e) {

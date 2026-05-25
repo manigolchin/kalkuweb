@@ -824,6 +824,10 @@ function gaebToPositions(gaeb: ParsedGaeb, startSortOrder: number, _skipErrors: 
       unit: p.einheit || '',
       isHeader: p.type === 'group',
       sectionPath: p.type === 'group' ? p.oz : '',
+      // Mark provenance — protects against accidental deletion. The trash
+      // icon is disabled on these rows + bulk-delete filters them out.
+      // See Position type comment in types.ts.
+      importedFrom: 'gaeb',
     });
     order += 1;
   }

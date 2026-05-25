@@ -63,6 +63,26 @@ export type Position = {
    *  may use Q + named factors; cycles are not detected (calculators
    *  don't write them in practice). */
   preCalcs?: Partial<Record<'F1' | 'F2' | 'F3' | 'F4' | 'F5' | 'F6' | 'F7', { value: number; formula?: string }>>;
+  /**
+   * Provenance of the row — set ONCE at creation, never mutated.
+   *
+   * - `'gaeb'`        — parsed from a GAEB XML upload (.x83/.x86/.X84)
+   * - `'excel'`       — imported from a Kalkulation-Vorlage Excel workbook
+   * - `'preisanfrage'`— seeded by "Kalkulation starten" from preisanfrage's
+   *                    OneDrive-discovered GAEB parse
+   * - `undefined`     — manually added via "+ Position" / "+ Titel" or
+   *                    inserted from a Vorlagen-Bibliothek template
+   *
+   * **Delete protection**: rows where `importedFrom` is truthy MUST NOT be
+   * deletable from the table — they're part of the AG's LV and the bid
+   * would become inkonsistent. The row's trash icon is disabled with a
+   * tooltip, and bulk-delete silently filters them out + reports how many
+   * were skipped via toast.
+   *
+   * Backwards-compat: rows that pre-date this field (no `importedFrom`)
+   * are treated as deletable — matches their original behaviour.
+   */
+  importedFrom?: 'gaeb' | 'excel' | 'preisanfrage';
 };
 
 export type CalcParams = {

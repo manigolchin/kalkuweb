@@ -263,7 +263,11 @@ export function buildPreviewRows(rows: string[][], mapping: MappingSelection): P
 }
 
 /** Convert preview rows into the Position[] shape the table holds. Optionally
- *  skips rows the validator marked as `error`. */
+ *  skips rows the validator marked as `error`.
+ *
+ *  Sets `importedFrom: 'excel'` on each row → these can't be deleted from
+ *  the table (they're part of the imported LV; deleting would silently
+ *  desync from the source workbook). See Position type comment. */
 export function previewToPositions(
   preview: PreviewRow[],
   startSortOrder: number,
@@ -280,6 +284,7 @@ export function previewToPositions(
     materialCost: p.values.materialCost,
     timeMinutes: p.values.timeMinutes,
     nuCost: p.values.nuCost,
+    importedFrom: 'excel',
   }));
 }
 
