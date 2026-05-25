@@ -910,6 +910,100 @@ describe('routes/projects — PUT /projects/:id (updates + optimistic lock)', ()
     assert.equal(persisted.faktoren![0].name, 'Aushub-Faktor');
   });
 
+  test('REGRESSION 2026-05-25: Position.importedFrom survives PUT round-trip (delete-protection persists)', async () => {
+    // Without importedFrom in positionSchema, zod silently strips the field
+    // and every reloaded GAEB position becomes deletable again — defeating
+    // the whole Round-13 protection feature.
+    const u = await seedUser();
+    const cookie = await makeAuthCookie(u.id, u.email);
+    const pid = await seedProject(u.id);
+    const dataWithImportedRows = {
+      ...defaultProjectData({ name: 'Imported LV' }),
+      positions: [
+        // One row of each provenance kind + one manual row
+        {
+          id: 'g1', oz: '01.001', shortText: 'GAEB row',
+          longText: '', hinweisText: '', quantity: 1, unit: 'St',
+          materialCost: 100, timeMinutes: 0, nuCost: 0, isHeader: false,
+          sortOrder: 1, sectionPath: '01',
+          epLohn: 0, epMaterial: 0, epGeraet: 0, epNu: 0, ep: 0, gp: 0,
+          visibleToCustomer: true, positionType: 'standard',
+          importedFrom: 'gaeb',
+        },
+        {
+          id: 'x1', oz: '01.002', shortText: 'Excel row',
+          longText: '', hinweisText: '', quantity: 1, unit: 'St',
+          materialCost: 200, timeMinutes: 0, nuCost: 0, isHeader: false,
+          sortOrder: 2, sectionPath: '01',
+          epLohn: 0, epMaterial: 0, epGeraet: 0, epNu: 0, ep: 0, gp: 0,
+          visibleToCustomer: true, positionType: 'standard',
+          importedFrom: 'excel',
+        },
+        {
+          id: 'pr1', oz: '01.003', shortText: 'preisanfrage row',
+          longText: '', hinweisText: '', quantity: 1, unit: 'St',
+          materialCost: 300, timeMinutes: 0, nuCost: 0, isHeader: false,
+          sortOrder: 3, sectionPath: '01',
+          epLohn: 0, epMaterial: 0, epGeraet: 0, epNu: 0, ep: 0, gp: 0,
+          visibleToCustomer: true, positionType: 'standard',
+          importedFrom: 'preisanfrage',
+        },
+        {
+          id: 'm1', oz: '01.004', shortText: 'Manual row',
+          longText: '', hinweisText: '', quantity: 1, unit: 'St',
+          materialCost: 400, timeMinutes: 0, nuCost: 0, isHeader: false,
+          sortOrder: 4, sectionPath: '01',
+          epLohn: 0, epMaterial: 0, epGeraet: 0, epNu: 0, ep: 0, gp: 0,
+          visibleToCustomer: true, positionType: 'standard',
+          // no importedFrom
+        },
+      ],
+    } as schema.ProjectData;
+    const r = await projectsApp.request(`/projects/${pid}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ data: dataWithImportedRows }),
+    });
+    assert.equal(r.status, 200);
+    const row = await db.query.projects.findFirst({ where: eq(schema.projects.id, pid) });
+    const persisted = row!.data;
+    const pos = persisted.positions as Array<{ id: string; importedFrom?: string }>;
+    const g1 = pos.find((p) => p.id === 'g1')!;
+    const x1 = pos.find((p) => p.id === 'x1')!;
+    const pr1 = pos.find((p) => p.id === 'pr1')!;
+    const m1 = pos.find((p) => p.id === 'm1')!;
+    assert.equal(g1.importedFrom, 'gaeb', 'gaeb tag must survive PUT round-trip');
+    assert.equal(x1.importedFrom, 'excel', 'excel tag must survive');
+    assert.equal(pr1.importedFrom, 'preisanfrage', 'preisanfrage tag must survive');
+    assert.equal(m1.importedFrom, undefined, 'manual row stays unmarked');
+  });
+
+  test('REGRESSION 2026-05-25: invalid importedFrom value is rejected by zod', async () => {
+    const u = await seedUser();
+    const cookie = await makeAuthCookie(u.id, u.email);
+    const pid = await seedProject(u.id);
+    const dataWithBadTag = {
+      ...defaultProjectData(),
+      positions: [
+        {
+          id: 'bad1', oz: '01.001', shortText: 'Bad tag',
+          longText: '', hinweisText: '', quantity: 1, unit: 'St',
+          materialCost: 0, timeMinutes: 0, nuCost: 0, isHeader: false,
+          sortOrder: 1, sectionPath: '01',
+          epLohn: 0, epMaterial: 0, epGeraet: 0, epNu: 0, ep: 0, gp: 0,
+          visibleToCustomer: true, positionType: 'standard',
+          importedFrom: 'made-up-source', // not in the enum
+        },
+      ],
+    };
+    const r = await projectsApp.request(`/projects/${pid}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ data: dataWithBadTag }),
+    });
+    assert.equal(r.status, 400);
+  });
+
   test('empty positions[] is allowed (not an error)', async () => {
     const u = await seedUser();
     const cookie = await makeAuthCookie(u.id, u.email);

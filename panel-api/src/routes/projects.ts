@@ -71,6 +71,13 @@ const positionSchema = z.object({
   internalNote: z.string().max(4000).optional(),
   positionType: z.enum(POSITION_TYPES).default('standard'),
   aufmassFormula: z.string().max(20000).optional(),
+  // Provenance — set ONCE at the import path (GAEB upload, Kalkulations-
+  // Vorlage Excel parse, preisanfrage "Kalkulation starten" seed). The
+  // frontend's PositionTableV2 protects rows with a truthy value from
+  // deletion (lock icon + bulk-delete skip). Round trip MUST preserve
+  // the tag — without it on this schema, zod silently strips it and
+  // every reloaded position becomes deletable again.
+  importedFrom: z.enum(['gaeb', 'excel', 'preisanfrage']).optional(),
 });
 
 const calcParamsSchema = z.object({

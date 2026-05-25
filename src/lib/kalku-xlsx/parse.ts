@@ -381,7 +381,11 @@ export async function parseKalkulationWorkbook(
 
     const kind = classifyRow(cells);
     const id = nanoid(12);
-    const base = makeBlankPosition(id, nextSort++);
+    // Tag every row this parser produces so PositionTableV2's delete-protection
+    // logic recognises them as part of the AG-LV. Without this, importing a
+    // Kalkulations-Vorlage Excel would leave rows that look manual and could be
+    // accidentally deleted in bulk. See Position type comment in types.ts.
+    const base: Position = { ...makeBlankPosition(id, nextSort++), importedFrom: 'excel' };
     const oz = String(cells.A ?? '').trim();
     const key = ozKey(oz);
 

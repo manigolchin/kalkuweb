@@ -161,5 +161,26 @@ if (!FIXTURES_AVAILABLE) {
       expect(hasBlocker).toBe(ex.expectErrors);
       expect(result.ok).toBe(!ex.expectErrors);
     });
+
+    /**
+     * Delete-protection regression — every Position produced by the Kalkulations-
+     * Vorlage parser MUST carry `importedFrom: 'excel'` so PositionTableV2 renders
+     * the lock icon instead of a trash button. Without this tag, the calculator
+     * could silently delete rows that are part of the AG-LV.
+     *
+     * Caught by the Round-13 debug pass: ProjectDetail's onImportKalku handler
+     * did NOT add the tag itself, and the parser also didn't, so all template-
+     * imported rows were deletable. Fix lives in parse.ts (the `base` spread).
+     */
+    test(`${ex.id} (${ex.label}): every parsed position has importedFrom='excel' (delete-protection)`, async () => {
+      const u8 = new Uint8Array(readFileSync(ex.path));
+      const result = await parseKalkulationWorkbook(u8);
+      if (!result.project) return; // Should never happen for the example files
+      const positions = result.project.positions;
+      expect(positions.length).toBeGreaterThan(0);
+      for (const p of positions) {
+        expect(p.importedFrom).toBe('excel');
+      }
+    });
   }
 });
