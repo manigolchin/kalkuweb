@@ -13,6 +13,13 @@ import {
   AlertCircle,
   Sparkles,
   RotateCcw,
+  GitCompareArrows,
+  ShieldCheck,
+  FileText,
+  TrendingUp,
+  Scale,
+  Wrench,
+  ChevronDown,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -31,6 +38,8 @@ import PositionTable from './PositionTable';
 import PositionTableV2 from './PositionTableV2';
 import ShareDialog from './ShareDialog';
 import ImportDialog from './ImportDialog';
+import SnapshotDiffDialog from './SnapshotDiffDialog';
+import SubmitValidatorDialog from './SubmitValidatorDialog';
 
 const SAVE_DEBOUNCE_MS = 800;
 
@@ -58,6 +67,8 @@ export default function ProjectDetail() {
   );
   const [showShare, setShowShare] = useState<{ parentShareId?: string } | false>(false);
   const [showImport, setShowImport] = useState(false);
+  const [showDiff, setShowDiff] = useState(false);
+  const [showSubmit, setShowSubmit] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [tableVersion, setTableVersion] = useState<TableVersion>(() => readSavedTableVersion());
   // PART K: per-OZ customer-comment counts. Refreshed on project load and
@@ -325,6 +336,12 @@ export default function ProjectDetail() {
             <History className="w-4 h-4" />
             v{project.versionNumber}
           </button>
+          <ToolsMenu
+            projectId={project.id}
+            hasMultipleSnapshots={project.shares.filter((s) => !s.revokedAt).length >= 2}
+            onValidate={() => setShowSubmit(true)}
+            onDiff={() => setShowDiff(true)}
+          />
           <button
             onClick={() => setShowImport(true)}
             className="btn btn-secondary flex items-center gap-2"
@@ -470,13 +487,39 @@ export default function ProjectDetail() {
         />
       )}
 
+      <SnapshotDiffDialog
+        open={showDiff}
+        onClose={() => setShowDiff(false)}
+        projectId={project.id}
+        projectName={data.name || 'Projekt'}
+        shares={project.shares}
+      />
+
+      <SubmitValidatorDialog
+        open={showSubmit}
+        onClose={() => setShowSubmit(false)}
+        positions={data.positions.map((p) => ({
+          oz: p.oz,
+          shortText: p.shortText,
+          quantity: p.quantity,
+          unit: p.unit,
+          isHeader: p.isHeader,
+        }))}
+        projectName={data.name || 'Projekt'}
+      />
+
       <ImportDialog
         open={showImport}
         onClose={() => setShowImport(false)}
         existingCount={data.positions.length}
         onImport={(rows, mode) => {
-          const merged = mode === 'append' ? [...data.positions, ...rows] : rows;
-          updatePositions(merged);
+          if (mode === 'append') {
+            updatePositions([...data.positions, ...rows]);
+          } else {
+            // Replace: positions get new ids, so any `actuals` / `nuQuotes`
+            // keyed by old ids would become orphan garbage. Drop them.
+            setData({ ...data, positions: rows, actuals: undefined, nuQuotes: undefined });
+          }
           toast.success(
             mode === 'append'
               ? `${rows.length} Position${rows.length === 1 ? '' : 'en'} hinzugefügt.`
@@ -493,10 +536,14 @@ export default function ProjectDetail() {
           // if they differ (most useful when the user re-imports a freshly
           // edited template).
           if (mode === 'replace') {
+            // Drop actuals + nuQuotes on replace — they're keyed by old
+            // position ids which no longer exist after a template overwrite.
             setData({
               ...parsed.project,
               positions: rows,
               notes: data.notes,
+              actuals: undefined,
+              nuQuotes: undefined,
             });
           } else {
             setData({
@@ -516,6 +563,164 @@ export default function ProjectDetail() {
         }}
       />
     </div>
+  );
+}
+
+export function ToolsMenu({
+  projectId,
+  hasMultipleSnapshots,
+  onValidate,
+  onDiff,
+}: {
+  projectId: string;
+  hasMultipleSnapshots: boolean;
+  onValidate: () => void;
+  onDiff: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onClickOutside);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((s) => !s)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={clsx(
+          'btn btn-secondary flex items-center gap-2',
+          open && 'bg-primary-50 text-primary-700 border-primary-200 dark:bg-primary-500/10 dark:text-primary-100',
+        )}
+        title="EFB · Nachkalk · Preisspiegel · Validieren · Vergleichen"
+      >
+        <Wrench className="w-4 h-4" />
+        Werkzeuge
+        <ChevronDown className={clsx('w-3 h-3 transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 mt-1.5 w-64 z-40 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl overflow-hidden"
+        >
+          <MenuLink
+            to={`/panel/kalkulation/${projectId}/efb`}
+            icon={FileText}
+            label="EFB 221/222/223"
+            sub="Preisblätter für VOB/A drucken"
+            onClick={() => setOpen(false)}
+          />
+          <MenuLink
+            to={`/panel/kalkulation/${projectId}/preisspiegel`}
+            icon={Scale}
+            label="Preisspiegel"
+            sub="NU/Lieferant-Angebote vergleichen"
+            onClick={() => setOpen(false)}
+          />
+          <MenuLink
+            to={`/panel/kalkulation/${projectId}/actuals`}
+            icon={TrendingUp}
+            label="Nachkalkulation"
+            sub="Soll vs. Ist nach Ausführung"
+            onClick={() => setOpen(false)}
+          />
+          <div className="border-t border-slate-100 dark:border-slate-800" />
+          <MenuButton
+            icon={ShieldCheck}
+            label="Submit-Validator"
+            sub="Original-LV gegen Kalkulation prüfen"
+            onClick={() => {
+              setOpen(false);
+              onValidate();
+            }}
+          />
+          <MenuButton
+            icon={GitCompareArrows}
+            label="Versionen vergleichen"
+            sub={hasMultipleSnapshots ? 'Snapshot-Diff zwischen Links' : 'Mind. 2 aktive Snapshots benötigt'}
+            disabled={!hasMultipleSnapshots}
+            onClick={() => {
+              setOpen(false);
+              onDiff();
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MenuLink({
+  to,
+  icon: Icon,
+  label,
+  sub,
+  onClick,
+}: {
+  to: string;
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  sub: string;
+  onClick: () => void;
+}) {
+  return (
+    <Link
+      to={to}
+      onClick={onClick}
+      role="menuitem"
+      className="flex items-start gap-3 px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+    >
+      <Icon className="w-4 h-4 mt-0.5 text-primary-600 dark:text-primary-300 flex-shrink-0" />
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{label}</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{sub}</p>
+      </div>
+    </Link>
+  );
+}
+
+function MenuButton({
+  icon: Icon,
+  label,
+  sub,
+  onClick,
+  disabled,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  sub: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      role="menuitem"
+      className="w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+    >
+      <Icon className="w-4 h-4 mt-0.5 text-primary-600 dark:text-primary-300 flex-shrink-0" />
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{label}</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{sub}</p>
+      </div>
+    </button>
   );
 }
 

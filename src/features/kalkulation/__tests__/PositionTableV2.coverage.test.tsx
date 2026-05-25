@@ -55,6 +55,11 @@ const EXAMPLES: Example[] = [
   { id: 'ex10', base: 'Desktop/claude1', folder: 'example 10', xlsx: 'LV3.xlsx' },
 ];
 
+// Skip entire matrix if fixtures aren't on this machine (CI / fresh checkout).
+const FIXTURES_AVAILABLE = EXAMPLES.some((ex) =>
+  existsSync(join(HOME, ex.base, ex.folder, ex.xlsx)),
+);
+
 /** Records all 12 feature outcomes per file. */
 type FeatureResult =
   | { status: 'pass'; note?: string }
@@ -131,7 +136,7 @@ function projectFromParse(parsed: ParseResult): ProjectData {
   return parsed.project;
 }
 
-describe('PART U — 10×12 feature coverage matrix', () => {
+(FIXTURES_AVAILABLE ? describe : describe.skip)('PART U — 10×12 feature coverage matrix', () => {
   for (const ex of EXAMPLES) {
     describe(`${ex.id} (${ex.folder}/${ex.xlsx})`, () => {
       let parsed: ParseResult | null = null;

@@ -182,6 +182,41 @@ export const api = {
         `/shares/${shareId}/resnapshot`,
         { method: 'POST' },
       ),
+    /** Feature #3 — diff two snapshots of the same project. */
+    diffSnapshots: (projectId: string, fromShareId: string, toShareId: string) =>
+      request<{
+        from: {
+          id: string;
+          token: string;
+          snapshotVersion: number;
+          snapshotHash: string | null;
+          snapshottedAt: string;
+          nachtragNumber: number;
+          createdAt: string;
+        };
+        to: {
+          id: string;
+          token: string;
+          snapshotVersion: number;
+          snapshotHash: string | null;
+          snapshottedAt: string;
+          nachtragNumber: number;
+          createdAt: string;
+        };
+        diff: {
+          added: Array<{ id: string; oz: string; shortText: string; ep: number; gp: number; quantity: number; unit: string }>;
+          removed: Array<{ id: string; oz: string; shortText: string; ep: number; gp: number; quantity: number; unit: string }>;
+          changed: Array<{
+            before: { id: string; oz: string; shortText: string; ep: number; gp: number; quantity: number; unit: string };
+            after: { id: string; oz: string; shortText: string; ep: number; gp: number; quantity: number; unit: string };
+            fields: string[];
+          }>;
+          unchanged: Array<{ id: string; oz: string; shortText: string; ep: number; gp: number; quantity: number; unit: string }>;
+          oldTotalNetto: number;
+          newTotalNetto: number;
+          delta: number;
+        };
+      }>(`/projects/${projectId}/snapshots/diff?from=${encodeURIComponent(fromShareId)}&to=${encodeURIComponent(toShareId)}`),
   },
   inbox: {
     list: () =>
@@ -473,6 +508,22 @@ export const api = {
       }),
     use: (id: string) =>
       request<{ ok: true }>(`/templates/${id}/use`, { method: 'POST' }),
+    update: (
+      id: string,
+      patch: Partial<{
+        oz: string;
+        shortText: string;
+        longText: string;
+        unit: string;
+        defaultMaterialCost: number;
+        defaultTimeMinutes: number;
+        defaultNuCost: number;
+      }>,
+    ) =>
+      request<PositionTemplate>(`/templates/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      }),
     delete: (id: string) =>
       request<{ ok: true }>(`/templates/${id}`, { method: 'DELETE' }),
   },

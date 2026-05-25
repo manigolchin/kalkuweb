@@ -5,6 +5,23 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-05-23 15:05 — Post-v4 audit: 8 bug fixes + Werkzeuge dropdown + Vorlagen-Bibliothek
+- Source: user "Be expert and analyse my panel and do research add more feutures if it is good for us and push to main and debug. Do your best you can use subagents"
+- Branch: claude-auto/2026-05-23-panel-bugfixes-and-vorlagen-drift → fast-forward into main → pushed → deployed
+- Result: 3 commits (a376493 fixes, f136945 dropdown+dashboard, afe1355 Vorlagen) live at https://kalku.kalkus.de (bundle index-DT3Gc7kd.js, panel-api healthy)
+- Notes: Two parallel subagents — one audited the 5 features I shipped last session (Snapshot Diff / Validator / EFB / Nachkalk / Preisspiegel), one researched post-v4-roadmap features. Triaged 8 user-visible bugs:
+  - **Validator**: empty-tender silently passed → now blocking `tender-empty` issue; m²↔m2 (and m³↔m3) unicode-superscripts now normalize; `qtyTBD` no longer poisons the match count (was reporting "0/3 sauber" for 3/3 correct rows).
+  - **Snapshot Diff**: revoked shares no longer offered as comparison candidates (would 4xx silently).
+  - **Submit Validator dialog**: parsed result no longer wiped on every reopen; only "Andere Datei" clears.
+  - **EFB 221**: divide-by-zero now shows "—" instead of misleading "0,0 %".
+  - **EFB 222**: footnote "AGK + W&G bereits in EPs enthalten" was factually wrong → replaced with ZSCHLG-matrix reference.
+  - **Nachkalk**: `filledCount` counted note-only rows (lied "X/Y erfasst"); `istHours` summary fell back to Soll-hours (inflated). Tile now compares Ist vs Soll-für-erfasste-Rows.
+  - **Preisspiegel**: column header relabel ("Aktuell" → "EK netto") and min/max highlight no longer mis-marks identical prices.
+  - +5 new validator tests covering the regressions.
+- UX consolidation: ProjectDetail's 12-button action row was a "visual disaster" per the audit. Collapsed 5 tool buttons (Vergleichen / Validieren / EFB / Nachkalk / Preisspiegel) into a single "Werkzeuge ▾" dropdown menu. Added a "Werkzeuge" card to PanelHome surfacing EFB/Preisspiegel/Nachkalk for the most-recent project.
+- New feature: **Vorlagen-Bibliothek** — first dedicated UI for saved position templates (until now only inline). New `/panel/vorlagen` page with searchable list, edit-in-place rows, verwendet-count badge, delete-with-confirm. Backend `PATCH /api/templates/:id` with zod refine, IDOR-hardened, cents-roundtrip preserved. Sidebar entry. 18 new tests (8 backend / 10 frontend).
+- Final totals: frontend 494→508 (+14), panel-api 395→403 (+8). Lint 0 errors. TypeScript clean both sides. Build 3.66 s. Pushed + deployed.
+
 ## 2026-05-23 01:15 — Round 10 — best-practice hardening + a11y + UX (+80 tests)
 - Source: user "be expert and search good from good software what can you add more or optimierung the every part of panel you can use subagents and dont break sth and at the end debug"
 - Branch: claude-auto/v2-gaps-closeout (continued)

@@ -175,6 +175,8 @@ function parseGaebDaXml(doc: Document, format: GaebFormat): XmlParseResult {
           ql(item, 'PerfDescr')?.textContent?.trim() === 'Yes' ||
           item.getAttribute('Bedarfsposition') === 'Yes';
         const wahlpos = item.getAttribute('Wahlposition') === 'Yes';
+        const eventualpos = item.getAttribute('Eventualposition') === 'Yes';
+        const zuschlagspos = item.getAttribute('Zuschlagsposition') === 'Yes';
 
         positions.push({
           oz,
@@ -190,6 +192,8 @@ function parseGaebDaXml(doc: Document, format: GaebFormat): XmlParseResult {
           qtyTBD,
           bedarfsposition: bedarfspos || undefined,
           wahlposition: wahlpos || undefined,
+          eventualposition: eventualpos || undefined,
+          zuschlagsposition: zuschlagspos || undefined,
         });
       }
     }

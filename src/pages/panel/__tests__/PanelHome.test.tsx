@@ -188,8 +188,10 @@ describe('PanelHome.tsx — recent projects', () => {
     projectsListMock.mockResolvedValueOnce({ projects });
     inboxListMock.mockResolvedValueOnce({ entries: [], generatedAt: 'now' });
     renderHome();
-    await waitFor(() => expect(screen.getByText('Project E')).toBeDefined());
-    // Latest 4 = E, B, C, A. P5/P2/P3/P1 in order; P4 should NOT show.
+    // Project E is the most recent and is also surfaced in the Werkzeuge card,
+    // so it appears twice — use getAllByText.
+    await waitFor(() => expect(screen.getAllByText('Project E').length).toBeGreaterThan(0));
+    // Latest 4 in "Zuletzt bearbeitet" = E, B, C, A. P4 should NOT show.
     expect(screen.getByText('Project B')).toBeDefined();
     expect(screen.getByText('Project C')).toBeDefined();
     expect(screen.getByText('Project A')).toBeDefined();
@@ -213,9 +215,15 @@ describe('PanelHome.tsx — recent projects', () => {
     });
     inboxListMock.mockResolvedValueOnce({ entries: [], generatedAt: 'now' });
     renderHome();
-    await waitFor(() => expect(screen.getByText('Sanierung')).toBeDefined());
-    const link = screen.getByText('Sanierung').closest('a');
-    expect(link?.getAttribute('href')).toBe('/panel/kalkulation/abc-123');
+    // "Sanierung" appears once in the recent-projects card, once in the
+    // Werkzeuge card. Find the recent-projects entry by looking for the
+    // anchor that links to the project detail.
+    await waitFor(() => {
+      const links = screen.getAllByRole('link').filter(
+        (a) => a.getAttribute('href') === '/panel/kalkulation/abc-123',
+      );
+      expect(links.length).toBeGreaterThan(0);
+    });
   });
 });
 

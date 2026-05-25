@@ -86,19 +86,57 @@ const calcParamsSchema = z.object({
   mwst: fnum(),
 });
 
-const projectDataSchema = z.object({
-  name: z.string().max(500).default(''),
-  client: z.string().max(500).default(''),
-  clientEmail: z.string().max(500).optional(),
-  clientAddress: z.string().max(2000).optional(),
-  service: z.string().max(500).default(''),
-  tenderNumber: z.string().max(200).default(''),
-  deadline: z.string().max(64).default(''),
-  bidder: z.string().max(500).default(''),
-  calcParams: calcParamsSchema,
-  positions: z.array(positionSchema).max(MAX_POSITIONS),
-  notes: z.string().max(10000).optional(),
-}) as unknown as z.ZodType<ProjectData>;
+// Feature #5 — per-position actual values captured after Auftragsausführung.
+// Lives inside ProjectData.actuals as a Record<positionId, PositionActual>.
+const positionActualSchema = z.object({
+  hours: fnum().optional(),
+  materialCost: fnum().optional(),
+  nuCost: fnum().optional(),
+  note: z.string().max(4000).optional(),
+  recordedAt: z.string().max(64).optional(),
+});
+
+// Feature #2 — Preisspiegel: one NU/Lieferant quote source and its per-
+// position prices. Lives in ProjectData.nuQuotes[].
+const nuQuoteSchema = z.object({
+  materialCost: fnum().optional(),
+  nuCost: fnum().optional(),
+  note: z.string().max(4000).optional(),
+});
+
+const nuQuoteSourceSchema = z.object({
+  id: z.string().max(64),
+  name: z.string().max(500),
+  note: z.string().max(2000).optional(),
+  receivedAt: z.string().max(64).optional(),
+  quotes: z.record(z.string().max(64), nuQuoteSchema),
+});
+
+const projectDataSchema = z
+  .object({
+    name: z.string().max(500).default(''),
+    client: z.string().max(500).default(''),
+    clientEmail: z.string().max(500).optional(),
+    clientAddress: z.string().max(2000).optional(),
+    service: z.string().max(500).default(''),
+    tenderNumber: z.string().max(200).default(''),
+    deadline: z.string().max(64).default(''),
+    bidder: z.string().max(500).default(''),
+    calcParams: calcParamsSchema,
+    positions: z.array(positionSchema).max(MAX_POSITIONS),
+    notes: z.string().max(10000).optional(),
+    /** Feature #5 — Nachkalkulation Lite. Bug 2026-05-23: previously not
+     *  declared here, zod silently stripped on every save → total data loss
+     *  on Nachkalk page. Now explicit + validated. */
+    actuals: z.record(z.string().max(64), positionActualSchema).optional(),
+    /** Feature #2 — Preisspiegel. Same regression class as `actuals`. */
+    nuQuotes: z.array(nuQuoteSourceSchema).max(50).optional(),
+  })
+  // passthrough so future optional ProjectData fields (zuschlagOriginal,
+  // headerExtras, faktoren etc.) round-trip even when we forget to declare
+  // them. Same regression class as the `actuals`/`nuQuotes` bug — the schema
+  // was stripping fields the frontend depends on. Belt-and-suspenders.
+  .passthrough() as unknown as z.ZodType<ProjectData>;
 
 const putBodySchema = z.object({
   data: projectDataSchema as unknown as z.ZodType<ProjectData>,
@@ -191,6 +229,11 @@ export const projectsRoute = new Hono<{ Variables: AuthVariables }>()
         lastViewedAt: s.lastViewedAt,
         viewCount: s.viewCount,
         snapshotHash: s.snapshotHash,
+        // Bug 2026-05-23: SnapshotDiffDialog filters candidates on
+        // snapshottedAt and falls through to createdAt for the label when
+        // missing. Without this we always showed createdAt; now the user
+        // sees the actual snapshot timestamp.
+        snapshottedAt: s.snapshotData?.snapshottedAt ?? null,
         parentShareId: s.parentShareId,
         nachtragNumber: s.nachtragNumber,
       })),

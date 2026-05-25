@@ -11,6 +11,10 @@ import {
   FileText,
   Clock,
   AlertCircle,
+  Scale,
+  TrendingUp,
+  Wrench,
+  Library,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '@/lib/api';
@@ -132,6 +136,7 @@ export default function PanelHome() {
           <Card title="Schnellzugriff" icon={ArrowRight}>
             <ul className="-mx-1 -my-1.5 space-y-0.5">
               <ShortcutRow to="/panel/kalkulation" icon={Calculator} label="Projekte" hint="g p" />
+              <ShortcutRow to="/panel/vorlagen" icon={Library} label="Vorlagen-Bibliothek" />
               <ShortcutRow to="/panel/feedback" icon={Inbox} label="Kunden-Feedback" hint="g i" />
               <ShortcutRow to="/panel/einstellungen" icon={FileText} label="Profil & Logo" hint="g s" />
             </ul>
@@ -141,6 +146,10 @@ export default function PanelHome() {
               <span>Befehlspalette öffnen</span>
             </p>
           </Card>
+
+          {projects && projects.length > 0 && (
+            <ToolsCard project={[...projects].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))[0]} />
+          )}
 
           <Card
             title="Zuletzt bearbeitet"
@@ -190,6 +199,27 @@ export default function PanelHome() {
 }
 
 /* ─── helpers ─────────────────────────────────────────────────────────── */
+
+function ToolsCard({ project }: { project: ProjectSummary }) {
+  const base = `/panel/kalkulation/${project.id}`;
+  return (
+    <Card title="Werkzeuge" icon={Wrench}>
+      <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
+        Für <span className="font-semibold text-slate-700 dark:text-slate-200 truncate inline-block max-w-[10rem] align-bottom" title={project.name || 'Projekt'}>
+          {project.name || 'zuletzt bearbeitetes Projekt'}
+        </span>
+      </p>
+      <ul className="-mx-1 space-y-0.5">
+        <ShortcutRow to={`${base}/efb`} icon={FileText} label="EFB 221/222/223" hint="VOB" />
+        <ShortcutRow to={`${base}/preisspiegel`} icon={Scale} label="Preisspiegel" hint="NU" />
+        <ShortcutRow to={`${base}/actuals`} icon={TrendingUp} label="Nachkalkulation" hint="Ist" />
+      </ul>
+      <p className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400">
+        Pro Projekt im Werkzeuge-Menü oben rechts.
+      </p>
+    </Card>
+  );
+}
 
 function greeting(): string {
   const h = new Date().getHours();

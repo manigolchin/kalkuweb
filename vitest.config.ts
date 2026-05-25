@@ -11,7 +11,12 @@ export default defineConfig({
     },
   },
   test: {
-    environment: 'jsdom',
+    // happy-dom — required on Node 22.11. jsdom@28+ trips on ESM-only
+    // @exodus/bytes; jsdom@27 trips on ESM-only @csstools/css-calc. Both
+    // need Node 22.12+ which we're not on yet. Tests that depended on
+    // jsdom-specific quirks have been adjusted to happy-dom-compatible
+    // patterns (window.confirm mock in setup, fireEvent semantics).
+    environment: 'happy-dom',
     globals: true,
     css: false,
     include: [
