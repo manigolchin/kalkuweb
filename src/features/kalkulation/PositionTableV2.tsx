@@ -233,7 +233,13 @@ function computePlausibility(
               : sorted[mid];
           if (median > 0) {
             const deviation = (row.ep - median) / median;
-            if (Math.abs(deviation) > 0.4) {
+            // Round to 4 dp before comparing so IEEE-754 noise (e.g. exactly
+            // +40% can land at 0.40000000000000013) does NOT fire the chip.
+            // Threshold is "strictly above 40%" — the tooltip would otherwise
+            // claim "+40,0 %" and look like a bug. Caught by Round-12 debug
+            // suite (PositionTableV2.plausibility.edges.test.tsx).
+            const roundedAbsDev = Math.round(Math.abs(deviation) * 10000) / 10000;
+            if (roundedAbsDev > 0.4) {
               chip.outlier = {
                 median,
                 actual: row.ep,
@@ -456,9 +462,16 @@ export default function PositionTableV2({
     [positions, onChange, selectedIds],
   );
 
+  // Clamp the multiplier so a -200 % bulk discount can't flip values negative.
+  // Math: factor = 1 + pct/100, but a user-typed "-200" yields -1 → values
+  // get negated. Clamping at 0 means "-100 %" zeroes out (well-defined) and
+  // anything below -100 % silently saturates at 0 instead of going negative.
+  // Caught by Round-12 debug suite (PositionTableV2.bulkEdit.edges.test.tsx).
+  const pctFactor = (pct: number) => Math.max(0, 1 + pct / 100);
+
   const bulkAdjustMaterialPct = useCallback(
     (pct: number) => {
-      const factor = 1 + pct / 100;
+      const factor = pctFactor(pct);
       applyBulk((p) => ({ ...p, materialCost: round2(p.materialCost * factor) }));
     },
     [applyBulk],
@@ -466,7 +479,7 @@ export default function PositionTableV2({
 
   const bulkAdjustTimePct = useCallback(
     (pct: number) => {
-      const factor = 1 + pct / 100;
+      const factor = pctFactor(pct);
       applyBulk((p) => ({ ...p, timeMinutes: round2(p.timeMinutes * factor) }));
     },
     [applyBulk],
@@ -474,7 +487,7 @@ export default function PositionTableV2({
 
   const bulkAdjustNuPct = useCallback(
     (pct: number) => {
-      const factor = 1 + pct / 100;
+      const factor = pctFactor(pct);
       applyBulk((p) => ({ ...p, nuCost: round2(p.nuCost * factor) }));
     },
     [applyBulk],
