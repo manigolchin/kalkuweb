@@ -1,6 +1,8 @@
 import {
   useCallback,
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import {
@@ -14,9 +16,11 @@ import {
   Sparkles,
   FileText,
   AlertCircle,
+  AlertTriangle,
   Layers,
   Users,
   MessageCircle,
+  X,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { nanoid } from 'nanoid';
@@ -92,6 +96,162 @@ type Props = {
 type Group =
   | { kind: 'group'; id: string; header: Position; rows: Position[]; subtotal: number; visibleSubtotal: number; visibleRowCount: number }
   | { kind: 'orphan'; id: string; row: Position };
+
+/**
+ * Round 12 Feature 2 — inline plausibility chips.
+ *
+ * Two rules, evaluated per non-header row in INTERN view:
+ *
+ *  - RULE A "Preis fehlt" (red):
+ *      materialCost === 0 && nuCost === 0 && timeMinutes === 0
+ *      Surfaces the most-expensive bid mistake: submitting an LV with empty
+ *      prices (Angebotsausschluss-Risiko).
+ *
+ *  - RULE B "Ungewöhnlich" (amber):
+ *      Compare this row's EP to the median EP of other non-header rows in the
+ *      project whose shortText shares ≥2 tokens AND uses the same unit.
+ *      Triggers when |ep - median| / median > 0.4 AND the comparison set has
+ *      ≥3 other rows. Suggests the calculator may have a copy-paste mistake
+ *      (e.g. 999€ when 9,99€ was intended).
+ *
+ * Output: Map<positionId, PlausibilityChip>. Empty entries skipped.
+ * Computed once per (positions, params) change via useMemo so a row render
+ * doesn't recompute medians when an unrelated row changes.
+ */
+type PlausibilityChip = {
+  /** Row has zero across material/time/nu — likely "forgot to price" or AI-import gap. */
+  missingPrice?: true;
+  /** Row's EP deviates >40% from the median of the comparison set. */
+  outlier?: {
+    median: number;
+    actual: number;
+    deviationPct: number; // signed: positive = above median, negative = below
+  };
+};
+
+/** Tokenize a shortText for comparison-set matching: lowercase, split on
+ *  non-letter/digit, drop ≤2-char stopwords. Pure function — no mutation. */
+function tokenizeShortText(s: string): string[] {
+  if (!s) return [];
+  return s
+    .toLowerCase()
+    .split(/[^a-zäöüß0-9]+/i)
+    .filter((t) => t.length > 2);
+}
+
+function computePlausibility(
+  positions: Position[],
+  params: CalcParams,
+): Map<string, PlausibilityChip> {
+  const result = new Map<string, PlausibilityChip>();
+  if (positions.length === 0) return result;
+
+  // Pre-compute per-position EP + token set (single pass). Skip headers.
+  type Row = {
+    id: string;
+    ep: number;
+    materialCost: number;
+    nuCost: number;
+    timeMinutes: number;
+    unit: string;
+    tokens: string[];
+  };
+  const rows: Row[] = [];
+  // Inverted index: token → list of row indices that contain it.
+  // Bucketed by unit so the comparison-set query only scans same-unit rows.
+  // Map<unit, Map<token, Set<rowIndex>>>
+  const indexByUnit = new Map<string, Map<string, Set<number>>>();
+
+  for (const p of positions) {
+    if (p.isHeader) continue;
+    const calc = calculatePosition(p, params);
+    const unit = (p.unit ?? '').trim().toLowerCase();
+    const tokens = tokenizeShortText(p.shortText ?? '');
+    const idx = rows.length;
+    rows.push({
+      id: p.id,
+      ep: calc.ep,
+      materialCost: p.materialCost,
+      nuCost: p.nuCost,
+      timeMinutes: p.timeMinutes,
+      unit,
+      tokens,
+    });
+    if (unit && calc.ep > 0 && tokens.length > 0) {
+      let unitMap = indexByUnit.get(unit);
+      if (!unitMap) {
+        unitMap = new Map();
+        indexByUnit.set(unit, unitMap);
+      }
+      for (const t of tokens) {
+        let set = unitMap.get(t);
+        if (!set) {
+          set = new Set();
+          unitMap.set(t, set);
+        }
+        set.add(idx);
+      }
+    }
+  }
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const chip: PlausibilityChip = {};
+
+    // RULE A — missing price across all 3 inputs.
+    if (row.materialCost === 0 && row.nuCost === 0 && row.timeMinutes === 0) {
+      chip.missingPrice = true;
+    }
+
+    // RULE B — outlier vs comparison set (same unit + ≥2 token overlap).
+    // Skipped for rows that already trigger Rule A.
+    if (!chip.missingPrice && row.ep > 0 && row.unit && row.tokens.length > 0) {
+      const unitMap = indexByUnit.get(row.unit);
+      if (unitMap) {
+        // Tally overlap counts across this row's tokens — only candidates
+        // that hit ≥2 different tokens make the comparison set.
+        const overlap = new Map<number, number>();
+        for (const t of row.tokens) {
+          const bucket = unitMap.get(t);
+          if (!bucket) continue;
+          for (const cand of bucket) {
+            if (cand === i) continue;
+            overlap.set(cand, (overlap.get(cand) ?? 0) + 1);
+          }
+        }
+        const eps: number[] = [];
+        for (const [cand, count] of overlap) {
+          if (count >= 2) eps.push(rows[cand].ep);
+        }
+        // Need ≥3 comparable rows for the median to be meaningful.
+        if (eps.length >= 3) {
+          const sorted = [...eps].sort((a, b) => a - b);
+          const mid = Math.floor(sorted.length / 2);
+          const median =
+            sorted.length % 2 === 0
+              ? (sorted[mid - 1] + sorted[mid]) / 2
+              : sorted[mid];
+          if (median > 0) {
+            const deviation = (row.ep - median) / median;
+            if (Math.abs(deviation) > 0.4) {
+              chip.outlier = {
+                median,
+                actual: row.ep,
+                deviationPct: deviation * 100,
+              };
+            }
+          }
+        }
+      }
+    }
+
+    if (chip.missingPrice || chip.outlier) {
+      result.set(row.id, chip);
+    }
+  }
+
+  return result;
+}
 
 const TYPE_ACCENT: Record<PositionType, string> = {
   standard: '',
@@ -197,6 +357,157 @@ export default function PositionTableV2({
     }
     return new Set(Array.from(count.entries()).filter(([, n]) => n > 1).map(([k]) => k));
   }, [positions]);
+
+  // Round 12 Feature 2 — plausibility chips. Memoized so a row render doesn't
+  // recompute medians when an unrelated row changes (still recomputes when
+  // any position changes — acceptable for a 400-row LV at <2ms).
+  const plausibility = useMemo(
+    () => computePlausibility(positions, params),
+    [positions, params],
+  );
+
+  // Round 12 Feature 1 — bulk edit + multi-select. Selection lives in-component
+  // (not persisted). Cleared on view toggle to KUNDEN, Esc, and bulk-action
+  // commit/cancel. `lastSelectedId` anchors shift+click range selection.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const lastSelectedIdRef = useRef<string | null>(null);
+
+  /** All non-header position ids in render order — anchor for shift-click. */
+  const selectableIds = useMemo(
+    () => positions.filter((p) => !p.isHeader).map((p) => p.id),
+    [positions],
+  );
+
+  // Clear selection when leaving INTERN (the bar is hidden in KUNDEN by
+  // construction — but also drop the state so toggling back doesn't surface
+  // a stale selection).
+  useEffect(() => {
+    if (view !== 'intern' && selectedIds.size > 0) {
+      setSelectedIds(new Set());
+      lastSelectedIdRef.current = null;
+    }
+  }, [view, selectedIds.size]);
+
+  // Esc clears selection (parity with Nevaris / iTwo).
+  useEffect(() => {
+    if (selectedIds.size === 0) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setSelectedIds(new Set());
+        lastSelectedIdRef.current = null;
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedIds.size]);
+
+  const toggleSelected = useCallback(
+    (id: string, opts?: { shift?: boolean }) => {
+      // Drop selection of headers / unknown ids defensively.
+      if (!selectableIds.includes(id)) return;
+      if (opts?.shift && lastSelectedIdRef.current && lastSelectedIdRef.current !== id) {
+        const a = selectableIds.indexOf(lastSelectedIdRef.current);
+        const b = selectableIds.indexOf(id);
+        if (a === -1 || b === -1) {
+          // Anchor missing — fall back to single toggle.
+        } else {
+          const [lo, hi] = a <= b ? [a, b] : [b, a];
+          const range = selectableIds.slice(lo, hi + 1);
+          setSelectedIds((prev) => {
+            const next = new Set(prev);
+            for (const rid of range) next.add(rid);
+            return next;
+          });
+          lastSelectedIdRef.current = id;
+          return;
+        }
+      }
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+      lastSelectedIdRef.current = id;
+    },
+    [selectableIds],
+  );
+
+  const selectAllVisible = useCallback(() => {
+    setSelectedIds(new Set(selectableIds));
+    lastSelectedIdRef.current = selectableIds[selectableIds.length - 1] ?? null;
+  }, [selectableIds]);
+
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set());
+    lastSelectedIdRef.current = null;
+  }, []);
+
+  /** Apply a transformation to every selected position in a single onChange
+   *  call. This is the canonical "one save, not N" path the brief mandates. */
+  const applyBulk = useCallback(
+    (transform: (p: Position) => Position) => {
+      if (selectedIds.size === 0) return;
+      const next = positions.map((p) =>
+        selectedIds.has(p.id) && !p.isHeader ? transform(p) : p,
+      );
+      onChange(next);
+    },
+    [positions, onChange, selectedIds],
+  );
+
+  const bulkAdjustMaterialPct = useCallback(
+    (pct: number) => {
+      const factor = 1 + pct / 100;
+      applyBulk((p) => ({ ...p, materialCost: round2(p.materialCost * factor) }));
+    },
+    [applyBulk],
+  );
+
+  const bulkAdjustTimePct = useCallback(
+    (pct: number) => {
+      const factor = 1 + pct / 100;
+      applyBulk((p) => ({ ...p, timeMinutes: round2(p.timeMinutes * factor) }));
+    },
+    [applyBulk],
+  );
+
+  const bulkAdjustNuPct = useCallback(
+    (pct: number) => {
+      const factor = 1 + pct / 100;
+      applyBulk((p) => ({ ...p, nuCost: round2(p.nuCost * factor) }));
+    },
+    [applyBulk],
+  );
+
+  const bulkMarkAs = useCallback(
+    (positionType: PositionType) => {
+      applyBulk((p) => ({
+        ...p,
+        positionType,
+        // Mirror setPositionType's contract — internal types force-hide.
+        visibleToCustomer: INTERNAL_POSITION_TYPES.has(positionType)
+          ? false
+          : p.visibleToCustomer,
+      }));
+    },
+    [applyBulk],
+  );
+
+  const bulkDelete = useCallback(() => {
+    if (selectedIds.size === 0) return;
+    if (typeof window !== 'undefined') {
+      const ok = window.confirm(
+        `${selectedIds.size} ${selectedIds.size === 1 ? 'Position' : 'Positionen'} wirklich löschen? Diese Aktion lässt sich nicht rückgängig machen.`,
+      );
+      if (!ok) return;
+    }
+    const next = positions.filter(
+      (p) => p.isHeader || !selectedIds.has(p.id),
+    );
+    onChange(next);
+    clearSelection();
+  }, [positions, onChange, selectedIds, clearSelection]);
 
   const updateRow = useCallback(
     (id: string, patch: Partial<Position>) => {
@@ -371,6 +682,17 @@ export default function PositionTableV2({
         <table className="w-full text-sm border-separate border-spacing-0">
           <thead>
             <tr className="text-[10px] uppercase tracking-wider text-slate-500 select-none">
+              {/* Round 12 Feature 1 — bulk-select header checkbox.
+                  Click toggles "all visible non-header rows" on/off.
+                  Indeterminate state when only some rows are selected. */}
+              <th className="sticky top-0 z-10 bg-white border-b border-slate-200 px-1.5 py-2.5 w-7">
+                <SelectAllCheckbox
+                  total={selectableIds.length}
+                  selected={selectedIds.size}
+                  onSelectAll={selectAllVisible}
+                  onClearAll={clearSelection}
+                />
+              </th>
               <ColHead className="w-8 bg-white">{''}</ColHead>
               <ColHead className="w-[110px] bg-white">OZ</ColHead>
               <ColHead className="bg-white">Bezeichnung</ColHead>
@@ -399,7 +721,7 @@ export default function PositionTableV2({
           <tbody>
             {groups.length === 0 && (
               <tr>
-                <td colSpan={14} className="px-6 py-16 text-center text-slate-400 border-t border-slate-100">
+                <td colSpan={15} className="px-6 py-16 text-center text-slate-400 border-t border-slate-100">
                   Noch keine Positionen. Mit <strong>+ Position</strong> oder <strong>+ Titel</strong> beginnen.
                 </td>
               </tr>
@@ -425,6 +747,9 @@ export default function PositionTableV2({
                   faktoren={faktoren}
                   togglePreCalc={togglePreCalc}
                   expandedPreCalc={expandedPreCalc}
+                  selectedIds={selectedIds}
+                  toggleSelected={toggleSelected}
+                  plausibility={plausibility}
                 />
               ) : (
                 <PositionRow
@@ -444,6 +769,9 @@ export default function PositionTableV2({
                   faktoren={faktoren}
                   togglePreCalc={togglePreCalc}
                   isPreCalcExpanded={expandedPreCalc.has(g.row.id)}
+                  isSelected={selectedIds.has(g.row.id)}
+                  onToggleSelect={toggleSelected}
+                  chip={plausibility.get(g.row.id)}
                 />
               ),
             )}
@@ -453,6 +781,21 @@ export default function PositionTableV2({
 
       <StickyTotals totals={totals} positionCount={positions.filter((p) => !p.isHeader).length} />
     </div>
+
+    {/* Round 12 Feature 1 — bulk action bar. Fixed to the viewport bottom
+        while in INTERN view + ≥1 row selected. Hidden in KUNDEN (the
+        component early-returns to KundenPreview before reaching here). */}
+    {selectedIds.size > 0 && (
+      <BulkActionBar
+        count={selectedIds.size}
+        onAdjustMaterialPct={bulkAdjustMaterialPct}
+        onAdjustTimePct={bulkAdjustTimePct}
+        onAdjustNuPct={bulkAdjustNuPct}
+        onMarkAs={bulkMarkAs}
+        onDeleteSelected={bulkDelete}
+        onClear={clearSelection}
+      />
+    )}
     </div>
   );
 }
@@ -551,6 +894,11 @@ type GroupRowsProps = {
   /** Per-row F1..F7 Vorrechnung toggle + expanded-state tracker. */
   togglePreCalc: (id: string) => void;
   expandedPreCalc: Set<string>;
+  /** Round 12 Feature 1 — bulk-select state + handler. */
+  selectedIds: Set<string>;
+  toggleSelected: (id: string, opts?: { shift?: boolean }) => void;
+  /** Round 12 Feature 2 — per-row plausibility chips. */
+  plausibility: Map<string, PlausibilityChip>;
 };
 
 function GroupRows({
@@ -571,10 +919,16 @@ function GroupRows({
   faktoren,
   togglePreCalc,
   expandedPreCalc,
+  selectedIds,
+  toggleSelected,
+  plausibility,
 }: GroupRowsProps) {
   return (
     <>
       <tr className="group/hdr" data-testid={`v2-group-${group.id}`}>
+        {/* Round 12 Feature 1 — empty placeholder cell to keep the column
+            grid aligned. Header rows are never selectable per spec. */}
+        <td className="bg-primary-50/60 border-t border-slate-200 px-1 py-1.5" aria-hidden />
         <td className="bg-primary-50/60 border-t border-slate-200 px-1 py-1.5">
           <button
             onClick={onToggleCollapse}
@@ -638,6 +992,9 @@ function GroupRows({
             faktoren={faktoren}
             togglePreCalc={togglePreCalc}
             isPreCalcExpanded={expandedPreCalc.has(p.id)}
+            isSelected={selectedIds.has(p.id)}
+            onToggleSelect={toggleSelected}
+            chip={plausibility.get(p.id)}
           />
         ))}
     </>
@@ -666,6 +1023,14 @@ type PositionRowProps = {
   /** Per-row F1..F7 Vorrechnung expand toggle + state. */
   togglePreCalc?: (id: string) => void;
   isPreCalcExpanded?: boolean;
+  /** Round 12 Feature 1 — bulk-select state + handler.  When `onToggleSelect`
+   *  is omitted (e.g. tests that exercise the row in isolation), the checkbox
+   *  becomes inert but still renders so colSpan stays consistent. */
+  isSelected?: boolean;
+  onToggleSelect?: (id: string, opts?: { shift?: boolean }) => void;
+  /** Round 12 Feature 2 — plausibility chip data, if this row triggered one
+   *  or both of the two rules. */
+  chip?: PlausibilityChip;
 };
 
 function PositionRow({
@@ -688,6 +1053,9 @@ function PositionRow({
   faktoren,
   togglePreCalc,
   isPreCalcExpanded,
+  isSelected,
+  onToggleSelect,
+  chip,
 }: PositionRowProps) {
   const calc = useMemo(() => calculatePosition(p, params), [p, params]);
   const pt = (p.positionType ?? 'standard') as PositionType;
@@ -699,12 +1067,36 @@ function PositionRow({
     <>
       <tr
         data-testid={`v2-row-${p.id}`}
+        aria-selected={isSelected ? 'true' : undefined}
         className={clsx(
           'group hover:bg-amber-50/40 transition-colors',
           accent,
           !p.visibleToCustomer && !internal && 'opacity-70',
+          // Subtle highlight for selected rows — distinct from hover so the
+          // calculator sees what they've marked at a glance.
+          isSelected && 'bg-primary-50/60 hover:bg-primary-50/80',
         )}
       >
+        {/* Round 12 Feature 1 — bulk-select checkbox. Lives in its own cell
+            so a row body click doesn't toggle selection (the cell stops
+            event propagation). */}
+        <td
+          className="bg-white border-t border-slate-100 px-1.5 py-[10px] align-top"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <input
+            type="checkbox"
+            checked={!!isSelected}
+            data-testid={`v2-select-row-${p.id}`}
+            aria-label={`Position ${p.oz || p.shortText || p.id} markieren`}
+            onChange={(e) => {
+              // Shift+click: extend the range from the last anchor.
+              const shift = (e.nativeEvent as MouseEvent).shiftKey;
+              onToggleSelect?.(p.id, shift ? { shift: true } : undefined);
+            }}
+            className="w-4 h-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+          />
+        </td>
         <td className="bg-white border-t border-slate-100 px-1 py-[10px] align-top">
           <button
             onClick={() =>
@@ -739,14 +1131,20 @@ function PositionRow({
 
         {/* OZ — read-only display, whitespace preserved so " 1. 4. 1.  .   1"
             renders exactly as imported. Top-aligned so a multi-line
-            Bezeichnung doesn't push the OZ off the row. */}
+            Bezeichnung doesn't push the OZ off the row.
+            Round 12 Feature 2 — plausibility chips sit BELOW the OZ string
+            (the OZ field is narrow; stacking vertically keeps the column
+            from overflowing). */}
         <td className="bg-white border-t border-slate-100 px-2 py-[10px] align-top">
-          <div
-            data-readonly="oz"
-            className="w-full font-mono text-[12px] text-slate-700 px-1 py-1 whitespace-pre"
-            title={p.oz}
-          >
-            {p.oz || '—'}
+          <div className="flex flex-col gap-1">
+            <div
+              data-readonly="oz"
+              className="w-full font-mono text-[12px] text-slate-700 px-1 py-1 whitespace-pre"
+              title={p.oz}
+            >
+              {p.oz || '—'}
+            </div>
+            {chip && <PlausibilityChips position={p} chip={chip} />}
           </div>
         </td>
 
@@ -963,11 +1361,12 @@ function PositionRow({
       {/* Per-row F1..F7 Vorrechnung sub-row — only renders when the
           calculator has expanded it via the F₁₇ toggle button. Spans the
           full table width. Commits each slot individually through
-          updateRow so unmodified slots stay untouched. */}
+          updateRow so unmodified slots stay untouched. Round 12: colSpan
+          bumped from 14 → 15 to account for the new leading checkbox col. */}
       {isPreCalcExpanded && (
         <PreCalcStrip
           preCalcs={p.preCalcs}
-          colSpan={14}
+          colSpan={15}
           faktoren={faktoren}
           contextMenge={p.quantity}
           positionLabel={`${(p.oz || '—').trim()} · ${p.shortText || ''}`.slice(0, 80)}
@@ -987,6 +1386,8 @@ function PositionRow({
 
       {isLongExpanded && hasLong && (
         <tr>
+          {/* Round 12: leading empty cell for the new checkbox column. */}
+          <td className="bg-slate-50/40 border-t border-slate-100" aria-hidden />
           <td className="bg-slate-50/40 border-t border-slate-100" />
           <td className="bg-slate-50/40 border-t border-slate-100" />
           <td colSpan={5} className="bg-slate-50/40 border-t border-slate-100 px-2 py-2">
@@ -1352,4 +1753,332 @@ function parseDeNumber(s: string): number {
   const cleaned = String(s).replace(/\./g, '').replace(',', '.').trim();
   const n = parseFloat(cleaned);
   return Number.isFinite(n) ? n : 0;
+}
+
+/** 2-decimal rounding for bulk %-Adjustments. Mirrors the precision the
+ *  Excel template carries for EK columns. */
+function round2(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n * 100) / 100;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Round 12 Feature 1 — SelectAllCheckbox + BulkActionBar
+// ────────────────────────────────────────────────────────────────────────────
+
+function SelectAllCheckbox({
+  total,
+  selected,
+  onSelectAll,
+  onClearAll,
+}: {
+  total: number;
+  selected: number;
+  onSelectAll: () => void;
+  onClearAll: () => void;
+}) {
+  // Wire the indeterminate state on the underlying DOM node — React doesn't
+  // expose it as a controlled prop. Effect runs after every render so the
+  // box always reflects (selected/total).
+  const ref = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.indeterminate = selected > 0 && selected < total;
+    }
+  }, [selected, total]);
+  const allChecked = total > 0 && selected === total;
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={allChecked}
+      data-testid="v2-select-all"
+      aria-label={
+        allChecked
+          ? 'Alle Positionen abwählen'
+          : selected > 0
+            ? `${selected} von ${total} markiert — alle markieren`
+            : 'Alle Positionen markieren'
+      }
+      disabled={total === 0}
+      onChange={() => {
+        if (allChecked || selected > 0) {
+          onClearAll();
+        } else {
+          onSelectAll();
+        }
+      }}
+      className="w-4 h-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+    />
+  );
+}
+
+type BulkPercentMode = null | 'material' | 'time' | 'nu';
+
+function BulkActionBar({
+  count,
+  onAdjustMaterialPct,
+  onAdjustTimePct,
+  onAdjustNuPct,
+  onMarkAs,
+  onDeleteSelected,
+  onClear,
+}: {
+  count: number;
+  onAdjustMaterialPct: (pct: number) => void;
+  onAdjustTimePct: (pct: number) => void;
+  onAdjustNuPct: (pct: number) => void;
+  onMarkAs: (t: PositionType) => void;
+  onDeleteSelected: () => void;
+  onClear: () => void;
+}) {
+  const [pctMode, setPctMode] = useState<BulkPercentMode>(null);
+  const [pctSign, setPctSign] = useState<1 | -1>(1);
+  const [pctInput, setPctInput] = useState('');
+  const [markOpen, setMarkOpen] = useState(false);
+
+  function commitPct() {
+    if (!pctMode) return;
+    const raw = parseDeNumber(pctInput);
+    if (raw <= 0 || !Number.isFinite(raw)) {
+      setPctMode(null);
+      setPctInput('');
+      return;
+    }
+    const pct = raw * pctSign;
+    if (pctMode === 'material') onAdjustMaterialPct(pct);
+    else if (pctMode === 'time') onAdjustTimePct(pct);
+    else if (pctMode === 'nu') onAdjustNuPct(pct);
+    setPctMode(null);
+    setPctInput('');
+  }
+
+  function openPct(mode: Exclude<BulkPercentMode, null>, sign: 1 | -1) {
+    setPctMode(mode);
+    setPctSign(sign);
+    setPctInput('');
+    setMarkOpen(false);
+  }
+
+  return (
+    <div
+      role="region"
+      aria-label="Bulk-Bearbeitung"
+      data-testid="v2-bulk-bar"
+      className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 w-[min(96vw,1100px)] bg-slate-900 text-white shadow-2xl rounded-2xl border border-slate-700"
+    >
+      <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+        <div className="flex items-center gap-2 mr-2">
+          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary-600 text-xs font-semibold tabular-nums">
+            {count}
+          </span>
+          <span className="text-sm font-medium">
+            {count === 1 ? 'Position markiert' : 'Positionen markiert'}
+          </span>
+        </div>
+
+        <div className="h-5 w-px bg-slate-700 mx-1" aria-hidden />
+
+        {/* ±% adjusters — open the inline input for a chosen cost type. */}
+        <BulkPctTrigger
+          label="Material-EK +%"
+          testId="v2-bulk-material-plus"
+          onClick={() => openPct('material', 1)}
+        />
+        <BulkPctTrigger
+          label="Material-EK –%"
+          testId="v2-bulk-material-minus"
+          onClick={() => openPct('material', -1)}
+        />
+        <BulkPctTrigger
+          label="Min/Einheit +%"
+          testId="v2-bulk-time-plus"
+          onClick={() => openPct('time', 1)}
+        />
+        <BulkPctTrigger
+          label="Min/Einheit –%"
+          testId="v2-bulk-time-minus"
+          onClick={() => openPct('time', -1)}
+        />
+        <BulkPctTrigger
+          label="NU-EK +%"
+          testId="v2-bulk-nu-plus"
+          onClick={() => openPct('nu', 1)}
+        />
+
+        <div className="h-5 w-px bg-slate-700 mx-1" aria-hidden />
+
+        <div className="relative">
+          <button
+            type="button"
+            data-testid="v2-bulk-mark-toggle"
+            onClick={() => {
+              setMarkOpen((s) => !s);
+              setPctMode(null);
+            }}
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium border border-slate-700"
+          >
+            Markieren als…
+            <ChevronDown className="w-3 h-3" />
+          </button>
+          {markOpen && (
+            <div
+              role="menu"
+              data-testid="v2-bulk-mark-menu"
+              className="absolute bottom-full mb-1 left-0 w-[160px] bg-white text-slate-800 rounded-lg shadow-lg border border-slate-200 py-1"
+            >
+              {POSITION_TYPES.map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  role="menuitem"
+                  data-testid={`v2-bulk-mark-${t}`}
+                  onClick={() => {
+                    onMarkAs(t);
+                    setMarkOpen(false);
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-50"
+                >
+                  {POSITION_TYPE_LABELS[t]}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            data-testid="v2-bulk-delete"
+            onClick={onDeleteSelected}
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-rose-700 hover:bg-rose-600 text-xs font-medium"
+          >
+            <Trash2 className="w-3 h-3" />
+            Auswahl löschen
+          </button>
+          <button
+            type="button"
+            data-testid="v2-bulk-cancel"
+            onClick={onClear}
+            aria-label="Auswahl aufheben"
+            className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs"
+          >
+            <X className="w-3.5 h-3.5" />
+            Abbrechen
+          </button>
+        </div>
+      </div>
+
+      {pctMode && (
+        <div
+          className="flex items-center gap-2 px-4 pb-3 pt-1 border-t border-slate-700"
+          data-testid="v2-bulk-pct-input-row"
+        >
+          <span className="text-xs text-slate-300">
+            {pctMode === 'material' && 'Material-EK'}
+            {pctMode === 'time' && 'Min/Einheit'}
+            {pctMode === 'nu' && 'NU-EK'}
+            {' '}
+            {pctSign === 1 ? '+' : '–'} %:
+          </span>
+          <input
+            type="text"
+            inputMode="decimal"
+            data-testid="v2-bulk-pct-input"
+            autoFocus
+            value={pctInput}
+            onChange={(e) => setPctInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitPct();
+              else if (e.key === 'Escape') {
+                setPctMode(null);
+                setPctInput('');
+              }
+            }}
+            placeholder="z.B. 5"
+            className="w-24 px-2 py-1 rounded bg-slate-800 border border-slate-600 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-primary-400"
+          />
+          <button
+            type="button"
+            data-testid="v2-bulk-pct-commit"
+            onClick={commitPct}
+            className="px-3 py-1 rounded bg-primary-600 hover:bg-primary-500 text-xs font-semibold"
+          >
+            Anwenden
+          </button>
+          <button
+            type="button"
+            data-testid="v2-bulk-pct-cancel"
+            onClick={() => {
+              setPctMode(null);
+              setPctInput('');
+            }}
+            className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs"
+          >
+            Abbrechen
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BulkPctTrigger({
+  label,
+  testId,
+  onClick,
+}: {
+  label: string;
+  testId: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      onClick={onClick}
+      className="inline-flex items-center px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium border border-slate-700"
+    >
+      {label}
+    </button>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Round 12 Feature 2 — PlausibilityChips component
+// ────────────────────────────────────────────────────────────────────────────
+
+function PlausibilityChips({
+  position,
+  chip,
+}: {
+  position: Position;
+  chip: PlausibilityChip;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {chip.missingPrice && (
+        <span
+          data-testid={`v2-chip-missing-${position.id}`}
+          data-chip-rule="missing-price"
+          title="Material-EK, Zeit und NU sind alle 0 — Position hat keinen Preis. Vor Abgabe ausfüllen!"
+          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-red-100 text-red-800 text-[10px] font-semibold border border-red-200"
+        >
+          <AlertCircle className="w-2.5 h-2.5" />
+          EP fehlt
+        </span>
+      )}
+      {chip.outlier && (
+        <span
+          data-testid={`v2-chip-outlier-${position.id}`}
+          data-chip-rule="outlier"
+          title={`Median vergleichbarer Positionen: ${formatNum(chip.outlier.median, 2)} €. Diese Position: ${formatNum(chip.outlier.actual, 2)} €. Abweichung: ${chip.outlier.deviationPct > 0 ? '+' : ''}${formatNum(chip.outlier.deviationPct, 1)} %.`}
+          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-semibold border border-amber-200"
+        >
+          <AlertTriangle className="w-2.5 h-2.5" />
+          Ungewöhnlich
+        </span>
+      )}
+    </div>
+  );
 }
