@@ -22,6 +22,7 @@ import { requireAuth, type AuthVariables } from '../lib/middleware.js';
 import {
   getFirmaOverview,
   getProjectPositions,
+  getSubmissionsergebnis,
   listManagedProjects,
   listExternalProjects,
   isPreisanfrageEnabled,
@@ -505,6 +506,44 @@ export const firmenRoute = new Hono<{ Variables: AuthVariables }>()
         count: positions.length,
         positions,
       });
+    } catch (err) {
+      const { status, body } = handleUpstreamError(err);
+      return c.json(body, status);
+    }
+  })
+
+  /** Submissionsergebnis (bid-opening result) for one managed-firma project.
+   *  - Managed firma → upstream `/api/submissionsergebnis/{projectId}`, scoped
+   *    by company_id = firmaId. Returns the full bidder ranking; `bidders`
+   *    is empty (parsed=false) when the protocol hasn't been read yet.
+   *  - External / local firma → 404. The dedicated bidder endpoint only
+   *    covers managed projects upstream; external firmas already carry their
+   *    summary (rank/winner) inline in the Firma-detail projects[]. */
+  .get('/firmen/:kind/:firmaId/projects/:projectId/submissionsergebnis', requireAuth, async (c) => {
+    const kindParsed = FIRMA_KIND.safeParse(c.req.param('kind'));
+    if (!kindParsed.success) {
+      return c.json({ error: 'invalid_ref' }, 400);
+    }
+    const kind = kindParsed.data;
+    if (kind !== 'managed') {
+      return c.json({
+        error: 'submissionsergebnis_managed_only',
+        hint: 'Only managed firmas expose the per-project bidder ranking. External firmas carry their summary inline.',
+      }, 404);
+    }
+    const firmaId = Number(c.req.param('firmaId'));
+    const projectId = Number(c.req.param('projectId'));
+    if (!Number.isInteger(firmaId) || firmaId <= 0 || !Number.isInteger(projectId) || projectId <= 0) {
+      return c.json({ error: 'invalid_ref' }, 400);
+    }
+    if (!isPreisanfrageEnabled()) {
+      return c.json({ error: 'integration_disabled' }, 503);
+    }
+    try {
+      const result = await getSubmissionsergebnis(firmaId, projectId);
+      // teilnehmerCount 0 + empty bidders = upstream has no parsed protocol yet.
+      // Surface that explicitly so the UI shows "noch nicht eingelesen", not "0 Bieter".
+      return c.json({ ...result, parsed: result.bidders.length > 0, isMock: isPreisanfrageMock() });
     } catch (err) {
       const { status, body } = handleUpstreamError(err);
       return c.json(body, status);

@@ -222,10 +222,11 @@ describe('CommandPalette.tsx — open/closed', () => {
 });
 
 describe('CommandPalette.tsx — default action list', () => {
-  test('shows all 5 navigation entries by default', async () => {
+  test('shows all 6 navigation entries by default', async () => {
     renderPalette(true);
     await waitFor(() => expect(screen.getByText('Dashboard')).toBeDefined());
     expect(screen.getByText('Kalkulation')).toBeDefined();
+    expect(screen.getByText('Submissionskarte')).toBeDefined();
     expect(screen.getByText('Kunden-Feedback')).toBeDefined();
     expect(screen.getByText('Archiv')).toBeDefined();
     expect(screen.getByText('Einstellungen')).toBeDefined();
