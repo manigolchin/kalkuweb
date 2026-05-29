@@ -248,6 +248,15 @@ export default function PositionTable({ positions, params, onChange }: Props) {
 
   const removeRow = useCallback(
     (id: string) => {
+      // Protect imported rows (GAEB / Excel / preisanfrage seed) from
+      // accidental deletion — they are part of the Auftraggeber-LV.
+      const pos = positions.find((p) => p.id === id);
+      if (pos?.importedFrom) {
+        if (typeof window !== 'undefined') {
+          toast.error('GAEB-Position kann nicht gelöscht werden — sie ist Teil des Auftraggeber-LV.');
+        }
+        return;
+      }
       onChange(positions.filter((p) => p.id !== id));
     },
     [positions, onChange],
@@ -561,14 +570,35 @@ export default function PositionTable({ positions, params, onChange }: Props) {
                         <BookmarkPlus className="w-3.5 h-3.5" />
                       </button>
                     )}
-                    <button
-                      onClick={() => removeRow(p.id)}
-                      className="p-1 rounded-md text-slate-300 hover:bg-red-50 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
-                      title="Zeile löschen"
-                      aria-label="Zeile löschen"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {p.importedFrom ? (
+                      // GAEB / Excel / preisanfrage-seeded row — protected from
+                      // deletion. Disabled lock + descriptive tooltip so the
+                      // calculator knows why the icon doesn't fire.
+                      <span
+                        className="inline-flex p-1 rounded-md text-slate-300 cursor-not-allowed opacity-0 group-hover:opacity-60"
+                        title={`Aus ${
+                          p.importedFrom === 'gaeb'
+                            ? 'GAEB-Import'
+                            : p.importedFrom === 'excel'
+                              ? 'Excel-Import'
+                              : 'preisanfrage'
+                        } — kann nicht gelöscht werden (Teil des Auftraggeber-LV).`}
+                        data-testid={`v1-trash-locked-${p.id}`}
+                        aria-disabled="true"
+                      >
+                        <Lock className="w-3.5 h-3.5" />
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => removeRow(p.id)}
+                        className="p-1 rounded-md text-slate-300 hover:bg-red-50 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Zeile löschen"
+                        aria-label="Zeile löschen"
+                        data-testid={`v1-trash-${p.id}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
