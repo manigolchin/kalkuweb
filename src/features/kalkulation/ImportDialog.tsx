@@ -176,6 +176,14 @@ export default function ImportDialog({ open, onClose, onImport, onImportKalku, e
   const okCount = preview.filter((p) => p.status === 'ok').length;
   const warnCount = preview.filter((p) => p.status === 'warn').length;
   const errorCount = preview.filter((p) => p.status === 'error').length;
+  // GAEB positions live in `gaeb`, not `preview` (that's the Excel/CSV path).
+  // The import button must gate on the parsed GAEB rows — mirrors exactly what
+  // doImport() produces (gaebToPositions keeps groups+items, skips remarks).
+  // Without this the counts above are 0 for every GAEB and the button stays
+  // disabled, which is why GAEB imports could never be confirmed.
+  const gaebImportableCount = gaeb
+    ? gaeb.positions.filter((p) => p.type !== 'remark').length
+    : 0;
 
   function doImport() {
     let positions: Position[];
@@ -372,8 +380,11 @@ export default function ImportDialog({ open, onClose, onImport, onImportKalku, e
                 </label>
                 <button
                   type="button"
+                  data-testid="import-confirm"
                   onClick={doImport}
-                  disabled={okCount + warnCount + (skipErrors ? 0 : errorCount) === 0}
+                  disabled={gaeb
+                    ? gaebImportableCount === 0
+                    : okCount + warnCount + (skipErrors ? 0 : errorCount) === 0}
                   className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg bg-primary-600 text-white text-sm font-semibold hover:bg-primary-700 disabled:opacity-50"
                 >
                   <CheckCircle2 className="w-4 h-4" />
