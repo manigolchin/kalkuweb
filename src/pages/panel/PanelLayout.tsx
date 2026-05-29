@@ -20,6 +20,7 @@ import {
   Building2,
   Library,
   MapPin,
+  ExternalLink,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -35,12 +36,19 @@ type NavItem = {
   icon: typeof Calculator;
   end?: boolean;
   comingSoon?: boolean;
+  /** Opens in a new tab via <a> instead of an in-app <NavLink> route. */
+  external?: boolean;
 };
 
 const NAV: NavItem[] = [
   { to: '/panel', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/panel/firmen', label: 'Firmen', icon: Building2 },
-  { to: '/panel/submissionskarte', label: 'Submissionskarte', icon: MapPin },
+  {
+    to: 'https://preisanfrage.kalkus.de/submissionskarte',
+    label: 'Submissionskarte',
+    icon: MapPin,
+    external: true,
+  },
   { to: '/panel/kalkulation', label: 'Kalkulation', icon: Calculator },
   { to: '/panel/vorlagen', label: 'Vorlagen', icon: Library },
   { to: '/panel/feedback', label: 'Kunden-Feedback', icon: Inbox },
@@ -352,40 +360,68 @@ function Sidebar({
 
       {/* Nav */}
       <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
-        {NAV.map(({ to, label, icon: Icon, end, comingSoon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={end}
-            className={({ isActive }) =>
-              clsx(
-                'group relative flex items-center gap-3 rounded-lg text-sm font-medium transition-colors',
-                collapsed ? 'justify-center h-10' : 'px-3 h-10',
-                isActive
-                  ? 'bg-primary-50 text-primary-700 dark:bg-primary-500/15 dark:text-primary-200'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100',
-              )
-            }
-            title={collapsed ? label : undefined}
-          >
-            <Icon className="w-4 h-4 flex-shrink-0" />
-            {!collapsed && (
-              <>
-                <span className="flex-1 truncate">{label}</span>
-                {to === '/panel/feedback' && unreadFeedback > 0 && (
-                  <span className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-amber-500 text-white text-[11px] font-bold tabular-nums">
-                    {unreadFeedback > 99 ? '99+' : unreadFeedback}
-                  </span>
-                )}
-                {comingSoon && <StatusBadge kind="soon" size="xs" />}
-              </>
-            )}
-            {/* Collapsed: tiny dot indicator for unread */}
-            {collapsed && to === '/panel/feedback' && unreadFeedback > 0 && (
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-amber-500" />
-            )}
-          </NavLink>
-        ))}
+        {NAV.map((item) => {
+          const { to, label, icon: Icon, end, comingSoon, external } = item;
+          const cls = (isActive: boolean) =>
+            clsx(
+              'group relative flex items-center gap-3 rounded-lg text-sm font-medium transition-colors',
+              collapsed ? 'justify-center h-10' : 'px-3 h-10',
+              isActive
+                ? 'bg-primary-50 text-primary-700 dark:bg-primary-500/15 dark:text-primary-200'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100',
+            );
+          const body = (
+            <>
+              <Icon className="w-4 h-4 flex-shrink-0" />
+              {!collapsed && (
+                <>
+                  <span className="flex-1 truncate">{label}</span>
+                  {external && (
+                    <ExternalLink
+                      className="w-3.5 h-3.5 flex-shrink-0 text-slate-400 dark:text-slate-500"
+                      aria-hidden
+                    />
+                  )}
+                  {to === '/panel/feedback' && unreadFeedback > 0 && (
+                    <span className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-amber-500 text-white text-[11px] font-bold tabular-nums">
+                      {unreadFeedback > 99 ? '99+' : unreadFeedback}
+                    </span>
+                  )}
+                  {comingSoon && <StatusBadge kind="soon" size="xs" />}
+                </>
+              )}
+              {/* Collapsed: tiny dot indicator for unread */}
+              {collapsed && to === '/panel/feedback' && unreadFeedback > 0 && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-amber-500" />
+              )}
+            </>
+          );
+          if (external) {
+            return (
+              <a
+                key={to}
+                href={to}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cls(false)}
+                title={collapsed ? label : undefined}
+              >
+                {body}
+              </a>
+            );
+          }
+          return (
+            <NavLink
+              key={to}
+              to={to}
+              end={end}
+              className={({ isActive }) => cls(isActive)}
+              title={collapsed ? label : undefined}
+            >
+              {body}
+            </NavLink>
+          );
+        })}
       </nav>
 
       {/* Footer */}

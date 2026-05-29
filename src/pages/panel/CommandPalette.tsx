@@ -10,7 +10,6 @@ import {
   Building2,
   Folder,
   ArrowRight,
-  MapPin,
   X as XIcon,
   type LucideIcon,
 } from 'lucide-react';
@@ -75,14 +74,6 @@ const STATIC: CmdItem[] = [
     searchHaystack: 'kalkulation g p',
   },
   {
-    id: 'nav-submissionskarte',
-    label: 'Submissionskarte',
-    group: 'Navigation',
-    icon: MapPin,
-    to: '/panel/submissionskarte',
-    searchHaystack: 'submissionskarte karte map submissionsergebnis ausschreibungen',
-  },
-  {
     id: 'nav-inbox',
     label: 'Kunden-Feedback',
     group: 'Navigation',
@@ -129,16 +120,6 @@ const GROUP_ORDER: GroupName[] = [
 ];
 
 const GROUP_CAP = 5;
-
-/** Only the live-data groups are capped + collapsible. The static groups
- *  (Navigation / Aktion) are short, fixed lists and always render in full —
- *  hiding a core nav entry like "Einstellungen" behind a "Mehr anzeigen…"
- *  chip would be a UX regression. */
-const CAPPED_GROUPS: ReadonlySet<GroupName> = new Set<GroupName>([
-  'Kalkulationen',
-  'Firmen',
-  'Ausschreibungen',
-]);
 
 /** Firmen row type — narrowed inline to avoid re-exporting the entire api shape. */
 type FirmaRow = {
@@ -418,8 +399,7 @@ export default function CommandPalette({
     const out: CmdItem[] = [];
     for (const g of GROUP_ORDER) {
       const items = groupedItems[g];
-      const capped =
-        expanded[g] || !CAPPED_GROUPS.has(g) ? items : items.slice(0, GROUP_CAP);
+      const capped = expanded[g] ? items : items.slice(0, GROUP_CAP);
       out.push(...capped);
     }
     return out;
@@ -516,10 +496,8 @@ export default function CommandPalette({
                 if (groupState.kind === 'loaded' && !groupState.emptyMsg) return null;
               }
 
-              const cappable = CAPPED_GROUPS.has(group);
-              const visible =
-                expanded[group] || !cappable ? items : items.slice(0, GROUP_CAP);
-              const hasMore = cappable && items.length > GROUP_CAP;
+              const visible = expanded[group] ? items : items.slice(0, GROUP_CAP);
+              const hasMore = items.length > GROUP_CAP;
 
               return (
                 <div key={group} className="px-1" data-testid={`cmdk-group-${group}`}>

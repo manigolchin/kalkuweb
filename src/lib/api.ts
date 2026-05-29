@@ -69,80 +69,6 @@ function safeJson(text: string): unknown {
   }
 }
 
-/* ─── Submissionsergebnis + Submissionskarte (preisanfrage bridge) ─── */
-
-export type SubmissionLot = {
-  name: string;
-  nettoSum: number | null;
-  bruttoSum: number | null;
-};
-
-/** One bidder row from a bid-opening protocol, ranked ascending by price. */
-export type SubmissionBidder = {
-  rank: number;
-  bidderName: string;
-  totalSum: number | null;
-  nettoSum: number | null;
-  bruttoSum: number | null;
-  lots: SubmissionLot[];
-  isOwnBid: boolean;
-  isWinner: boolean;
-};
-
-/** Parsed bid-opening result for one managed-firma project. `parsed` is false
- *  (and `bidders` empty) when the upstream protocol hasn't been read yet. */
-export type Submissionsergebnis = {
-  projectId: number;
-  parsedAt: string | null;
-  teilnehmerCount: number;
-  ourRank: number | null;
-  winnerName: string | null;
-  winnerSum: number | null;
-  winnerNettoSum: number | null;
-  winnerBruttoSum: number | null;
-  parseConfidence: number | null;
-  bidders: SubmissionBidder[];
-  submittedVariantLabel: string | null;
-  parsed: boolean;
-  isMock: boolean;
-};
-
-/** One Baustelle pin on the Submissionskarte (geo-map of tenders). */
-export type SubmissionskartePin = {
-  projectId: number;
-  projectNumber: string;
-  projectName: string;
-  submissionDate: string | null;
-  latitude: number;
-  longitude: number;
-  anschriftPlzOrt: string | null;
-  gewerk: string | null;
-  teilnehmerCount: number | null;
-  ourRank: number | null;
-  winnerName: string | null;
-  winnerSum: number | null;
-  winnerNettoSum: number | null;
-  winnerBruttoSum: number | null;
-  ourSum: number | null;
-  ourNettoSum: number | null;
-  ourBruttoSum: number | null;
-  preislage: string | null;
-  vergabeStatus: string | null;
-  pdfAvailable: boolean;
-  companyId: number | null;
-  companyName: string | null;
-  tradeType: string | null;
-};
-
-export type Submissionskarte = {
-  pins: SubmissionskartePin[];
-  gewerke: string[];
-  projectsWithoutLocation: number;
-  projectsWithoutParse: number;
-  isMock: boolean;
-  generatedAt: string;
-};
-
 export const api = {
   auth: {
     login: (email: string, password: string) =>
@@ -428,13 +354,6 @@ export const api = {
           pageNumber?: number | null;
         }>;
       }>(`/firmen/${kind}/${firmaId}/projects/${projectId}/positions`),
-    /** Fetch the parsed Submissionsergebnis (bidder ranking) for a managed-firma
-     *  project. Only `managed` kind is supported (404 otherwise). `parsed` is
-     *  false + `bidders` empty when the protocol hasn't been read upstream. */
-    submissionsergebnis: (kind: 'managed' | 'external' | 'local', firmaId: number | string, projectId: number | string) =>
-      request<Submissionsergebnis>(
-        `/firmen/${kind}/${firmaId}/projects/${projectId}/submissionsergebnis`,
-      ),
     updateDefaults: (
       kind: 'managed' | 'external',
       id: number,
@@ -572,9 +491,6 @@ export const api = {
     archiveAuschreibung: (id: string) =>
       request<{ ok: true }>(`/firmen/local-auschreibung/${id}`, { method: 'DELETE' }),
   },
-  /** Cross-company Submissionskarte — every located tender across all firmas,
-   *  for the panel's geo-map page. */
-  submissionskarte: () => request<Submissionskarte>(`/submissionskarte`),
   templates: {
     list: () => request<{ templates: PositionTemplate[] }>(`/templates`),
     create: (input: {

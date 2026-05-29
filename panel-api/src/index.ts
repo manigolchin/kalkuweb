@@ -15,7 +15,6 @@ import { notificationsRoute, digestRoute } from './routes/notifications.js';
 import { presetsRoute } from './routes/presets.js';
 import { templatesRoute } from './routes/templates.js';
 import { firmenRoute } from './routes/firmen.js';
-import { submissionskarteRoute } from './routes/submissionskarte.js';
 import { rateLimit } from './lib/ratelimit.js';
 import { securityHeaders } from './lib/securityHeaders.js';
 import { requestId } from './lib/requestId.js';
@@ -121,7 +120,6 @@ app.route('/api/panel', digestRoute);
 app.route('/api/panel', presetsRoute);
 app.route('/api/panel', templatesRoute);
 app.route('/api/panel', firmenRoute);
-app.route('/api/panel', submissionskarteRoute);
 
 app.notFound((c) => c.json({ error: 'not_found', path: c.req.path }, 404));
 

@@ -32,8 +32,6 @@ import {
   Plus,
   Trash2,
   X,
-  ChevronDown,
-  BarChart3,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -758,8 +756,6 @@ function ProjectsCard({
             <AuschreibungRow
               key={`${p.source}:${p.id}`}
               project={p}
-              firmaKind={firmaKind}
-              firmaId={firmaId}
               startingKey={starting}
               onStart={() => startKalkulation(p)}
               onChanged={onChanged}
@@ -791,25 +787,16 @@ function ProjectsCard({
  */
 function AuschreibungRow({
   project: p,
-  firmaKind,
-  firmaId,
   startingKey,
   onStart,
   onChanged,
 }: {
   project: FirmaDetail['projects'][number];
-  firmaKind: 'managed' | 'external' | 'local';
-  firmaId: number | string;
   startingKey: string | null;
   onStart: () => void;
   onChanged: () => void;
 }) {
   const isLocal = p.source === 'local';
-  // Submissionsergebnis (bid-opening protocol) only exists for managed-firma
-  // projects in preisanfrage — the upstream endpoint queries the managed
-  // Project table, so external/local rows have no drill-down.
-  const hasSergebnis = p.source === 'managed' && typeof p.id === 'number';
-  const [sergebnisOpen, setSergebnisOpen] = useState(false);
   const status: AuschreibungStatus | undefined = isAuschreibungStatus(p.status) ? p.status : undefined;
   const [statusDraft, setStatusDraft] = useState<AuschreibungStatus | undefined>(status);
   const [statusEditing, setStatusEditing] = useState(false);
@@ -959,24 +946,6 @@ function AuschreibungRow({
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {hasSergebnis && (
-            <button
-              type="button"
-              onClick={() => setSergebnisOpen((v) => !v)}
-              aria-expanded={sergebnisOpen}
-              data-testid="submissionsergebnis-toggle"
-              className={clsx(
-                'inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border transition-colors',
-                sergebnisOpen
-                  ? 'border-primary-300 bg-primary-50 text-primary-700 dark:border-primary-700 dark:bg-primary-500/15 dark:text-primary-200'
-                  : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800',
-              )}
-            >
-              <BarChart3 className="w-3 h-3" />
-              Submissionsergebnis
-              <ChevronDown className={clsx('w-3 h-3 transition-transform', sergebnisOpen && 'rotate-180')} />
-            </button>
-          )}
           {p.oneDriveShareUrl && (
             <a
               href={p.oneDriveShareUrl}
@@ -1015,185 +984,7 @@ function AuschreibungRow({
           </button>
         </div>
       </div>
-      {hasSergebnis && sergebnisOpen && (
-        <SubmissionsergebnisPanel
-          firmaKind={firmaKind}
-          firmaId={firmaId}
-          projectId={p.id as number}
-        />
-      )}
     </li>
-  );
-}
-
-/**
- * Bid-opening result (Submissionsergebnis) for one managed-firma project.
- * Lazily fetches the parsed bidder ranking from preisanfrage when the row is
- * expanded. Shows a "noch nicht eingelesen" hint when the upstream protocol
- * has not been parsed yet (parsed=false / no bidders).
- */
-function SubmissionsergebnisPanel({
-  firmaKind,
-  firmaId,
-  projectId,
-}: {
-  firmaKind: 'managed' | 'external' | 'local';
-  firmaId: number | string;
-  projectId: number | string;
-}) {
-  const [data, setData] = useState<Awaited<
-    ReturnType<typeof api.firmen.submissionsergebnis>
-  > | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await api.firmen.submissionsergebnis(firmaKind, firmaId, projectId);
-        if (alive) setData(res);
-      } catch (e) {
-        if (!alive) return;
-        if (e instanceof ApiError && e.status === 503) {
-          setError('preisanfrage.kalkus.de ist gerade nicht erreichbar.');
-        } else {
-          setError(`Konnte Submissionsergebnis nicht laden: ${String(e)}`);
-        }
-      } finally {
-        if (alive) setLoading(false);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [firmaKind, firmaId, projectId]);
-
-  if (loading) {
-    return (
-      <div
-        className="mt-3 flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 px-4 py-3 text-sm text-slate-500 dark:text-slate-400"
-        aria-live="polite"
-        aria-busy="true"
-        data-testid="submissionsergebnis-loading"
-      >
-        <Loader2 className="w-4 h-4 animate-spin" />
-        Lade Submissionsergebnis…
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-900 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
-        <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-        <div>{error}</div>
-      </div>
-    );
-  }
-
-  if (!data) return null;
-
-  if (!data.parsed || data.bidders.length === 0) {
-    return (
-      <div
-        className="mt-3 rounded-lg border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 px-4 py-3 text-sm text-slate-500 dark:text-slate-400"
-        data-testid="submissionsergebnis-empty"
-      >
-        Submissionsergebnis für diese Ausschreibung wurde noch nicht eingelesen.
-        {typeof data.teilnehmerCount === 'number' && data.teilnehmerCount > 0
-          ? ` (${data.teilnehmerCount} Teilnehmer gemeldet)`
-          : ''}
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className="mt-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30 overflow-hidden"
-      data-testid="submissionsergebnis-panel"
-    >
-      {/* Summary strip */}
-      <div className="flex items-center gap-x-5 gap-y-1 flex-wrap px-4 py-2.5 border-b border-slate-200 dark:border-slate-800 text-xs">
-        <span className="inline-flex items-center gap-1.5 font-medium text-slate-700 dark:text-slate-200">
-          <BarChart3 className="w-3.5 h-3.5 text-slate-400" />
-          {data.teilnehmerCount} Bieter
-        </span>
-        {typeof data.ourRank === 'number' && (
-          <span className="inline-flex items-center gap-1 text-slate-600 dark:text-slate-300">
-            <Trophy className={clsx('w-3.5 h-3.5', data.ourRank === 1 ? 'text-emerald-600' : 'text-slate-400')} />
-            Unser Platz: <strong className="tabular-nums">{data.ourRank}</strong>
-          </span>
-        )}
-        {data.winnerName && (
-          <span className="text-slate-600 dark:text-slate-300 truncate">
-            Gewinner: <strong>{data.winnerName}</strong>
-          </span>
-        )}
-        {data.isMock && (
-          <span
-            className="ml-auto inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200"
-            title="Beispieldaten — preisanfrage-Integration läuft im Mock-Modus."
-          >
-            Beispieldaten
-          </span>
-        )}
-      </div>
-
-      {/* Bidder ranking */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
-              <th className="px-4 py-1.5 font-medium w-10">Rang</th>
-              <th className="px-2 py-1.5 font-medium">Bieter</th>
-              <th className="px-2 py-1.5 font-medium text-right">Netto</th>
-              <th className="px-4 py-1.5 font-medium text-right">Brutto</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.bidders.map((b) => {
-              const netto = b.nettoSum ?? b.totalSum;
-              return (
-                <tr
-                  key={`${b.rank}-${b.bidderName}`}
-                  className={clsx(
-                    'border-t border-slate-200/70 dark:border-slate-800',
-                    b.isOwnBid && 'bg-primary-50/70 dark:bg-primary-500/10',
-                  )}
-                  data-testid="submissionsergebnis-row"
-                >
-                  <td className="px-4 py-1.5 tabular-nums text-slate-500 dark:text-slate-400">
-                    <span className="inline-flex items-center gap-1">
-                      {b.isWinner && <Trophy className="w-3 h-3 text-emerald-600" />}
-                      {b.rank}
-                    </span>
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <span className={clsx('text-slate-800 dark:text-slate-100', b.isOwnBid && 'font-semibold')}>
-                      {b.bidderName}
-                    </span>
-                    {b.isOwnBid && (
-                      <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-primary-600 dark:text-primary-300">
-                        Ihr Gebot
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums text-slate-700 dark:text-slate-200">
-                    {typeof netto === 'number' ? formatEUR(netto) : '—'}
-                  </td>
-                  <td className="px-4 py-1.5 text-right tabular-nums text-slate-500 dark:text-slate-400">
-                    {typeof b.bruttoSum === 'number' ? formatEUR(b.bruttoSum) : '—'}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
   );
 }
 
