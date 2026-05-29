@@ -19,6 +19,7 @@ const DEFAULT_CALC_PARAMS = {
   tagesstunden: 8.0,
   personaleinsatz: 3,
   mwst: 0.19,
+  zielAufschlag: 0,
 };
 
 const MAX_POSITIONS = 5000;
@@ -91,6 +92,10 @@ const calcParamsSchema = z.object({
   tagesstunden: fnum(),
   personaleinsatz: z.number().int().min(0).max(1e4),
   mwst: fnum(),
+  // Global Ziel-Aufschlag. Defaults to 0 so projects saved before this field
+  // round-trip as a no-op. Bounded to the same envelope the client solver
+  // clamps to ([-1, 100]) so a buggy client can't drive prices negative.
+  zielAufschlag: z.number().finite().min(-1).max(100).default(0),
 });
 
 // Feature #5 — per-position actual values captured after Auftragsausführung.

@@ -703,6 +703,7 @@ function ProjectsCard({
           tagesstunden: 8,
           personaleinsatz: 3,
           mwst: 0.19,
+          zielAufschlag: 0,
         },
         positions: seededPositions,
         notes: `Aus preisanfrage importiert — Firma: ${firmaDisplayName} (${firmaKind}), Ref: ${p.source}:${p.id}`,

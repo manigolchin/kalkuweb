@@ -20,6 +20,7 @@ import {
   Scale,
   Wrench,
   ChevronDown,
+  Target,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -32,7 +33,7 @@ import type {
   ProjectDetail as ProjectDetailType,
   ShareSummary,
 } from './types';
-import { calcTotals, formatEUR, formatNum, DEFAULT_CALC_PARAMS, recalcAll } from './calc';
+import { calcTotals, formatEUR, formatNum, DEFAULT_CALC_PARAMS, recalcAll, baseNetto, solveZielAufschlag } from './calc';
 import { Breadcrumb } from '@/pages/panel/ui';
 import PositionTable from './PositionTable';
 import PositionTableV2 from './PositionTableV2';
@@ -463,7 +464,19 @@ export default function ProjectDetail() {
         </div>
 
         <aside className="space-y-4">
-          <TotalsCard totals={totals!} positionCount={data.positions.length} visibleCount={visibleCount} />
+          <TotalsCard
+            totals={totals!}
+            positionCount={data.positions.length}
+            visibleCount={visibleCount}
+            positions={data.positions}
+            params={data.calcParams}
+            onSolveTarget={(target) =>
+              updateCalcParams({
+                zielAufschlag: solveZielAufschlag(data.positions, data.calcParams, target),
+              })
+            }
+            onResetTarget={() => updateCalcParams({ zielAufschlag: 0 })}
+          />
           <SharesCard
             shares={activeShares}
             allShares={project.shares}
@@ -794,10 +807,18 @@ function TotalsCard({
   totals,
   positionCount,
   visibleCount,
+  positions,
+  params,
+  onSolveTarget,
+  onResetTarget,
 }: {
   totals: ReturnType<typeof calcTotals>;
   positionCount: number;
   visibleCount: number;
+  positions: Position[];
+  params: CalcParams;
+  onSolveTarget: (targetNetto: number) => void;
+  onResetTarget: () => void;
 }) {
   return (
     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5">
@@ -816,6 +837,14 @@ function TotalsCard({
         <Row label="Brutto" value={totals.totalBrutto} strong />
       </div>
 
+      <EndbetragControl
+        positions={positions}
+        params={params}
+        totalNetto={totals.totalNetto}
+        onSolve={onSolveTarget}
+        onReset={onResetTarget}
+      />
+
       <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
         <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
           {positionCount} {positionCount === 1 ? 'Zeile' : 'Zeilen'} insgesamt,{' '}
@@ -825,6 +854,116 @@ function TotalsCard({
           Aufwand: {formatNum(totals.totalHours, 1)} h
         </p>
       </div>
+    </div>
+  );
+}
+
+/** Parse a user-typed amount using German conventions: "." groups thousands,
+ *  "," is the decimal separator. Falls back to a lone-dot-as-thousands reading
+ *  so "24.000" → 24000 (the common case from a WhatsApp "24k netto"). Returns
+ *  null for empty/garbage input. */
+function parseGermanAmount(raw: string): number | null {
+  const cleaned = raw.replace(/[^0-9.,-]/g, '').trim();
+  if (!cleaned || cleaned === '-') return null;
+  const normalized = cleaned.includes(',')
+    ? cleaned.replace(/\./g, '').replace(',', '.')
+    : cleaned.replace(/\./g, '');
+  const n = Number(normalized);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** "Endbetrag vorgeben" — type a desired net Angebotssumme; the global
+ *  Ziel-Aufschlag is back-solved (`solveZielAufschlag`) so the bid lands on
+ *  that total. Shows the resulting markup % + the raw basis it scales from. */
+function EndbetragControl({
+  positions,
+  params,
+  totalNetto,
+  onSolve,
+  onReset,
+}: {
+  positions: Position[];
+  params: CalcParams;
+  totalNetto: number;
+  onSolve: (targetNetto: number) => void;
+  onReset: () => void;
+}) {
+  const base = useMemo(() => baseNetto(positions, params), [positions, params]);
+  const ziel = params.zielAufschlag ?? 0;
+  const active = Math.abs(ziel) > 1e-9;
+  // null = not editing → field mirrors the live total; string = user's draft.
+  const [draft, setDraft] = useState<string | null>(null);
+
+  const commit = () => {
+    if (draft === null) return;
+    const parsed = parseGermanAmount(draft);
+    setDraft(null);
+    if (parsed === null || parsed <= 0) return;
+    // No-op if the target already matches the current total (within a cent) —
+    // avoids re-solving + a churned save on a focus-then-blur with no edit.
+    if (Math.abs(parsed - totalNetto) < 0.005) return;
+    onSolve(parsed);
+  };
+
+  return (
+    <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1">
+          <Target className="w-3 h-3" />
+          Endbetrag vorgeben
+        </span>
+        {active && (
+          <button
+            type="button"
+            onClick={onReset}
+            className="text-[11px] text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 underline underline-offset-2"
+          >
+            Zurücksetzen
+          </button>
+        )}
+      </div>
+      <div className="relative">
+        <input
+          type="text"
+          inputMode="decimal"
+          value={draft ?? formatNum(totalNetto, 2)}
+          onFocus={() => setDraft(formatNum(totalNetto, 2))}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') e.currentTarget.blur();
+            if (e.key === 'Escape') {
+              setDraft(null);
+              e.currentTarget.blur();
+            }
+          }}
+          aria-label="Ziel-Endbetrag netto"
+          className="input text-sm tabular-nums w-full pr-7"
+        />
+        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">
+          €
+        </span>
+      </div>
+      {active ? (
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
+          Ziel-Aufschlag{' '}
+          <strong
+            className={clsx(
+              ziel >= 0
+                ? 'text-emerald-700 dark:text-emerald-300'
+                : 'text-amber-700 dark:text-amber-300',
+            )}
+          >
+            {ziel >= 0 ? '+' : '−'}
+            {formatNum(Math.abs(ziel) * 100, 1)}&nbsp;%
+          </strong>{' '}
+          auf Kalkulationsbasis {formatEUR(base)}.
+        </p>
+      ) : (
+        <p className="text-xs text-slate-400 dark:text-slate-500 mt-1.5 leading-relaxed">
+          Netto-Zielsumme eingeben — der Aufschlag wird automatisch über alle Positionen verteilt.
+        </p>
+      )}
     </div>
   );
 }

@@ -7,11 +7,15 @@ function recomputePosition(p: Position, params: CalcParams): Position {
   if (p.isHeader) {
     return { ...p, epLohn: 0, epMaterial: 0, epGeraet: 0, epNu: 0, ep: 0, gp: 0 };
   }
+  // Mirror of client calc (src/features/kalkulation/calc.ts): global
+  // Ziel-Aufschlag scales every cost component so the share snapshot matches
+  // the calculator's chosen Angebotssumme. Default 0 → factor 1 → no-op.
+  const zielFactor = 1 + (params.zielAufschlag ?? 0);
   const adj = p.timeMinutes + (p.timeMinutes / 100) * params.zeitabzug;
-  const epGeraet = (adj / 60) * params.geraeteStundensatz;
-  const epLohn = (adj / 60) * params.verrechnungslohn;
-  const epMaterial = p.materialCost * (1 + params.materialZuschlag);
-  const epNu = p.nuCost * (1 + params.nuZuschlag);
+  const epGeraet = (adj / 60) * params.geraeteStundensatz * zielFactor;
+  const epLohn = (adj / 60) * params.verrechnungslohn * zielFactor;
+  const epMaterial = p.materialCost * (1 + params.materialZuschlag) * zielFactor;
+  const epNu = p.nuCost * (1 + params.nuZuschlag) * zielFactor;
   const ep = epLohn + epMaterial + epGeraet + epNu;
   const gp = p.quantity * ep;
   return {

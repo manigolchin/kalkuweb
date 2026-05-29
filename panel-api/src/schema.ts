@@ -340,6 +340,10 @@ export type CalcParams = {
   tagesstunden: number;
   personaleinsatz: number;
   mwst: number;
+  /** Global Ziel-Aufschlag — effective factor `1 + zielAufschlag` scales
+   *  every position's EP/GP so the bid hits a chosen Angebotssumme. 0 = no-op
+   *  (default for projects predating the field). Mirror of the client type. */
+  zielAufschlag: number;
 };
 
 export type ProjectData = {

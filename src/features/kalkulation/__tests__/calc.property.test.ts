@@ -14,6 +14,8 @@ import {
   calculatePosition,
   calcTotals,
   recalcAll,
+  baseNetto,
+  solveZielAufschlag,
 } from '../calc';
 import type { CalcParams, Position } from '../types';
 
@@ -205,6 +207,112 @@ describe('calc.ts — recalcAll + calcTotals', () => {
     const totals = calcTotals(ps, DEFAULT_CALC_PARAMS, new Set(['a']));
     expect(totals.visibleNetto).toBeLessThan(totals.totalNetto);
     expect(totals.totalNetto).toBeGreaterThan(0);
+  });
+});
+
+describe('calc.ts — zielAufschlag (Endbetrag-Zielpreis)', () => {
+  test('zielAufschlag=0 is a no-op (identical to omitting it)', () => {
+    const p = pos({ materialCost: 12, timeMinutes: 30, nuCost: 5, quantity: 7 });
+    const withZero = calculatePosition(p, { ...DEFAULT_CALC_PARAMS, zielAufschlag: 0 });
+    // The default already carries zielAufschlag: 0, so this is the baseline.
+    const baseline = calculatePosition(p, DEFAULT_CALC_PARAMS);
+    expect(withZero).toEqual(baseline);
+  });
+
+  test('missing zielAufschlag (legacy params) is treated as 0', () => {
+    const p = pos({ materialCost: 12, timeMinutes: 30, nuCost: 5, quantity: 7 });
+    // Strip the field to simulate a pre-feature project loaded without it.
+    const legacy = { ...DEFAULT_CALC_PARAMS } as Partial<typeof DEFAULT_CALC_PARAMS>;
+    delete legacy.zielAufschlag;
+    const r = calculatePosition(p, legacy as typeof DEFAULT_CALC_PARAMS);
+    const baseline = calculatePosition(p, { ...DEFAULT_CALC_PARAMS, zielAufschlag: 0 });
+    expect(r).toEqual(baseline);
+  });
+
+  test('ep and gp scale linearly by (1 + zielAufschlag)', () => {
+    const p = pos({ materialCost: 100, timeMinutes: 45, nuCost: 20, quantity: 4 });
+    const base = calculatePosition(p, { ...DEFAULT_CALC_PARAMS, zielAufschlag: 0 });
+    const up = calculatePosition(p, { ...DEFAULT_CALC_PARAMS, zielAufschlag: 0.2 });
+    expect(Math.abs(up.ep - base.ep * 1.2)).toBeLessThanOrEqual(0.01);
+    expect(Math.abs(up.gp - base.gp * 1.2)).toBeLessThanOrEqual(0.05);
+  });
+
+  test('every cost component scales — breakdown stays consistent (gpLohn+… == gp)', () => {
+    const p = pos({ materialCost: 100, timeMinutes: 45, nuCost: 20, quantity: 4 });
+    const r = calculatePosition(p, { ...DEFAULT_CALC_PARAMS, zielAufschlag: 0.35 });
+    const sum = r.gpLohn + r.gpMaterial + r.gpGeraet + r.gpNu;
+    expect(Math.abs(r.gp - sum)).toBeLessThanOrEqual(0.05);
+  });
+
+  test('negative zielAufschlag (Nachlass) reduces the price', () => {
+    const p = pos({ materialCost: 100, quantity: 10 });
+    const base = calculatePosition(p, { ...DEFAULT_CALC_PARAMS, zielAufschlag: 0 });
+    const discounted = calculatePosition(p, { ...DEFAULT_CALC_PARAMS, zielAufschlag: -0.1 });
+    expect(discounted.gp).toBeLessThan(base.gp);
+    expect(Math.abs(discounted.gp - base.gp * 0.9)).toBeLessThanOrEqual(0.05);
+  });
+
+  test('calcTotals.totalNetto scales by (1 + zielAufschlag)', () => {
+    const ps = [
+      pos({ id: 'a', materialCost: 50, quantity: 3 }),
+      pos({ id: 'b', materialCost: 0, timeMinutes: 90, quantity: 2 }),
+      pos({ id: 'c', materialCost: 12, nuCost: 8, quantity: 5 }),
+    ];
+    const base = calcTotals(ps, { ...DEFAULT_CALC_PARAMS, zielAufschlag: 0 });
+    const up = calcTotals(ps, { ...DEFAULT_CALC_PARAMS, zielAufschlag: 0.25 });
+    expect(Math.abs(up.totalNetto - base.totalNetto * 1.25)).toBeLessThanOrEqual(0.1);
+  });
+
+  test('baseNetto ignores any existing zielAufschlag (always the raw basis)', () => {
+    const ps = [pos({ id: 'a', materialCost: 50, quantity: 3 }), pos({ id: 'b', timeMinutes: 60, quantity: 2 })];
+    const a = baseNetto(ps, { ...DEFAULT_CALC_PARAMS, zielAufschlag: 0 });
+    const b = baseNetto(ps, { ...DEFAULT_CALC_PARAMS, zielAufschlag: 0.5 });
+    expect(a).toBe(b);
+  });
+
+  test('solveZielAufschlag: applying the solved value hits the target netto', () => {
+    const ps = [
+      pos({ id: 'a', materialCost: 50, quantity: 3 }),
+      pos({ id: 'b', materialCost: 0, timeMinutes: 90, quantity: 2 }),
+      pos({ id: 'c', materialCost: 12, nuCost: 8, quantity: 5 }),
+    ];
+    const target = 24000;
+    const z = solveZielAufschlag(ps, DEFAULT_CALC_PARAMS, target);
+    const realized = calcTotals(ps, { ...DEFAULT_CALC_PARAMS, zielAufschlag: z }).totalNetto;
+    // Per-position rounding → a few cents of drift is expected and acceptable.
+    expect(Math.abs(realized - target)).toBeLessThanOrEqual(0.01 * ps.length + 0.02);
+  });
+
+  test('solveZielAufschlag: re-targeting works even when a markup is already active', () => {
+    const ps = [pos({ id: 'a', materialCost: 80, quantity: 10 }), pos({ id: 'b', timeMinutes: 120, quantity: 4 })];
+    // Project already carries a +40% markup; user now wants exactly 30.000.
+    const active = { ...DEFAULT_CALC_PARAMS, zielAufschlag: 0.4 };
+    const target = 30000;
+    const z = solveZielAufschlag(ps, active, target);
+    const realized = calcTotals(ps, { ...DEFAULT_CALC_PARAMS, zielAufschlag: z }).totalNetto;
+    expect(Math.abs(realized - target)).toBeLessThanOrEqual(0.01 * ps.length + 0.02);
+  });
+
+  test('solveZielAufschlag: a target below the basis yields a negative z (Nachlass)', () => {
+    const ps = [pos({ id: 'a', materialCost: 100, quantity: 10 })];
+    const base = baseNetto(ps, DEFAULT_CALC_PARAMS);
+    const z = solveZielAufschlag(ps, DEFAULT_CALC_PARAMS, base * 0.8);
+    expect(z).toBeLessThan(0);
+    expect(z).toBeGreaterThanOrEqual(-1);
+  });
+
+  test('solveZielAufschlag: invalid target (≤0 / NaN) keeps the current zielAufschlag', () => {
+    const ps = [pos({ id: 'a', materialCost: 100, quantity: 10 })];
+    const params = { ...DEFAULT_CALC_PARAMS, zielAufschlag: 0.15 };
+    expect(solveZielAufschlag(ps, params, 0)).toBe(0.15);
+    expect(solveZielAufschlag(ps, params, -500)).toBe(0.15);
+    expect(solveZielAufschlag(ps, params, Number.NaN)).toBe(0.15);
+  });
+
+  test('solveZielAufschlag: empty / zero-basis project returns 0', () => {
+    expect(solveZielAufschlag([], DEFAULT_CALC_PARAMS, 24000)).toBe(0);
+    const headerOnly = [pos({ id: 'h', isHeader: true, materialCost: 9999, quantity: 9 })];
+    expect(solveZielAufschlag(headerOnly, DEFAULT_CALC_PARAMS, 24000)).toBe(0);
   });
 });
 

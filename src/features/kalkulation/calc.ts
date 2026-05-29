@@ -11,6 +11,7 @@ export const DEFAULT_CALC_PARAMS: CalcParams = {
   tagesstunden: 8,
   personaleinsatz: 3,
   mwst: 0.19,
+  zielAufschlag: 0,
 };
 
 const round = (n: number, d = 2) => Math.round(n * 10 ** d) / 10 ** d;
@@ -39,11 +40,16 @@ export function calculatePosition(
       gpLohn: 0, gpMaterial: 0, gpGeraet: 0, gpNu: 0, hoursTotal: 0,
     };
   }
+  // Global Ziel-Aufschlag — scales every cost component so the bid hits a
+  // chosen Angebotssumme. Default 0 → factor 1 → no-op. Applied per-component
+  // (before rounding) so the EFB/Nachkalkulation breakdown stays consistent
+  // (gpLohn + gpMaterial + gpGeraet + gpNu == gp).
+  const zielFactor = 1 + (params.zielAufschlag ?? 0);
   const adjustedTime = pos.timeMinutes + (pos.timeMinutes / 100) * params.zeitabzug;
-  const epGeraet = (adjustedTime / 60) * params.geraeteStundensatz;
-  const epLohn = (adjustedTime / 60) * params.verrechnungslohn;
-  const epMaterial = pos.materialCost * (1 + params.materialZuschlag);
-  const epNu = pos.nuCost * (1 + params.nuZuschlag);
+  const epGeraet = (adjustedTime / 60) * params.geraeteStundensatz * zielFactor;
+  const epLohn = (adjustedTime / 60) * params.verrechnungslohn * zielFactor;
+  const epMaterial = pos.materialCost * (1 + params.materialZuschlag) * zielFactor;
+  const epNu = pos.nuCost * (1 + params.nuZuschlag) * zielFactor;
   const ep = epLohn + epMaterial + epGeraet + epNu;
   const gp = pos.quantity * ep;
   return {
@@ -133,6 +139,50 @@ export function calcTotals(
     visibleMwst: round(visibleMwst),
     visibleBrutto: round(visibleNetto + visibleMwst),
   };
+}
+
+/**
+ * Net total (Σ GP over all non-header positions) evaluated at
+ * zielAufschlag = 0 — the "raw" Angebotssumme before any global
+ * target-markup. This is the basis the target-pricing solver scales.
+ */
+export function baseNetto(positions: Position[], params: CalcParams): number {
+  const base: CalcParams = { ...params, zielAufschlag: 0 };
+  let sum = 0;
+  for (const p of positions) {
+    if (p.isHeader) continue;
+    sum += calculatePosition(p, base).gp;
+  }
+  return round(sum);
+}
+
+/**
+ * Back-solve the global `zielAufschlag` that makes the net total
+ * (Angebotssumme) equal `targetNetto`. Every GP scales linearly by
+ * `(1 + zielAufschlag)`, so this is closed-form: `z = target / base - 1`.
+ *
+ * - Returns the current zielAufschlag unchanged if `targetNetto` isn't a
+ *   finite positive number (invalid input → no-op).
+ * - Returns 0 when the base total is 0 (nothing to scale against).
+ * - Clamps the factor to ≥ 0 (`z ≥ -1`) so prices never go negative; the
+ *   upper bound is generous to allow large markups.
+ *
+ * Per-position rounding means the realised total can differ from
+ * `targetNetto` by a few cents — expected and acceptable for a bid.
+ */
+export function solveZielAufschlag(
+  positions: Position[],
+  params: CalcParams,
+  targetNetto: number,
+): number {
+  if (!Number.isFinite(targetNetto) || targetNetto <= 0) {
+    return params.zielAufschlag ?? 0;
+  }
+  const base = baseNetto(positions, params);
+  if (base <= 0) return 0;
+  const z = targetNetto / base - 1;
+  const clamped = Math.min(Math.max(z, -1), 100);
+  return round(clamped, 8);
 }
 
 export const formatEUR = (n: number, digits = 2) =>

@@ -19,6 +19,7 @@ const DEFAULT_PARAMS: CalcParams = {
   tagesstunden: 8,
   personaleinsatz: 3,
   mwst: 0.19,
+  zielAufschlag: 0,
 };
 
 function pos(

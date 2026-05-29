@@ -96,6 +96,23 @@ export type CalcParams = {
   tagesstunden: number;
   personaleinsatz: number;
   mwst: number;
+  /**
+   * Global Ziel-Aufschlag — a single markup factor applied on top of every
+   * position's calculated EP/GP so the calculator can hit a desired
+   * Angebotssumme ("Endbetrag vorgeben"). Stored additively: the effective
+   * factor is `1 + zielAufschlag`, so `0` is a no-op (default), `0.2` is
+   * +20 %, and a negative value is a Nachlass/discount.
+   *
+   * Because every GP scales linearly by `(1 + zielAufschlag)`, the value
+   * needed to reach a target net total is closed-form
+   * (`target / baseNetto - 1`, see `solveZielAufschlag`). Applied inside
+   * `calculatePosition`, so totals, EFB-breakdown, Excel export and the
+   * server-side share snapshot all pick it up automatically.
+   *
+   * Backwards-compat: projects created before this field have it filled in
+   * as `0` by the DEFAULT_CALC_PARAMS spread on load.
+   */
+  zielAufschlag: number;
 };
 
 /**

@@ -44,7 +44,7 @@ before(() => {
 const DEFAULT_PARAMS: CalcParams = {
   mittellohn: 30, verrechnungslohn: 49.9, materialZuschlag: 0.12, nuZuschlag: 0.12,
   geraeteZuschlagPct: 0.1, geraeteStundensatz: 0.5, zeitabzug: 0,
-  tagesstunden: 8, personaleinsatz: 3, mwst: 0.19,
+  tagesstunden: 8, personaleinsatz: 3, mwst: 0.19, zielAufschlag: 0,
 };
 
 function pos(o: Partial<Position> & Pick<Position, 'id'>): Position {
