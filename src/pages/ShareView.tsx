@@ -431,7 +431,7 @@ export default function ShareView() {
                         >
                           {p.shortText}
                         </p>
-                        {p.longText && (
+                        {settings.showLongText !== false && p.longText && (
                           <p className="text-xs text-slate-600 mt-1 whitespace-pre-wrap break-words leading-[1.45]">
                             {p.longText}
                           </p>

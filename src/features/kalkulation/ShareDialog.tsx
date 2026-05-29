@@ -80,6 +80,7 @@ export default function ShareDialog({
       allowChangeRequests: true,
       showTotals: true,
       showMwst: true,
+      showLongText: true,
     };
     if (parentShare) {
       const created = new Date(parentShare.createdAt).toLocaleDateString('de-DE', {
@@ -121,6 +122,7 @@ export default function ShareDialog({
       ...(p.settings.allowChangeRequests !== undefined ? { allowChangeRequests: p.settings.allowChangeRequests } : {}),
       ...(p.settings.showTotals !== undefined ? { showTotals: p.settings.showTotals } : {}),
       ...(p.settings.showMwst !== undefined ? { showMwst: p.settings.showMwst } : {}),
+      ...(p.settings.showLongText !== undefined ? { showLongText: p.settings.showLongText } : {}),
       ...(p.settings.bindefristDays !== undefined ? { bindefristDays: p.settings.bindefristDays } : {}),
       ...(p.settings.message ? { message: p.settings.message } : {}),
     }));
@@ -143,6 +145,7 @@ export default function ShareDialog({
           allowChangeRequests: settings.allowChangeRequests,
           showTotals: settings.showTotals,
           showMwst: settings.showMwst,
+          showLongText: settings.showLongText,
           bindefristDays: settings.bindefristDays,
           message: settings.message,
         },
@@ -513,6 +516,12 @@ export default function ShareDialog({
                     description="Aus, wenn §13b UStG (Reverse-Charge)."
                     checked={settings.showMwst}
                     onChange={(v) => setSettings({ ...settings, showMwst: v })}
+                  />
+                  <Toggle
+                    label="Lange Beschreibung zeigen"
+                    description="Aus = Kurzfassung: nur Kurztext, Menge & Preis je Position."
+                    checked={settings.showLongText ?? true}
+                    onChange={(v) => setSettings({ ...settings, showLongText: v })}
                   />
                 </div>
               </section>
@@ -969,7 +978,8 @@ function CreatedShareView({
       <p className="text-xs text-slate-400 mt-4">
         Sichtbare Positionen: {share.visiblePositionIds.length} ·
         {share.settings.allowApproval ? ' Annahme erlaubt' : ' Annahme aus'} ·
-        {share.settings.allowChangeRequests ? ' Änderungswünsche erlaubt' : ' Änderungswünsche aus'}
+        {share.settings.allowChangeRequests ? ' Änderungswünsche erlaubt' : ' Änderungswünsche aus'} ·
+        {share.settings.showLongText === false ? ' Kurzfassung' : ' alle Details'}
       </p>
 
       <button onClick={onClose} className="btn btn-secondary mt-6">

@@ -412,6 +412,50 @@ describe('Round 9 — shares.ts (owner-side)', () => {
     assert.equal(row!.settings.bindefristDays, 45);
   });
 
+  test('POST with showLongText=false persists in settings JSON (short version)', async () => {
+    const { ownerId, projectId } = await seedOwnerOnly();
+    const res = await ownerApp.request(`/api/projects/${projectId}/shares`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await ownerCookie(ownerId, 'o@test.local')) },
+      body: JSON.stringify({
+        visiblePositionIds: ['pos1'],
+        settings: {
+          brandHeader: 'co-branded', allowApproval: true, allowChangeRequests: true,
+          showTotals: true, showMwst: true, showLongText: false,
+        },
+      }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json() as { id: string };
+    const row = await db.query.shares.findFirst({ where: eq(schema.shares.id, body.id) });
+    assert.equal(row!.settings.showLongText, false, 'short-version flag must survive the strict Zod object');
+  });
+
+  test('POST omitting showLongText defaults it to true (all details)', async () => {
+    // Guards the Zod .default(true): a share created without the flag must
+    // store true so legacy "all details" stays the implicit behaviour.
+    const { ownerId, projectId } = await seedOwnerOnly();
+    const res = await ownerApp.request(`/api/projects/${projectId}/shares`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await ownerCookie(ownerId, 'o@test.local')) },
+      body: JSON.stringify({
+        visiblePositionIds: ['pos1'],
+        settings: { brandHeader: 'co-branded', allowApproval: true, allowChangeRequests: true, showTotals: true, showMwst: true },
+      }),
+    });
+    const body = await res.json() as { id: string };
+    const row = await db.query.shares.findFirst({ where: eq(schema.shares.id, body.id) });
+    assert.equal(row!.settings.showLongText, true);
+  });
+
+  test('showLongText flows through to the customer view payload settings', async () => {
+    const { token } = await seedFull({ settings: { showLongText: false } });
+    const res = await publicApp.request(`/api/share/${token}`);
+    assert.equal(res.status, 200);
+    const body = await res.json() as { settings: { showLongText?: boolean } };
+    assert.equal(body.settings.showLongText, false);
+  });
+
   test('DELETE /shares/:id sets revokedAt and returns ok', async () => {
     const { ownerId, shareId } = await seedFull();
     const res = await ownerApp.request(`/api/shares/${shareId}`, {

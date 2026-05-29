@@ -369,6 +369,10 @@ export type ShareSettings = {
   allowChangeRequests: boolean;
   showTotals: boolean;
   showMwst: boolean;
+  /** Detail level per position. `true`/absent = full Langtext shown to the
+   *  customer ("alle Details"); `false` = short version (Kurztext + Menge/Preis).
+   *  Mirror of the client type. */
+  showLongText?: boolean;
   /** Bindefrist in Tagen ab Erstellungs-/Snapshot-Zeit. Default 30, per BGB §§ 145 ff. */
   bindefristDays?: number;
 };

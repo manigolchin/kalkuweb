@@ -15,6 +15,7 @@ const createPresetSchema = z.object({
     allowChangeRequests: z.boolean().optional(),
     showTotals: z.boolean().optional(),
     showMwst: z.boolean().optional(),
+    showLongText: z.boolean().optional(),
     bindefristDays: z.number().int().min(1).max(365).optional(),
     message: z.string().max(2000).optional(),
   }).default({}),

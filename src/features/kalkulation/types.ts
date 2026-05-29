@@ -271,6 +271,12 @@ export type ShareSettings = {
   allowChangeRequests: boolean;
   showTotals: boolean;
   showMwst: boolean;
+  /** Detail level for each customer-visible position. `true` (default) shows
+   *  the full Langtext (long description) under each line — "alle Details".
+   *  `false` renders the short version: Kurztext + Menge/Einheit/Preis only.
+   *  Optional + treated as `true` when absent so shares created before this
+   *  flag existed keep showing the long text. */
+  showLongText?: boolean;
   bindefristDays?: number;
   /** PART H: optional plaintext password set by the calculator at share-create
    *  time. The server hashes it; the client never sees the hash back. The
