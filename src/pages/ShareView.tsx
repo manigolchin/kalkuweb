@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import toast from 'react-hot-toast';
@@ -20,14 +20,25 @@ import {
   Lock,
   AlertTriangle,
   RefreshCcw,
+  Users,
+  Search,
+  Calculator,
+  Layers,
+  ArrowDownWideNarrow,
+  X,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api, ApiError } from '@/lib/api';
-import type { CustomerViewPayload } from '@/features/kalkulation/types';
+import type { CustomerViewPayload, ShareCalcSummary } from '@/features/kalkulation/types';
 import { formatEUR } from '@/features/kalkulation/calc';
 import PositionCommentPanel from '@/pages/share/PositionCommentPanel';
 
 type ChangeDraft = { positionId: string; type: 'modify' | 'remove' | 'comment'; text: string };
+type SharePosition = CustomerViewPayload['positions'][number];
+type SortMode = 'order' | 'expensive' | 'cheap' | 'oz';
+// Stable empty array so the `allPositions` fallback keeps a constant identity
+// across renders (avoids re-running the useMemo on every render while loading).
+const EMPTY_POSITIONS: SharePosition[] = [];
 type ViewState =
   | { kind: 'loading' }
   | { kind: 'error'; message: string; status?: number }
@@ -46,6 +57,12 @@ export default function ShareView() {
   // PART G: per-position side-panel state. `panelPositionId` holds the id of
   // the position whose comment panel is currently open (null = closed).
   const [panelPositionId, setPanelPositionId] = useState<string | null>(null);
+  // Position list controls — sort by price, free-text search, "nur kommentierte".
+  // Display-only: totals + summary always reflect the FULL offer, never the
+  // filtered view. Safe to reorder — feedback is keyed by stable positionId.
+  const [sortMode, setSortMode] = useState<SortMode>('order');
+  const [query, setQuery] = useState('');
+  const [onlyCommented, setOnlyCommented] = useState(false);
 
   // PART H: persist unlock state in sessionStorage so a reload during the
   // same session doesn't force the customer to re-enter the password. Keyed
@@ -125,6 +142,32 @@ export default function ShareView() {
     const mwst = state.payload.settings.showMwst ? netto * state.payload.project.mwst : 0;
     return { netto, mwst, brutto: netto + mwst };
   }, [state]);
+
+  const allPositions = state.kind === 'ready' ? state.payload.positions : EMPTY_POSITIONS;
+  const priceablePositions = useMemo(
+    () => allPositions.filter((p) => !p.isHeader),
+    [allPositions],
+  );
+  const isFiltered = sortMode !== 'order' || query.trim().length > 0 || onlyCommented;
+  const displayedPositions = useMemo(() => {
+    // When a sort/search/filter is active we flatten (drop Titel headings) so
+    // the result reads as one ranked list; otherwise we keep the LV structure.
+    let list = isFiltered ? priceablePositions : allPositions;
+    const q = query.trim().toLowerCase();
+    if (q) {
+      list = list.filter((p) =>
+        `${p.oz} ${p.shortText} ${p.longText}`.toLowerCase().includes(q),
+      );
+    }
+    if (onlyCommented) {
+      list = list.filter((p) => changes[p.id]?.text?.trim());
+    }
+    if (sortMode === 'expensive') list = [...list].sort((a, b) => b.gp - a.gp);
+    else if (sortMode === 'cheap') list = [...list].sort((a, b) => a.gp - b.gp);
+    else if (sortMode === 'oz')
+      list = [...list].sort((a, b) => a.oz.localeCompare(b.oz, 'de', { numeric: true }));
+    return list;
+  }, [allPositions, priceablePositions, isFiltered, query, onlyCommented, sortMode, changes]);
 
   function setChange(positionId: string, patch: Partial<ChangeDraft>) {
     setChanges((prev) => {
@@ -212,6 +255,9 @@ export default function ShareView() {
 
   const { payload } = state;
   const { project, owner, positions, settings, snapshotHash } = payload;
+  const summary = payload.summary ?? null;
+  const showBreakdown = settings.showCostBreakdown !== false;
+  const showCalculation = settings.showCalculation !== false;
   const brandHeader = settings.brandHeader;
   const isNachtrag = (payload.nachtragNumber ?? 0) > 0;
   const parentDate = payload.parent?.createdAt
@@ -393,69 +439,118 @@ export default function ShareView() {
           )}
         </div>
 
+        {/* Kalkulations-Übersicht — the professional summary block. Gated by
+            showTotals (master "show money" flag); inner detail by the two new
+            flags. Hidden entirely on legacy snapshots without a summary. */}
+        {settings.showTotals && summary && (
+          <AngebotsUebersicht
+            summary={summary}
+            mwst={project.mwst}
+            showMwst={settings.showMwst}
+            showBreakdown={showBreakdown}
+            showCalculation={showCalculation}
+            isNachtrag={isNachtrag}
+          />
+        )}
+
         {/* Positions */}
         <section className="bg-white border border-slate-200/80 rounded-2xl overflow-hidden">
-          <header className="px-6 py-4 border-b border-slate-100">
-            <h3 className="font-semibold text-slate-900">Leistungen</h3>
-            <p className="text-xs text-slate-500 mt-0.5">
-              {positions.filter((p) => !p.isHeader).length} Positionen
-            </p>
+          <header className="px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <h3 className="font-semibold text-slate-900">Leistungen</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {isFiltered
+                  ? `${displayedPositions.length} von ${priceablePositions.length} Positionen`
+                  : `${priceablePositions.length} Positionen`}
+              </p>
+            </div>
           </header>
 
+          <PositionFilterBar
+            sortMode={sortMode}
+            onSortMode={setSortMode}
+            query={query}
+            onQuery={setQuery}
+            onlyCommented={onlyCommented}
+            onOnlyCommented={setOnlyCommented}
+            commentFilterAvailable={!submitted && settings.allowChangeRequests}
+            commentedCount={priceablePositions.filter((p) => changes[p.id]?.text?.trim()).length}
+          />
+
           <div className="divide-y divide-slate-100">
-            {positions.map((p) => (
-              <div
-                key={p.id}
-                className={clsx(
-                  'px-6 py-4',
-                  p.isHeader && 'bg-primary-50/40',
-                )}
-              >
-                {p.isHeader ? (
-                  /* PART N: KG/Titel heading wraps in full. */
-                  <h4 className="font-semibold text-primary-700 whitespace-pre-wrap break-words leading-[1.45]">
-                    {p.shortText}
-                  </h4>
-                ) : (
-                  <>
-                    <div className="flex items-start gap-4 flex-wrap sm:flex-nowrap">
-                      <span className="text-xs font-mono text-slate-400 w-16 mt-0.5 flex-shrink-0 whitespace-pre">
-                        {p.oz || '–'}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        {/* PART N: full Bezeichnung wraps; no truncation, no
-                            line-clamp. Customer always sees the complete text. */}
-                        <p
-                          data-testid={`share-bezeichnung-${p.id}`}
-                          className="text-sm font-medium text-slate-900 whitespace-pre-wrap break-words leading-[1.45]"
-                        >
-                          {p.shortText}
-                        </p>
-                        {settings.showLongText !== false && p.longText && (
-                          <p className="text-xs text-slate-600 mt-1 whitespace-pre-wrap break-words leading-[1.45]">
-                            {p.longText}
-                          </p>
-                        )}
-                        <p className="text-xs text-slate-500 mt-1.5 tabular-nums">
-                          {formatNumber(p.quantity)} {p.unit} × {formatEUR(p.ep)}
-                        </p>
-                      </div>
-                      <div className="text-right tabular-nums sm:w-32 flex-shrink-0">
-                        <p className="font-semibold text-slate-900">{formatEUR(p.gp)}</p>
-                      </div>
-                    </div>
-                    {!submitted && settings.allowChangeRequests && (
-                      <PositionCommentTrigger
-                        positionId={p.id}
-                        positionShortText={p.shortText}
-                        draft={changes[p.id]}
-                        onOpen={() => setPanelPositionId(p.id)}
-                      />
-                    )}
-                  </>
+            {displayedPositions.length === 0 ? (
+              <div className="px-6 py-12 text-center text-sm text-slate-500">
+                <Search className="w-5 h-5 mx-auto mb-2 text-slate-300" />
+                Keine Position gefunden.
+                {(query || onlyCommented) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuery('');
+                      setOnlyCommented(false);
+                    }}
+                    className="block mx-auto mt-2 text-primary-600 hover:text-primary-700 font-medium"
+                  >
+                    Filter zurücksetzen
+                  </button>
                 )}
               </div>
-            ))}
+            ) : (
+              displayedPositions.map((p) => (
+                <div
+                  key={p.id}
+                  className={clsx(
+                    'px-6 py-4',
+                    p.isHeader && 'bg-primary-50/40',
+                  )}
+                >
+                  {p.isHeader ? (
+                    /* PART N: KG/Titel heading wraps in full. */
+                    <h4 className="font-semibold text-primary-700 whitespace-pre-wrap break-words leading-[1.45]">
+                      {p.shortText}
+                    </h4>
+                  ) : (
+                    <>
+                      <div className="flex items-start gap-4 flex-wrap sm:flex-nowrap">
+                        <span className="text-xs font-mono text-slate-400 w-16 mt-0.5 flex-shrink-0 whitespace-pre">
+                          {p.oz || '–'}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          {/* PART N: full Bezeichnung wraps; no truncation, no
+                              line-clamp. Customer always sees the complete text. */}
+                          <p
+                            data-testid={`share-bezeichnung-${p.id}`}
+                            className="text-sm font-medium text-slate-900 whitespace-pre-wrap break-words leading-[1.45]"
+                          >
+                            {p.shortText}
+                          </p>
+                          {settings.showLongText !== false && p.longText && (
+                            <p className="text-xs text-slate-600 mt-1 whitespace-pre-wrap break-words leading-[1.45]">
+                              {p.longText}
+                            </p>
+                          )}
+                          <p className="text-xs text-slate-500 mt-1.5 tabular-nums">
+                            {formatNumber(p.quantity)} {p.unit} × {formatEUR(p.ep)}
+                          </p>
+                          {showBreakdown && <PositionCostBreakdown position={p} />}
+                        </div>
+                        <div className="text-right tabular-nums sm:w-32 flex-shrink-0">
+                          <p className="font-semibold text-slate-900">{formatEUR(p.gp)}</p>
+                        </div>
+                      </div>
+                      {!submitted && settings.allowChangeRequests && (
+                        <PositionCommentTrigger
+                          positionId={p.id}
+                          positionShortText={p.shortText}
+                          draft={changes[p.id]}
+                          onOpen={() => setPanelPositionId(p.id)}
+                        />
+                      )}
+                    </>
+                  )}
+                </div>
+              ))
+            )}
           </div>
 
           {settings.showTotals && (
@@ -619,6 +714,303 @@ export default function ShareView() {
           toast.success('Anmerkung gesendet.');
         }}
       />
+    </div>
+  );
+}
+
+/** Shared color language for the four cost types — used by both the summary
+ *  composition bar and the per-position breakdown. Class strings are literal
+ *  (not interpolated) so Tailwind's content scanner keeps them. */
+const COST_STYLE = {
+  lohn: { label: 'Lohn / Zeit', short: 'Lohn', bar: 'bg-sky-500', dot: 'bg-sky-500', text: 'text-sky-700' },
+  material: { label: 'Material', short: 'Material', bar: 'bg-emerald-500', dot: 'bg-emerald-500', text: 'text-emerald-700' },
+  geraete: { label: 'Geräte', short: 'Geräte', bar: 'bg-amber-500', dot: 'bg-amber-500', text: 'text-amber-700' },
+  nu: { label: 'Nachunternehmer', short: 'NU', bar: 'bg-violet-500', dot: 'bg-violet-500', text: 'text-violet-700' },
+} as const;
+type CostKey = keyof typeof COST_STYLE;
+const COST_ORDER: CostKey[] = ['lohn', 'material', 'geraete', 'nu'];
+
+function formatPct(n: number, digits = 1): string {
+  return (
+    new Intl.NumberFormat('de-DE', {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    }).format(n * 100) + ' %'
+  );
+}
+
+/**
+ * The professional "Angebotskalkulation" summary block at the top of the share.
+ * Three tiers, each independently gated:
+ *   1. Angebotssumme (always, when showTotals) — netto / brutto hero.
+ *   2. Kostenzusammensetzung (showBreakdown) — VERKAUF split as a stacked bar.
+ *   3. Kalkulation (showCalculation) — Einkauf / Zuschlag / Verkauf per cost
+ *      type, Überschuss, and project KPIs.
+ */
+function AngebotsUebersicht({
+  summary,
+  mwst,
+  showMwst,
+  showBreakdown,
+  showCalculation,
+  isNachtrag,
+}: {
+  summary: ShareCalcSummary;
+  mwst: number;
+  showMwst: boolean;
+  showBreakdown: boolean;
+  showCalculation: boolean;
+  isNachtrag: boolean;
+}) {
+  const composition = COST_ORDER.map((k) => ({
+    key: k,
+    ...COST_STYLE[k],
+    vk: summary.costTypes[k].vk,
+    pct: summary.netto > 0 ? summary.costTypes[k].vk / summary.netto : 0,
+  })).filter((c) => c.vk > 0);
+
+  const calcRows = COST_ORDER.map((k) => ({
+    key: k,
+    ...COST_STYLE[k],
+    ct: summary.costTypes[k],
+  })).filter((r) => r.ct.ek !== 0 || r.ct.vk !== 0);
+
+  return (
+    <section className="bg-white border border-slate-200/80 rounded-2xl p-6 sm:p-8 space-y-7">
+      {/* 1 — Angebotssumme hero */}
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wider text-primary-600 mb-2">
+          Angebotskalkulation{isNachtrag ? ' · Nachtrag' : ''}
+        </p>
+        <div className="flex items-end justify-between gap-4 flex-wrap">
+          <div>
+            <p className="text-xs text-slate-500">Angebotssumme netto</p>
+            <p className="text-3xl sm:text-4xl font-bold text-slate-900 tabular-nums leading-tight">
+              {formatEUR(summary.netto)}
+            </p>
+          </div>
+          {showMwst && (
+            <div className="text-right">
+              <p className="text-xs text-slate-500">zzgl. {formatPct(mwst, 0)} MwSt → brutto</p>
+              <p className="text-2xl font-semibold text-primary-700 tabular-nums leading-tight">
+                {formatEUR(summary.brutto)}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 2 — Kostenzusammensetzung (VERKAUF split) */}
+      {showBreakdown && composition.length > 0 && (
+        <div className="pt-5 border-t border-slate-100">
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3 inline-flex items-center gap-1.5">
+            <Layers className="w-3.5 h-3.5" />
+            Zusammensetzung
+          </p>
+          <div className="flex h-2.5 rounded-full overflow-hidden bg-slate-100">
+            {composition.map((c) => (
+              <div
+                key={c.key}
+                className={c.bar}
+                style={{ width: `${(c.pct * 100).toFixed(2)}%` }}
+                title={`${c.label}: ${formatEUR(c.vk)} (${formatPct(c.pct)})`}
+              />
+            ))}
+          </div>
+          <dl className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {composition.map((c) => (
+              <div key={c.key} className="min-w-0">
+                <dt className="flex items-center gap-1.5 text-xs text-slate-500">
+                  <span className={clsx('w-2 h-2 rounded-full flex-shrink-0', c.dot)} />
+                  <span className="truncate">{c.label}</span>
+                </dt>
+                <dd className="mt-0.5 text-sm font-semibold text-slate-900 tabular-nums">
+                  {formatEUR(c.vk)}
+                  <span className="ml-1 text-xs font-normal text-slate-400">{formatPct(c.pct)}</span>
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
+
+      {/* 3 — Kalkulation: Einkauf / Zuschlag / Verkauf + Überschuss + KPIs */}
+      {showCalculation && (
+        <div className="pt-5 border-t border-slate-100 space-y-5">
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 inline-flex items-center gap-1.5">
+            <Calculator className="w-3.5 h-3.5" />
+            Kalkulation
+          </p>
+          <div className="overflow-x-auto -mx-1 px-1">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="text-xs text-slate-400">
+                  <th className="text-left font-medium pb-2">Kostenart</th>
+                  <th className="text-right font-medium pb-2">Einkauf</th>
+                  <th className="text-right font-medium pb-2">Zuschlag</th>
+                  <th className="text-right font-medium pb-2">Verkauf</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {calcRows.map((r) => (
+                  <tr key={r.key}>
+                    <td className="py-2 text-slate-700">
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className={clsx('w-2 h-2 rounded-full flex-shrink-0', r.dot)} />
+                        {r.label}
+                      </span>
+                    </td>
+                    <td className="py-2 text-right tabular-nums text-slate-500">{formatEUR(r.ct.ek)}</td>
+                    <td className="py-2 text-right tabular-nums text-slate-500">
+                      {r.ct.ek > 0 ? formatPct(r.ct.zuschlagPct) : '–'}
+                    </td>
+                    <td className="py-2 text-right tabular-nums font-medium text-slate-900">{formatEUR(r.ct.vk)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-slate-200 font-semibold text-slate-900">
+                  <td className="pt-2.5">Summe</td>
+                  <td className="pt-2.5 text-right tabular-nums">{formatEUR(summary.ekTotal)}</td>
+                  <td className="pt-2.5" />
+                  <td className="pt-2.5 text-right tabular-nums">{formatEUR(summary.netto)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <div className="flex items-center justify-between gap-4 rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3">
+            <span className="text-sm font-medium text-emerald-900">
+              Überschuss <span className="text-xs font-normal text-emerald-700/80">(Verkauf − Einkauf)</span>
+            </span>
+            <span className="text-lg font-bold text-emerald-700 tabular-nums">{formatEUR(summary.ueberschuss)}</span>
+          </div>
+
+          <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <Kpi icon={<Users className="w-4 h-4" />} label="Mitarbeiter" value={formatNumber(summary.mitarbeiter)} />
+            <Kpi icon={<Clock className="w-4 h-4" />} label="Gesamtstunden" value={`${formatNumber(summary.totalHours)} h`} />
+            <Kpi icon={<Calendar className="w-4 h-4" />} label="Arbeitstage" value={formatNumber(summary.arbeitstage)} />
+            <Kpi icon={<Calendar className="w-4 h-4" />} label="Monate" value={formatNumber(summary.monate)} />
+          </dl>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Kpi({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-slate-200/80 px-3 py-2.5">
+      <dt className="flex items-center gap-1.5 text-xs text-slate-500">
+        <span className="text-slate-400">{icon}</span>
+        <span className="truncate">{label}</span>
+      </dt>
+      <dd className="mt-0.5 text-base font-semibold text-slate-900 tabular-nums">{value}</dd>
+    </div>
+  );
+}
+
+/**
+ * Compact per-position Material/Gerät/Zeit split shown under each line. Renders
+ * only when the snapshot carries the breakdown AND the line genuinely mixes ≥2
+ * cost types (a single-component line adds no info beyond its GP). Values are
+ * the GP split (per-unit × Menge), so they sum to the line's Gesamtpreis.
+ */
+function PositionCostBreakdown({ position }: { position: SharePosition }) {
+  const parts = COST_ORDER.map((k) => {
+    const gpKey = ({ lohn: 'gpLohn', material: 'gpMaterial', geraete: 'gpGeraet', nu: 'gpNu' } as const)[k];
+    const gp = position[gpKey];
+    return { key: k, ...COST_STYLE[k], value: gp ?? 0, hasData: gp !== undefined };
+  });
+  if (!parts.some((p) => p.hasData)) return null;
+  const nonZero = parts.filter((p) => Math.abs(p.value) > 0.005);
+  if (nonZero.length < 2) return null;
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
+      {nonZero.map((p) => (
+        <span key={p.key} className="inline-flex items-center gap-1">
+          <span className={clsx('w-1.5 h-1.5 rounded-full flex-shrink-0', p.dot)} />
+          {p.short} <span className="tabular-nums text-slate-700">{formatEUR(p.value)}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** Sort / search / filter toolbar above the position list. Display-only. */
+function PositionFilterBar({
+  sortMode,
+  onSortMode,
+  query,
+  onQuery,
+  onlyCommented,
+  onOnlyCommented,
+  commentFilterAvailable,
+  commentedCount,
+}: {
+  sortMode: SortMode;
+  onSortMode: (m: SortMode) => void;
+  query: string;
+  onQuery: (v: string) => void;
+  onlyCommented: boolean;
+  onOnlyCommented: (v: boolean) => void;
+  commentFilterAvailable: boolean;
+  commentedCount: number;
+}) {
+  return (
+    <div className="px-6 py-3 border-b border-slate-100 bg-slate-50/60 flex items-center gap-2 flex-wrap">
+      <div className="relative flex-1 min-w-[160px]">
+        <Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+        <input
+          value={query}
+          onChange={(e) => onQuery(e.target.value)}
+          placeholder="Position suchen…"
+          aria-label="Positionen durchsuchen"
+          className="input h-9 pl-8 pr-8 text-sm w-full"
+        />
+        {query && (
+          <button
+            type="button"
+            onClick={() => onQuery('')}
+            aria-label="Suche leeren"
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+      <label className="inline-flex items-center gap-1.5 text-sm text-slate-600">
+        <ArrowDownWideNarrow className="w-4 h-4 text-slate-400" />
+        <span className="sr-only">Sortierung</span>
+        <select
+          value={sortMode}
+          onChange={(e) => onSortMode(e.target.value as SortMode)}
+          aria-label="Positionen sortieren"
+          className="input h-9 text-sm py-0 pr-7"
+        >
+          <option value="order">Reihenfolge</option>
+          <option value="expensive">Teuerste zuerst</option>
+          <option value="cheap">Günstigste zuerst</option>
+          <option value="oz">Nach OZ</option>
+        </select>
+      </label>
+      {commentFilterAvailable && (
+        <button
+          type="button"
+          onClick={() => onOnlyCommented(!onlyCommented)}
+          aria-pressed={onlyCommented}
+          className={clsx(
+            'h-9 px-3 rounded-lg border text-sm inline-flex items-center gap-1.5 whitespace-nowrap',
+            onlyCommented
+              ? 'border-amber-300 bg-amber-50 text-amber-800'
+              : 'border-slate-200 text-slate-600 hover:bg-white',
+          )}
+        >
+          <MessageSquare className="w-3.5 h-3.5" />
+          Nur kommentierte
+          {commentedCount > 0 && <span className="tabular-nums">({commentedCount})</span>}
+        </button>
+      )}
     </div>
   );
 }

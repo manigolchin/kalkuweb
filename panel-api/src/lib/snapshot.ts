@@ -1,7 +1,136 @@
 import { createHash } from 'node:crypto';
-import type { CalcParams, Position, ProjectData, ShareSnapshot } from '../schema.js';
+import type {
+  CalcParams,
+  Position,
+  ProjectData,
+  ShareSnapshot,
+  ShareSnapshotSummary,
+} from '../schema.js';
 
 const round = (n: number, d = 2) => Math.round(n * 10 ** d) / 10 ** d;
+
+/** German Arbeitstage-pro-Monat divisor (≈ 261 Werktage / 12). Matches the
+ *  calculator's Vorlage so the customer's "Monate" reads the same. */
+const ARBEITSTAGE_PRO_MONAT = 21.5;
+
+/** Per-position GESAMTPREIS split into the four cost types, plus the matching
+ *  EINKAUF (raw cost) per type. Each value is `round(quantity × per-unit)`,
+ *  mirroring calc.ts's gp rounding — so the split reconciles with the line's
+ *  own gp and the per-position values the customer view shows are stable. */
+export type PositionCostSplit = {
+  gpLohn: number;
+  gpMaterial: number;
+  gpGeraet: number;
+  gpNu: number;
+  ekLohn: number;
+  ekMaterial: number;
+  ekGeraet: number;
+  ekNu: number;
+};
+
+export function positionCostSplit(p: Position, params: CalcParams): PositionCostSplit {
+  if (p.isHeader) {
+    return { gpLohn: 0, gpMaterial: 0, gpGeraet: 0, gpNu: 0, ekLohn: 0, ekMaterial: 0, ekGeraet: 0, ekNu: 0 };
+  }
+  const zf = 1 + (params.zielAufschlag ?? 0);
+  const adj = p.timeMinutes + (p.timeMinutes / 100) * params.zeitabzug;
+  const hpu = adj / 60; // Stunden je Einheit
+  return {
+    // VERKAUF (what the customer pays), incl. Ziel-Aufschlag — round per line.
+    gpLohn: round(p.quantity * hpu * params.verrechnungslohn * zf),
+    gpMaterial: round(p.quantity * p.materialCost * (1 + params.materialZuschlag) * zf),
+    gpGeraet: round(p.quantity * hpu * params.geraeteStundensatz * zf),
+    gpNu: round(p.quantity * p.nuCost * (1 + params.nuZuschlag) * zf),
+    // EINKAUF (raw cost): Lohn at Mittellohn, Material/NU before Zuschlag,
+    // Geräte before Ziel-Aufschlag. Same per-line rounding so Geräte reconciles
+    // to 0 % Zuschlag when there's no markup (no phantom rounding spread).
+    ekLohn: round(p.quantity * hpu * params.mittellohn),
+    ekMaterial: round(p.quantity * p.materialCost),
+    ekGeraet: round(p.quantity * hpu * params.geraeteStundensatz),
+    ekNu: round(p.quantity * p.nuCost),
+  };
+}
+
+/**
+ * Aggregate calculation summary over the VISIBLE non-header positions. The
+ * headline `netto` is Σ gp (so it matches the line items + footer exactly); the
+ * VERKAUF cost-type split is reconciled to that netto (any sub-cent rounding
+ * residual is folded into the largest part) so the composition always adds up.
+ * EINKAUF is the raw cost per type → Zuschlag-% folds in the global
+ * Ziel-Aufschlag, exactly like the calculator's Zuschlag-Matrix.
+ */
+export function computeShareSummary(positions: Position[], params: CalcParams): ShareSnapshotSummary {
+  let totalHours = 0;
+  let netto = 0;
+  let vkLohn = 0;
+  let vkMaterial = 0;
+  let vkGeraet = 0;
+  let vkNu = 0;
+  let ekLohn = 0;
+  let ekMaterial = 0;
+  let ekGeraet = 0;
+  let ekNu = 0;
+
+  for (const p of positions) {
+    if (p.isHeader) continue;
+    const adj = p.timeMinutes + (p.timeMinutes / 100) * params.zeitabzug;
+    totalHours += (adj / 60) * p.quantity;
+    netto += p.gp;
+    const s = positionCostSplit(p, params);
+    vkLohn += s.gpLohn;
+    vkMaterial += s.gpMaterial;
+    vkGeraet += s.gpGeraet;
+    vkNu += s.gpNu;
+    ekLohn += s.ekLohn;
+    ekMaterial += s.ekMaterial;
+    ekGeraet += s.ekGeraet;
+    ekNu += s.ekNu;
+  }
+  netto = round(netto);
+
+  // Reconcile the VERKAUF split to the authoritative netto so the composition
+  // bar + Kalkulation table always sum to the headline (folds the ≤few-cent
+  // rounding residual into the largest cost type — invisible on its value).
+  const vk = [round(vkLohn), round(vkMaterial), round(vkGeraet), round(vkNu)];
+  const resid = round(netto - (vk[0] + vk[1] + vk[2] + vk[3]));
+  if (resid !== 0) {
+    let maxI = 0;
+    for (let i = 1; i < 4; i++) if (vk[i] > vk[maxI]) maxI = i;
+    vk[maxI] = round(vk[maxI] + resid);
+  }
+
+  const ek = [round(ekLohn), round(ekMaterial), round(ekGeraet), round(ekNu)];
+  const costType = (ekv: number, vkv: number) => ({
+    ek: ekv,
+    vk: vkv,
+    zuschlagPct: ekv > 0 ? round(vkv / ekv - 1, 4) : 0,
+    differnz: round(vkv - ekv),
+  });
+  const ekTotal = round(ek[0] + ek[1] + ek[2] + ek[3]);
+  const mwst = round(netto * params.mwst);
+  const arbeitstage =
+    params.personaleinsatz > 0 && params.tagesstunden > 0
+      ? totalHours / (params.personaleinsatz * params.tagesstunden)
+      : 0;
+
+  return {
+    netto,
+    mwst,
+    brutto: round(netto + mwst),
+    totalHours: round(totalHours, 1),
+    ekTotal,
+    ueberschuss: round(netto - ekTotal),
+    costTypes: {
+      lohn: costType(ek[0], vk[0]),
+      material: costType(ek[1], vk[1]),
+      geraete: costType(ek[2], vk[2]),
+      nu: costType(ek[3], vk[3]),
+    },
+    mitarbeiter: params.personaleinsatz,
+    arbeitstage: round(arbeitstage, 1),
+    monate: round(arbeitstage / ARBEITSTAGE_PRO_MONAT, 2),
+  };
+}
 
 function recomputePosition(p: Position, params: CalcParams): Position {
   if (p.isHeader) {
@@ -46,9 +175,10 @@ export function buildShareSnapshot(
 ): ShareSnapshot {
   const ids = new Set(visibleIds);
   const recomputed = recomputePositions(positions, project.calcParams);
-  const visible = recomputed
-    .filter((p) => ids.has(p.id))
-    .map((p) => ({
+  const visibleFull = recomputed.filter((p) => ids.has(p.id));
+  const visible = visibleFull.map((p) => {
+    const split = positionCostSplit(p, project.calcParams);
+    return {
       id: p.id,
       oz: p.oz,
       shortText: p.shortText,
@@ -59,7 +189,13 @@ export function buildShareSnapshot(
       sortOrder: p.sortOrder,
       ep: p.ep,
       gp: p.gp,
-    }));
+      // GESAMTPREIS split (Lohn/Material/Gerät/NU) — sums to gp per line.
+      gpLohn: split.gpLohn,
+      gpMaterial: split.gpMaterial,
+      gpGeraet: split.gpGeraet,
+      gpNu: split.gpNu,
+    };
+  });
   return {
     snapshottedAt: new Date().toISOString(),
     projectVersionNumber,
@@ -73,6 +209,7 @@ export function buildShareSnapshot(
       mwst: project.calcParams.mwst,
     },
     positions: visible,
+    summary: computeShareSummary(visibleFull, project.calcParams),
   };
 }
 

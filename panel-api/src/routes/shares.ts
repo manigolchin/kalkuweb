@@ -28,6 +28,10 @@ const createShareSchema = z.object({
     // Detail level: true (default) = full Langtext per position, false = short
     // version. Must be listed here or z.object() strips it from the stored JSON.
     showLongText: z.boolean().default(true),
+    // Per-position Material/Gerät/Zeit split + VERKAUF composition in the summary.
+    showCostBreakdown: z.boolean().default(true),
+    // EINKAUF / Zuschlag / Überschuss + KPIs in the summary. Off = Kurzfassung.
+    showCalculation: z.boolean().default(true),
     bindefristDays: z.number().int().min(1).max(365).optional(),
     /** PART J: optional gate password. Plaintext over TLS, server hashes
      *  with bcrypt cost 12. Never returned to the client.

@@ -277,6 +277,13 @@ export type ShareSettings = {
    *  Optional + treated as `true` when absent so shares created before this
    *  flag existed keep showing the long text. */
   showLongText?: boolean;
+  /** Show the per-position Material/Gerät/Zeit cost split + the VERKAUF
+   *  composition bar in the summary. Optional + treated as `true` when absent. */
+  showCostBreakdown?: boolean;
+  /** Show the EINKAUF / Zuschlag / Überschuss calculation detail + project
+   *  KPIs in the summary. Optional + treated as `true` when absent. Turn off
+   *  for a margin-free "Kurzfassung". */
+  showCalculation?: boolean;
   bindefristDays?: number;
   /** PART H: optional plaintext password set by the calculator at share-create
    *  time. The server hashes it; the client never sees the hash back. The
@@ -325,6 +332,31 @@ export type ShareResponse = {
   respondedAt: string;
 };
 
+/** One cost-type row in the customer-facing Kalkulations-Übersicht: EINKAUF /
+ *  Zuschlag / VERKAUF / DIFFERNZ. Mirrors the backend ShareCostType. */
+export type ShareCostType = { ek: number; vk: number; zuschlagPct: number; differnz: number };
+
+/** Aggregate calculation summary the customer sees at the top of a share.
+ *  Mirrors the backend ShareSnapshotSummary; `costTypes.*.vk` reconciles with
+ *  Σ position.gp = netto. */
+export type ShareCalcSummary = {
+  netto: number;
+  mwst: number;
+  brutto: number;
+  totalHours: number;
+  ekTotal: number;
+  ueberschuss: number;
+  costTypes: {
+    lohn: ShareCostType;
+    material: ShareCostType;
+    geraete: ShareCostType;
+    nu: ShareCostType;
+  };
+  mitarbeiter: number;
+  arbeitstage: number;
+  monate: number;
+};
+
 export type CustomerViewPayload = {
   shareId: string;
   token: string;
@@ -367,7 +399,16 @@ export type CustomerViewPayload = {
     sortOrder: number;
     ep: number;
     gp: number;
+    /** GESAMTPREIS split (Lohn/Material/Gerät/NU), summing to gp. Optional —
+     *  absent on legacy snapshots created before the field existed. */
+    gpLohn?: number;
+    gpMaterial?: number;
+    gpGeraet?: number;
+    gpNu?: number;
   }>;
+  /** Aggregate calculation summary over the visible positions. Null/absent on
+   *  legacy snapshots created before the field existed → summary block hidden. */
+  summary?: ShareCalcSummary | null;
   /** ISO timestamp of share creation — anchors the Bindefrist window. */
   createdAt: string;
   /** PART H: server-stripped settings flags relevant to the customer view.

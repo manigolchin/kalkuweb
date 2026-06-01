@@ -373,6 +373,13 @@ export type ShareSettings = {
    *  customer ("alle Details"); `false` = short version (Kurztext + Menge/Preis).
    *  Mirror of the client type. */
   showLongText?: boolean;
+  /** Show the per-position Material/Gerät/Zeit cost split + the VERKAUF
+   *  composition in the summary. Absent = treated as `true`. */
+  showCostBreakdown?: boolean;
+  /** Show the EINKAUF / Zuschlag / Überschuss calculation detail + project
+   *  KPIs (Mitarbeiter/Stunden/Arbeitstage/Monate) in the summary. Absent =
+   *  treated as `true`. Turn off for a margin-free "Kurzfassung". */
+  showCalculation?: boolean;
   /** Bindefrist in Tagen ab Erstellungs-/Snapshot-Zeit. Default 30, per BGB §§ 145 ff. */
   bindefristDays?: number;
 };
@@ -392,6 +399,33 @@ export type ResponsePayload = {
   /** SHA-256 of the share snapshot the customer was responding to. Lets the
    *  owner prove (and the customer verify) which exact pricing was approved. */
   snapshotHash?: string;
+};
+
+/** One cost-type row in the customer-facing Kalkulations-Übersicht: the
+ *  EINKAUF (ek) / Zuschlag (zuschlagPct) / VERKAUF (vk) / DIFFERNZ split,
+ *  mirroring the calculator's internal Zuschlag-Matrix. */
+export type ShareCostType = { ek: number; vk: number; zuschlagPct: number; differnz: number };
+
+/** Aggregate calculation summary over a share's VISIBLE non-header positions.
+ *  Computed at snapshot-build time so the customer view never has to fetch the
+ *  raw cost inputs (which stay server-side). Derived purely from calc.ts math,
+ *  so `costTypes.*.vk` always reconciles with Σ position.gp = netto. */
+export type ShareSnapshotSummary = {
+  netto: number;
+  mwst: number;
+  brutto: number;
+  totalHours: number;
+  ekTotal: number;
+  ueberschuss: number;
+  costTypes: {
+    lohn: ShareCostType;
+    material: ShareCostType;
+    geraete: ShareCostType;
+    nu: ShareCostType;
+  };
+  mitarbeiter: number;
+  arbeitstage: number;
+  monate: number;
 };
 
 export type ShareSnapshot = {
@@ -417,5 +451,13 @@ export type ShareSnapshot = {
     sortOrder: number;
     ep: number;
     gp: number;
+    /** GESAMTPREIS split into Lohn/Material/Gerät/NU (each round(qty × per-unit),
+     *  so they sum to gp). Optional so legacy snapshots degrade gracefully. */
+    gpLohn?: number;
+    gpMaterial?: number;
+    gpGeraet?: number;
+    gpNu?: number;
   }>;
+  /** Aggregate calculation summary. Optional for the same back-compat reason. */
+  summary?: ShareSnapshotSummary;
 };

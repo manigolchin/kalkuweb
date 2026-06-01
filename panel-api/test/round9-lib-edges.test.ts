@@ -318,16 +318,24 @@ describe('lib/snapshot.ts edges', () => {
 
   test('SENTINEL: snapshot positions expose ONLY whitelisted fields — never internals', () => {
     // The mapper in buildShareSnapshot picks exactly:
-    //   id, oz, shortText, longText, quantity, unit, isHeader, sortOrder, ep, gp
+    //   id, oz, shortText, longText, quantity, unit, isHeader, sortOrder, ep, gp,
+    //   gpLohn, gpMaterial, gpGeraet, gpNu  ← intentional customer cost breakdown
+    //                                          (GP split, gated by showCostBreakdown)
     // Anything else (materialCost, timeMinutes, nuCost, materialFormula,
-    // internalNote, preCalcs, positionType, classification, hinweisText) is a leak.
+    // internalNote, preCalcs, positionType, classification, hinweisText, and the
+    // PER-UNIT epLohn/epMaterial/epGeraet/epNu) is a leak.
     const internalLeakFields = new Set([
       'materialCost', 'timeMinutes', 'nuCost', 'materialFormula',
       'internalNote', 'preCalcs', 'positionType', 'classification',
       'hinweisText', 'epLohn', 'epMaterial', 'epGeraet', 'epNu',
       'visibleToCustomer', 'aufmassFormula', 'sectionPath',
     ]);
-    const allowed = new Set(['id', 'oz', 'shortText', 'longText', 'quantity', 'unit', 'isHeader', 'sortOrder', 'ep', 'gp']);
+    const allowed = new Set([
+      'id', 'oz', 'shortText', 'longText', 'quantity', 'unit', 'isHeader', 'sortOrder', 'ep', 'gp',
+      // GESAMTPREIS split — sell-side, shown to the customer as the cost
+      // breakdown. NOT the raw cost inputs (those stay in internalLeakFields).
+      'gpLohn', 'gpMaterial', 'gpGeraet', 'gpNu',
+    ]);
 
     const leaky = pos({
       id: 'leak',

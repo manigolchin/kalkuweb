@@ -270,6 +270,7 @@ export const publicRoute = new Hono()
         contactEmail: owner?.companyContactEmail || '',
       },
       positions: snapshot.positions,
+      summary: snapshot.summary ?? null,
       createdAt: share.createdAt,
       // PART J: gate metadata for the frontend. `passwordRequired` is
       // intentionally `false` here — if it were `true` the request would

@@ -523,6 +523,18 @@ export default function ShareDialog({
                     checked={settings.showLongText ?? true}
                     onChange={(v) => setSettings({ ...settings, showLongText: v })}
                   />
+                  <Toggle
+                    label="Kostenaufschlüsselung zeigen"
+                    description="Material / Gerät / Zeit je Position + Zusammensetzung der Summe."
+                    checked={settings.showCostBreakdown ?? true}
+                    onChange={(v) => setSettings({ ...settings, showCostBreakdown: v })}
+                  />
+                  <Toggle
+                    label="Kalkulation & Überschuss zeigen"
+                    description="Einkauf, Zuschlag & Überschuss. Aus = ohne Margen-Details."
+                    checked={settings.showCalculation ?? true}
+                    onChange={(v) => setSettings({ ...settings, showCalculation: v })}
+                  />
                 </div>
               </section>
 
