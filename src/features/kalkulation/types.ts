@@ -326,6 +326,10 @@ export type ShareResponse = {
       positionId: string;
       type: 'modify' | 'remove' | 'comment';
       text: string;
+      /** Resolved server-side in /inbox from the frozen share snapshot so the
+       *  feedback tab can show WHICH position the request is about. */
+      oz?: string;
+      shortText?: string;
     }>;
     signature?: { name: string; timestamp: number; ip: string };
   };
@@ -461,11 +465,28 @@ export type ViewPreset = {
   createdAt: string;
 };
 
+/** One per-position comment (positionComments table), resolved with the
+ *  position's short text from the frozen share snapshot. Surfaced in the
+ *  Kunden-Feedback tab so the calculator sees WHICH part was commented on. */
+export type InboxComment = {
+  id: string;
+  positionOz: string;
+  /** From the share snapshot; null if the position is no longer in it. */
+  shortText: string | null;
+  intent: 'accept' | 'change_menge' | 'change_fabrikat' | 'negotiate_ep' | 'other';
+  text: string;
+  authorName: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+};
+
 export type InboxEntry = {
   project: {
     id: string;
     name: string;
     client: string;
+    /** The Firma (Bauunternehmer) the offer belongs to — WHICH COMPANY. */
+    bidder: string;
     service: string;
     versionNumber: number;
     updatedAt: string;
@@ -481,4 +502,5 @@ export type InboxEntry = {
     snapshotHash: string | null;
   };
   responses: ShareResponse[];
+  comments: InboxComment[];
 };

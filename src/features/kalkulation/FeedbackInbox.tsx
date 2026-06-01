@@ -1,95 +1,165 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+/**
+ * Kunden-Feedback — professional master-detail inbox.
+ *
+ * Left: a scannable list of feedback threads, one per shared Angebot, grouped
+ * by the COMPANY (Firma = project.bidder) the offer belongs to, with status,
+ * unread ("neu") markers, and search/type filters.
+ *
+ * Right: the selected thread's full activity — approvals/changes/rejections
+ * plus per-position comments — each change/comment resolved to WHICH position
+ * (OZ + short text) so the calculator instantly sees what the customer touched.
+ *
+ * Data: api.inbox.list() (see panel-api/src/routes/inbox.ts). Deep-link
+ * /panel/feedback?oz=<OZ> auto-selects the thread containing that position.
+ */
+
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Inbox,
-  Check,
-  MessageSquare,
   Eye,
   ArrowRight,
-  Calendar,
+  ArrowLeft,
   AlertCircle,
+  Search,
+  RefreshCw,
+  ExternalLink,
+  Building2,
+  MessageSquareText,
+  CheckCircle2,
+  XCircle,
+  PencilLine,
+  Hash,
+  Clock,
+  ChevronRight,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { api } from '@/lib/api';
-import type { InboxEntry, ShareResponse } from './types';
-import { StatusBadge, Skeleton, Breadcrumb } from '@/pages/panel/ui';
+import type { InboxEntry, InboxComment, ShareResponse } from './types';
+import { Skeleton, Breadcrumb } from '@/pages/panel/ui';
 
-type Bucket = { key: string; label: string; events: TimelineEvent[] };
+type FilterId = 'all' | 'changes' | 'comments' | 'approved' | 'rejected' | 'viewed';
 
-type TimelineEvent = {
-  ts: number;
-  kind: 'approve' | 'changes' | 'reject' | 'viewed' | 'created';
-  entry: InboxEntry;
-  response?: ShareResponse;
+const INTENT_LABEL: Record<InboxComment['intent'], string> = {
+  accept: 'Akzeptiert',
+  change_menge: 'Menge ändern',
+  change_fabrikat: 'Fabrikat ändern',
+  negotiate_ep: 'EP verhandeln',
+  other: 'Anmerkung',
 };
 
-function buildBuckets(entries: InboxEntry[]): Bucket[] {
-  const events: TimelineEvent[] = [];
-  for (const e of entries) {
-    for (const r of e.responses) {
-      events.push({
-        ts: Date.parse(r.respondedAt),
-        kind:
-          r.responseType === 'approve'
-            ? 'approve'
-            : r.responseType === 'reject'
-              ? 'reject'
-              : 'changes',
-        entry: e,
-        response: r,
-      });
-    }
-    if (e.share.lastViewedAt) {
-      events.push({ ts: Date.parse(e.share.lastViewedAt), kind: 'viewed', entry: e });
-    } else {
-      events.push({ ts: Date.parse(e.share.createdAt), kind: 'created', entry: e });
+const CHANGE_LABEL: Record<'modify' | 'remove' | 'comment', string> = {
+  modify: 'Änderung',
+  remove: 'Streichen',
+  comment: 'Frage',
+};
+
+/* ── Avatar helpers — deterministic tint per company name ──────────── */
+const AVATAR_TINTS = [
+  'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-200',
+  'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200',
+  'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-200',
+  'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200',
+  'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-200',
+  'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-200',
+];
+
+function tintFor(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0;
+  return AVATAR_TINTS[Math.abs(h) % AVATAR_TINTS.length];
+}
+
+function initials(name: string): string {
+  const cleaned = name.replace(/^\s*\d+\s+/, '').trim();
+  const words = cleaned.split(/[\s.\-_/]+/).filter((w) => w && !/^(gmbh|ug|gbr|ag|kg|co|mbh|und|&)$/i.test(w));
+  if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
+  return (words[0] ?? cleaned).slice(0, 2).toUpperCase() || '–';
+}
+
+function companyOf(entry: InboxEntry): string {
+  return entry.project?.bidder?.trim() || entry.project?.client?.trim() || 'Unbekannte Firma';
+}
+
+/* ── Per-thread derived metadata ───────────────────────────────────── */
+type ThreadMeta = {
+  lastTs: number;
+  changeCount: number;
+  commentCount: number;
+  status: 'approved' | 'rejected' | 'changes' | 'open';
+  hasUnread: boolean;
+};
+
+function threadMeta(entry: InboxEntry, lastSeen: number): ThreadMeta {
+  let changeCount = 0;
+  let status: ThreadMeta['status'] = 'open';
+  let lastTs = entry.share.lastViewedAt
+    ? Date.parse(entry.share.lastViewedAt)
+    : Date.parse(entry.share.createdAt);
+  // The LATEST response (by respondedAt) decides the headline status — don't
+  // rely on the array already being newest-first.
+  let latestRespTs = -Infinity;
+  for (const r of entry.responses) {
+    const ts = Date.parse(r.respondedAt);
+    if (ts > lastTs) lastTs = ts;
+    changeCount += r.payload.changes?.length ?? 0;
+    if (ts >= latestRespTs) {
+      latestRespTs = ts;
+      status =
+        r.responseType === 'approve' ? 'approved' : r.responseType === 'reject' ? 'rejected' : 'changes';
     }
   }
-  events.sort((a, b) => b.ts - a.ts);
-
-  const now = Date.now();
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
-  const yesterday = startOfDay.getTime() - 24 * 60 * 60 * 1000;
-  const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
-
-  const order = ['Heute', 'Gestern', 'Diese Woche', 'Älter'] as const;
-  const groups: Record<(typeof order)[number], TimelineEvent[]> = {
-    Heute: [],
-    Gestern: [],
-    'Diese Woche': [],
-    Älter: [],
-  };
-  for (const ev of events) {
-    if (ev.ts >= startOfDay.getTime()) groups['Heute'].push(ev);
-    else if (ev.ts >= yesterday) groups['Gestern'].push(ev);
-    else if (ev.ts >= weekAgo) groups['Diese Woche'].push(ev);
-    else groups['Älter'].push(ev);
+  for (const cm of entry.comments) {
+    const ts = Date.parse(cm.createdAt);
+    if (ts > lastTs) lastTs = ts;
   }
-  return order
-    .filter((k) => groups[k].length > 0)
-    .map((k) => ({ key: k, label: k, events: groups[k] }));
+  const hasUnread = lastTs > lastSeen;
+  return { lastTs, changeCount, commentCount: entry.comments.length, status, hasUnread };
+}
+
+/* ── Unified activity feed for the detail pane ─────────────────────── */
+type FeedEvent =
+  | { kind: 'response'; ts: number; response: ShareResponse }
+  | { kind: 'comment'; ts: number; comment: InboxComment }
+  | { kind: 'viewed'; ts: number }
+  | { kind: 'created'; ts: number };
+
+function buildFeed(entry: InboxEntry): FeedEvent[] {
+  const events: FeedEvent[] = [];
+  for (const r of entry.responses) events.push({ kind: 'response', ts: Date.parse(r.respondedAt), response: r });
+  for (const cm of entry.comments) events.push({ kind: 'comment', ts: Date.parse(cm.createdAt), comment: cm });
+  if (entry.share.lastViewedAt) events.push({ kind: 'viewed', ts: Date.parse(entry.share.lastViewedAt) });
+  events.push({ kind: 'created', ts: Date.parse(entry.share.createdAt) });
+  return events.sort((a, b) => b.ts - a.ts);
 }
 
 export default function FeedbackInbox() {
   const [entries, setEntries] = useState<InboxEntry[] | null>(null);
-  const [buckets, setBuckets] = useState<Bucket[]>([]);
+  const [lastSeen, setLastSeen] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState<FilterId>('all');
+  const [unreadOnly, setUnreadOnly] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const ozParam = searchParams.get('oz');
+  const handledOz = useRef<string | null>(null);
 
   async function load() {
-    setEntries(null);
-    setBuckets([]);
+    setLoading(true);
     setError(null);
     try {
-      const { entries: list } = await api.inbox.list();
+      const { entries: list, viewerLastSeenAt } = await api.inbox.list();
       const filtered = list.filter((e) => e.project !== null);
       setEntries(filtered);
-      // Compute time-relative buckets here so render stays pure.
-      setBuckets(buildBuckets(filtered));
+      setLastSeen(viewerLastSeenAt ? Date.parse(viewerLastSeenAt) : 0);
     } catch {
       setError('Inbox konnte nicht geladen werden.');
       toast.error('Inbox konnte nicht geladen werden.');
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -97,26 +167,121 @@ export default function FeedbackInbox() {
     load();
   }, []);
 
+  // Deep-link: if ?oz= is present, select the first thread that has a comment
+  // or change request for that position. Re-fires when the oz param changes
+  // (e.g. clicking a different position badge) and resets when it's cleared.
+  useEffect(() => {
+    if (!ozParam) {
+      handledOz.current = null;
+      return;
+    }
+    if (!entries || handledOz.current === ozParam) return;
+    const hit = entries.find(
+      (e) =>
+        e.comments.some((c) => c.positionOz === ozParam) ||
+        e.responses.some((r) => r.payload.changes?.some((ch) => ch.oz === ozParam)),
+    );
+    if (hit) setSelectedId(hit.share.id);
+    handledOz.current = ozParam;
+  }, [entries, ozParam]);
+
+  const meta = useMemo(() => {
+    const m = new Map<string, ThreadMeta>();
+    for (const e of entries ?? []) m.set(e.share.id, threadMeta(e, lastSeen));
+    return m;
+  }, [entries, lastSeen]);
+
+  const threads = useMemo(() => {
+    if (!entries) return [];
+    const q = search.trim().toLowerCase();
+    return entries
+      .filter((e) => {
+        const tm = meta.get(e.share.id)!;
+        if (unreadOnly && !tm.hasUnread) return false;
+        if (filter === 'changes' && tm.changeCount === 0) return false;
+        if (filter === 'comments' && tm.commentCount === 0) return false;
+        if (filter === 'approved' && tm.status !== 'approved') return false;
+        if (filter === 'rejected' && tm.status !== 'rejected') return false;
+        if (filter === 'viewed' && (e.responses.length > 0 || e.comments.length > 0)) return false;
+        if (!q) return true;
+        const hay = [
+          companyOf(e),
+          e.project?.name ?? '',
+          e.project?.client ?? '',
+          ...e.comments.map((c) => `${c.shortText ?? ''} ${c.text}`),
+          ...e.responses.flatMap((r) => [
+            r.customerName ?? '',
+            r.payload.message ?? '',
+            ...(r.payload.changes ?? []).map((ch) => `${ch.shortText ?? ''} ${ch.text}`),
+          ]),
+        ]
+          .join(' ')
+          .toLowerCase();
+        return hay.includes(q);
+      })
+      .sort((a, b) => {
+        const d = meta.get(b.share.id)!.lastTs - meta.get(a.share.id)!.lastTs;
+        return d !== 0 ? d : a.share.id.localeCompare(b.share.id);
+      });
+  }, [entries, search, filter, unreadOnly, meta]);
+
+  // Derive from the full entries list (not the filtered threads) so an open
+  // thread isn't lost when the user changes the search/filter.
+  const selected = useMemo(
+    () => (entries ?? []).find((e) => e.share.id === selectedId) ?? null,
+    [entries, selectedId],
+  );
+
+  const totalUnread = useMemo(
+    () => [...meta.values()].filter((m) => m.hasUnread).length,
+    [meta],
+  );
+
+  const FILTERS: ReadonlyArray<{ id: FilterId; label: string }> = [
+    { id: 'all', label: 'Alle' },
+    { id: 'changes', label: 'Änderungen' },
+    { id: 'comments', label: 'Kommentare' },
+    { id: 'approved', label: 'Angenommen' },
+    { id: 'rejected', label: 'Abgelehnt' },
+    { id: 'viewed', label: 'Nur Aufrufe' },
+  ];
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <Breadcrumb items={[{ label: 'Panel', to: '/panel' }, { label: 'Kunden-Feedback' }]} />
 
-      <header className="flex items-center gap-3">
-        <div className="p-2.5 rounded-xl bg-primary-50 border border-primary-100 dark:bg-primary-500/15 dark:border-primary-500/30">
-          <Inbox className="w-5 h-5 text-primary-600 dark:text-primary-300" />
+      {/* Header */}
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <div className="rounded-xl border border-primary-100 bg-primary-50 p-2.5 dark:border-primary-500/30 dark:bg-primary-500/15">
+            <Inbox className="h-5 w-5 text-primary-600 dark:text-primary-300" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Kunden-Feedback</h1>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Rückmeldungen aller geteilten Angebote — nach Firma sortiert.
+              {totalUnread > 0 && (
+                <span className="ml-1 font-medium text-primary-600 dark:text-primary-300">
+                  {totalUnread} neu
+                </span>
+              )}
+            </p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Kunden-Feedback</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            Aufrufe, Annahmen und Änderungswünsche aller geteilten Links.
-          </p>
-        </div>
+        <button
+          onClick={load}
+          disabled={loading}
+          className="inline-flex items-center gap-1.5 self-start rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm text-slate-600 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+        >
+          <RefreshCw className={clsx('h-3.5 w-3.5', loading && 'animate-spin')} />
+          Aktualisieren
+        </button>
       </header>
 
       {error && (
-        <div className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-sm text-rose-700 dark:text-rose-300">
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
           <span className="inline-flex items-center gap-2">
-            <AlertCircle className="w-4 h-4" /> {error}
+            <AlertCircle className="h-4 w-4" /> {error}
           </span>
           <button onClick={load} className="text-xs font-semibold underline hover:no-underline">
             Erneut laden
@@ -124,27 +289,102 @@ export default function FeedbackInbox() {
         </div>
       )}
 
-      {entries == null ? (
-        <SkeletonTimeline />
-      ) : entries.length === 0 ? (
+      {loading && entries == null ? (
+        <SkeletonInbox />
+      ) : entries && entries.length === 0 ? (
         <Empty />
       ) : (
-        <div className="relative pl-4 sm:pl-6">
-          {/* The single timeline rail */}
-          <div className="absolute left-1.5 sm:left-2.5 top-2 bottom-2 w-px bg-slate-200 dark:bg-slate-800" aria-hidden />
-          <div className="space-y-8">
-            {buckets.map((b) => (
-              <section key={b.key}>
-                <h2 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3 -ml-4 sm:-ml-6 pl-4 sm:pl-6">
-                  {b.label}
-                </h2>
-                <ul className="space-y-3">
-                  {b.events.map((ev, i) => (
-                    <TimelineRow key={`${b.key}-${i}`} ev={ev} />
-                  ))}
-                </ul>
-              </section>
-            ))}
+        <div className="grid gap-4 lg:grid-cols-[minmax(320px,380px)_1fr]">
+          {/* ── Master list ── */}
+          <div className={clsx('flex flex-col gap-3', selected && 'hidden lg:flex')}>
+            <div className="space-y-2.5">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Firma, Projekt oder Position suchen …"
+                  className="input w-full pl-9"
+                  aria-label="Feedback durchsuchen"
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {FILTERS.map((f) => (
+                  <button
+                    key={f.id}
+                    onClick={() => setFilter(f.id)}
+                    aria-pressed={filter === f.id}
+                    className={clsx(
+                      'rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
+                      filter === f.id
+                        ? 'bg-primary-600 text-white'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700',
+                    )}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setUnreadOnly((v) => !v)}
+                  aria-pressed={unreadOnly}
+                  className={clsx(
+                    'rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
+                    unreadOnly
+                      ? 'bg-primary-600 text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700',
+                  )}
+                >
+                  Nur neu
+                </button>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-400 dark:text-slate-500">
+              {threads.length} {threads.length === 1 ? 'Eintrag' : 'Einträge'}
+            </p>
+
+            <ul className="space-y-2 overflow-y-auto pr-0.5 lg:max-h-[calc(100vh-18rem)]">
+              {threads.length === 0 && (
+                <li className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-400 dark:border-slate-800">
+                  Keine Rückmeldung passt zu Suche und Filter.
+                </li>
+              )}
+              {threads.map((e) => (
+                <ThreadListItem
+                  key={e.share.id}
+                  entry={e}
+                  meta={meta.get(e.share.id)!}
+                  selected={e.share.id === selectedId}
+                  onSelect={() => setSelectedId(e.share.id)}
+                />
+              ))}
+            </ul>
+          </div>
+
+          {/* ── Detail ── */}
+          <div className={clsx(!selected && 'hidden lg:block')}>
+            {selected ? (
+              <ThreadDetail
+                entry={selected}
+                highlightOz={ozParam}
+                lastSeen={lastSeen}
+                onBack={() => {
+                  setSelectedId(null);
+                  if (ozParam) {
+                    searchParams.delete('oz');
+                    setSearchParams(searchParams, { replace: true });
+                  }
+                }}
+              />
+            ) : (
+              <div className="hidden h-full min-h-[20rem] place-items-center rounded-2xl border border-dashed border-slate-200 text-center dark:border-slate-800 lg:grid">
+                <div className="text-slate-400 dark:text-slate-500">
+                  <MessageSquareText className="mx-auto mb-2 h-7 w-7" />
+                  <p className="text-sm">Wählen Sie links eine Rückmeldung.</p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -152,179 +392,366 @@ export default function FeedbackInbox() {
   );
 }
 
-function TimelineRow({ ev }: { ev: TimelineEvent }) {
-  const project = ev.entry.project;
-  if (!project) return null;
-  const share = ev.entry.share;
+/* ────────────────────────────────────────────────────────────────── */
 
-  const meta = describeEvent(ev);
-
+function ThreadListItem({
+  entry,
+  meta,
+  selected,
+  onSelect,
+}: {
+  entry: InboxEntry;
+  meta: ThreadMeta;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const company = companyOf(entry);
+  const summary = buildSnippet(entry);
   return (
-    <li className="relative">
-      {/* Dot */}
-      <span
+    <li>
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-current={selected}
         className={clsx(
-          'absolute -left-4 sm:-left-6 top-4 w-3 h-3 rounded-full ring-2 ring-white dark:ring-slate-950',
-          meta.dotCls,
+          'w-full rounded-xl border p-3 text-left transition-colors',
+          selected
+            ? 'border-primary-300 bg-primary-50 ring-1 ring-primary-300 dark:border-primary-500/50 dark:bg-primary-500/10 dark:ring-primary-500/40'
+            : 'border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800/50',
         )}
-        aria-hidden
-      />
-      <article className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 sm:p-5">
-        <header className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="min-w-0 flex-1">
-            <Link
-              to={`/panel/kalkulation/${project.id}`}
-              className="inline-flex items-center gap-1.5 font-semibold text-slate-900 dark:text-slate-100 hover:text-primary-700 dark:hover:text-primary-300"
-            >
-              {project.name || 'Unbenanntes Projekt'}
-              <ArrowRight className="w-3.5 h-3.5 opacity-60" />
-            </Link>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
-              {project.client || 'Ohne Auftraggeber'} ·{' '}
-              <span className="font-mono">/{share.token.slice(0, 10)}…</span>
-            </p>
-          </div>
-          <div className="flex items-center gap-1.5">
-            {meta.badge && <StatusBadge kind={meta.badge} size="xs" />}
-            {(() => {
-              const rel = fmtRelative(new Date(ev.ts).toISOString());
-              return rel ? (
-                <time className="text-[11px] text-slate-400 dark:text-slate-500 tabular-nums whitespace-nowrap">
-                  {rel}
-                </time>
-              ) : null;
-            })()}
-          </div>
-        </header>
-
-        <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">
-          <span className="font-medium">{meta.actor}</span>{' '}
-          <span className="text-slate-500 dark:text-slate-400">{meta.verb}</span>
-        </p>
-
-        {ev.response?.payload.message && (
-          <blockquote className="mt-3 border-l-2 border-slate-200 dark:border-slate-700 pl-3 text-sm text-slate-600 dark:text-slate-300 italic whitespace-pre-wrap">
-            „{ev.response.payload.message}"
-          </blockquote>
-        )}
-
-        {ev.response?.payload.changes && ev.response.payload.changes.length > 0 && (
-          <ul className="mt-3 space-y-1.5">
-            {ev.response.payload.changes.map((c, idx) => (
-              <li
-                key={idx}
-                className="text-xs text-slate-600 dark:text-slate-300 pl-3 border-l-2 border-amber-200 dark:border-amber-800"
-              >
-                <strong className="text-slate-800 dark:text-slate-100">
-                  {c.type === 'remove'
-                    ? 'Streichen'
-                    : c.type === 'modify'
-                      ? 'Änderung'
-                      : 'Frage'}
-                </strong>
-                {c.positionId !== 'general' && (
-                  <span className="text-slate-400 dark:text-slate-500 font-mono ml-1.5">· {c.positionId.slice(0, 8)}</span>
-                )}
-                <p className="mt-0.5 text-slate-700 dark:text-slate-200">{c.text}</p>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {ev.kind === 'viewed' && (
-          <p className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
-            <Eye className="w-3 h-3" /> {share.viewCount}× geöffnet
-            {share.lastViewedAt && (
-              <>
-                <span className="opacity-50">·</span>
-                <Calendar className="w-3 h-3" /> {fmtRelative(share.lastViewedAt)}
-              </>
+      >
+        <div className="flex items-start gap-3">
+          <span
+            aria-hidden
+            className={clsx(
+              'mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xs font-bold',
+              tintFor(company),
             )}
-          </p>
-        )}
-      </article>
+          >
+            {initials(company)}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="truncate font-semibold text-slate-900 dark:text-slate-100">{company}</span>
+              {meta.hasUnread && (
+                <span className="h-2 w-2 shrink-0 rounded-full bg-primary-500" title="Neu seit Ihrem letzten Besuch" />
+              )}
+              <time className="ml-auto shrink-0 text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
+                {fmtRelative(new Date(meta.lastTs).toISOString())}
+              </time>
+            </div>
+            <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+              {entry.project?.name || 'Unbenanntes Projekt'}
+            </p>
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              <StatusPill status={meta.status} />
+              {meta.changeCount > 0 && (
+                <Chip icon={<PencilLine className="h-3 w-3" />}>{meta.changeCount} Änderung{meta.changeCount === 1 ? '' : 'en'}</Chip>
+              )}
+              {meta.commentCount > 0 && (
+                <Chip icon={<MessageSquareText className="h-3 w-3" />}>{meta.commentCount} Kommentar{meta.commentCount === 1 ? '' : 'e'}</Chip>
+              )}
+            </div>
+            {summary && <p className="mt-1.5 line-clamp-1 text-xs italic text-slate-400 dark:text-slate-500">{summary}</p>}
+          </div>
+          <ChevronRight className="mt-2 hidden h-4 w-4 shrink-0 text-slate-300 lg:block dark:text-slate-600" />
+        </div>
+      </button>
     </li>
   );
 }
 
-function describeEvent(ev: TimelineEvent): {
-  actor: string;
-  verb: string;
-  badge: 'approved' | 'changes' | 'rejected' | 'viewed' | 'shared' | null;
-  dotCls: string;
-} {
-  const r = ev.response;
-  if (ev.kind === 'approve' && r) {
-    return {
-      actor: r.customerName || 'Kunde',
-      verb: 'hat das Angebot angenommen.',
-      badge: 'approved',
-      dotCls: 'bg-emerald-500',
-    };
-  }
-  if (ev.kind === 'reject' && r) {
-    return {
-      actor: r.customerName || 'Kunde',
-      verb: 'hat das Angebot abgelehnt.',
-      badge: 'rejected',
-      dotCls: 'bg-rose-500',
-    };
-  }
-  if (ev.kind === 'changes' && r) {
-    const n = r.payload.changes?.length ?? 0;
-    return {
-      actor: r.customerName || 'Kunde',
-      verb: n > 0 ? `hat ${n} Änderungswunsch${n === 1 ? '' : 'e'} eingereicht.` : 'hat eine Nachricht hinterlassen.',
-      badge: 'changes',
-      dotCls: 'bg-amber-500',
-    };
-  }
-  if (ev.kind === 'viewed') {
-    return {
-      actor: 'Der Kunde',
-      verb: 'hat den geteilten Link geöffnet.',
-      badge: 'viewed',
-      dotCls: 'bg-violet-500',
-    };
-  }
-  return {
-    actor: 'Sie',
-    verb: 'haben einen neuen Link erstellt.',
-    badge: 'shared',
-    dotCls: 'bg-sky-500',
-  };
+function buildSnippet(entry: InboxEntry): string {
+  const msg = entry.responses.find((r) => r.payload.message)?.payload.message;
+  if (msg) return msg;
+  const firstChange = entry.responses.flatMap((r) => r.payload.changes ?? [])[0];
+  if (firstChange) return firstChange.text;
+  if (entry.comments[0]) return entry.comments[0].text;
+  return '';
 }
 
-function SkeletonTimeline() {
+function ThreadDetail({
+  entry,
+  highlightOz,
+  lastSeen,
+  onBack,
+}: {
+  entry: InboxEntry;
+  highlightOz: string | null;
+  lastSeen: number;
+  onBack: () => void;
+}) {
+  const company = companyOf(entry);
+  const project = entry.project!;
+  const feed = useMemo(() => buildFeed(entry), [entry]);
+  const shareUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/share/${entry.share.token}`;
+
   return (
     <div className="space-y-4">
-      {[1, 2, 3].map((i) => (
-        <div
-          key={i}
-          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-2"
-        >
-          <div className="flex items-center justify-between">
-            <Skeleton className="h-3.5 w-1/2" />
-            <Skeleton className="h-3.5 w-16" />
+      <button
+        onClick={onBack}
+        className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 lg:hidden dark:hover:text-slate-100"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" /> Zurück zur Liste
+      </button>
+
+      {/* Company / project header */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex items-start gap-3">
+          <span
+            aria-hidden
+            className={clsx('flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-sm font-bold', tintFor(company))}
+          >
+            {initials(company)}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <Building2 className="h-4 w-4 shrink-0 text-slate-400" />
+              <h2 className="truncate text-lg font-bold text-slate-900 dark:text-slate-100">{company}</h2>
+            </div>
+            <Link
+              to={`/panel/kalkulation/${project.id}`}
+              className="mt-0.5 inline-flex items-center gap-1.5 text-sm font-medium text-primary-700 hover:underline dark:text-primary-300"
+            >
+              {project.name || 'Unbenanntes Projekt'}
+              <ArrowRight className="h-3.5 w-3.5 opacity-60" />
+            </Link>
+            <dl className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+              {project.client && (
+                <div>
+                  <dt className="inline font-medium text-slate-400 dark:text-slate-500">Auftraggeber: </dt>
+                  <dd className="inline text-slate-600 dark:text-slate-300">{project.client}</dd>
+                </div>
+              )}
+              <div className="inline-flex items-center gap-1">
+                <Eye className="h-3 w-3" /> {entry.share.viewCount}× aufgerufen
+              </div>
+              <a
+                href={shareUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 font-mono text-slate-500 hover:text-primary-600 hover:underline dark:text-slate-400"
+              >
+                /{entry.share.token.slice(0, 10)}… <ExternalLink className="h-3 w-3" />
+              </a>
+            </dl>
           </div>
-          <Skeleton className="h-2.5 w-1/3" />
-          <Skeleton className="h-2.5 w-3/4 mt-2" />
         </div>
-      ))}
+      </div>
+
+      {/* Activity feed */}
+      <div className="space-y-3">
+        {feed.map((ev, i) => (
+          <FeedCard key={i} ev={ev} highlightOz={highlightOz} isNew={ev.ts > lastSeen} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FeedCard({ ev, highlightOz, isNew }: { ev: FeedEvent; highlightOz: string | null; isNew: boolean }) {
+  if (ev.kind === 'created') {
+    return (
+      <Meta>
+        <Clock className="h-3.5 w-3.5" /> Link erstellt · {fmtRelative(new Date(ev.ts).toISOString())}
+      </Meta>
+    );
+  }
+  if (ev.kind === 'viewed') {
+    return (
+      <Meta>
+        <Eye className="h-3.5 w-3.5 text-violet-500" /> Vom Kunden geöffnet · {fmtRelative(new Date(ev.ts).toISOString())}
+      </Meta>
+    );
+  }
+  if (ev.kind === 'comment') {
+    const c = ev.comment;
+    return (
+      <article
+        className={clsx(
+          'rounded-xl border bg-white p-4 dark:bg-slate-900',
+          highlightOz && c.positionOz === highlightOz
+            ? 'border-primary-300 ring-1 ring-primary-300 dark:border-primary-500/50'
+            : 'border-slate-200 dark:border-slate-800',
+        )}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <PositionRef oz={c.positionOz} shortText={c.shortText} />
+          <div className="flex items-center gap-1.5">
+            {isNew && <NewDot />}
+            <time className="text-[11px] text-slate-400 dark:text-slate-500">{fmtRelative(new Date(ev.ts).toISOString())}</time>
+          </div>
+        </div>
+        <div className="mt-2 flex items-center gap-2">
+          <span className="inline-flex items-center rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200 dark:bg-amber-900/30 dark:text-amber-200 dark:ring-amber-800">
+            {INTENT_LABEL[c.intent]}
+          </span>
+          {c.authorName && <span className="text-xs text-slate-500 dark:text-slate-400">{c.authorName}</span>}
+          {c.resolvedAt && (
+            <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400">
+              <CheckCircle2 className="h-3 w-3" /> erledigt
+            </span>
+          )}
+        </div>
+        <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-200">{c.text}</p>
+      </article>
+    );
+  }
+  // response
+  const r = ev.response;
+  const tone =
+    r.responseType === 'approve'
+      ? { icon: <CheckCircle2 className="h-4 w-4 text-emerald-600" />, label: 'Angebot angenommen', cls: 'border-emerald-200 dark:border-emerald-900' }
+      : r.responseType === 'reject'
+        ? { icon: <XCircle className="h-4 w-4 text-rose-600" />, label: 'Angebot abgelehnt', cls: 'border-rose-200 dark:border-rose-900' }
+        : { icon: <PencilLine className="h-4 w-4 text-amber-600" />, label: 'Änderungswünsche', cls: 'border-amber-200 dark:border-amber-900' };
+  return (
+    <article className={clsx('rounded-xl border-l-4 bg-white p-4 dark:bg-slate-900', tone.cls, 'border border-slate-200 dark:border-slate-800')}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          {tone.icon}
+          <span className="font-semibold text-slate-900 dark:text-slate-100">{tone.label}</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {isNew && <NewDot />}
+          <time className="text-[11px] text-slate-400 dark:text-slate-500">{fmtRelative(new Date(ev.ts).toISOString())}</time>
+        </div>
+      </div>
+      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+        von {r.customerName || 'Kunde'}
+        {r.customerEmail && <span className="text-slate-400 dark:text-slate-500"> · {r.customerEmail}</span>}
+      </p>
+      {r.payload.message && (
+        <blockquote className="mt-2.5 whitespace-pre-wrap border-l-2 border-slate-200 pl-3 text-sm italic text-slate-600 dark:border-slate-700 dark:text-slate-300">
+          „{r.payload.message}"
+        </blockquote>
+      )}
+      {r.payload.changes && r.payload.changes.length > 0 && (
+        <div className="mt-3 space-y-2">
+          {r.payload.changes.map((ch, idx) => (
+            <div
+              key={idx}
+              className={clsx(
+                'rounded-lg border bg-slate-50 p-2.5 dark:bg-slate-800/40',
+                highlightOz && ch.oz === highlightOz
+                  ? 'border-primary-300 dark:border-primary-500/50'
+                  : 'border-slate-200 dark:border-slate-800',
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center rounded bg-slate-200 px-1.5 py-0.5 text-[11px] font-medium text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                  {CHANGE_LABEL[ch.type]}
+                </span>
+                {ch.positionId !== 'general' && <PositionRef oz={ch.oz} shortText={ch.shortText} fallbackId={ch.positionId} />}
+              </div>
+              <p className="mt-1.5 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-200">{ch.text}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </article>
+  );
+}
+
+/** "WHICH part" — the position OZ + its short text. */
+function PositionRef({
+  oz,
+  shortText,
+  fallbackId,
+}: {
+  oz?: string | null;
+  shortText?: string | null;
+  fallbackId?: string;
+}) {
+  if (!oz && !shortText) {
+    return fallbackId ? (
+      <span className="inline-flex items-center gap-1 font-mono text-[11px] text-slate-400">
+        <Hash className="h-3 w-3" />
+        {fallbackId.slice(0, 8)}
+      </span>
+    ) : (
+      <span className="text-xs text-slate-400">Gesamtes Angebot</span>
+    );
+  }
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1.5 text-xs">
+      {oz && (
+        <span className="shrink-0 rounded bg-primary-50 px-1.5 py-0.5 font-mono font-semibold text-primary-700 dark:bg-primary-500/15 dark:text-primary-300">
+          {oz}
+        </span>
+      )}
+      {shortText && <span className="truncate font-medium text-slate-700 dark:text-slate-200">{shortText}</span>}
+    </span>
+  );
+}
+
+function StatusPill({ status }: { status: ThreadMeta['status'] }) {
+  const map = {
+    approved: { label: 'Angenommen', cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-200 dark:ring-emerald-800' },
+    rejected: { label: 'Abgelehnt', cls: 'bg-rose-50 text-rose-700 ring-rose-200 dark:bg-rose-900/30 dark:text-rose-200 dark:ring-rose-800' },
+    changes: { label: 'Änderungen', cls: 'bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-900/30 dark:text-amber-200 dark:ring-amber-800' },
+    open: { label: 'Offen', cls: 'bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700' },
+  }[status];
+  return <span className={clsx('inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset', map.cls)}>{map.label}</span>;
+}
+
+function Chip({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+      {icon}
+      {children}
+    </span>
+  );
+}
+
+function NewDot() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-primary-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-600 dark:bg-primary-500/15 dark:text-primary-300">
+      neu
+    </span>
+  );
+}
+
+function Meta({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="inline-flex items-center gap-1.5 pl-1 text-[11px] text-slate-400 dark:text-slate-500">{children}</p>
+  );
+}
+
+function SkeletonInbox() {
+  return (
+    <div className="grid gap-4 lg:grid-cols-[minmax(320px,380px)_1fr]">
+      <div className="space-y-2">
+        <Skeleton className="h-9 w-full" />
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+            <div className="flex gap-3">
+              <Skeleton className="h-9 w-9 rounded-lg" />
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-3.5 w-2/3" />
+                <Skeleton className="h-2.5 w-1/2" />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="hidden rounded-2xl border border-slate-200 p-5 lg:block dark:border-slate-800">
+        <Skeleton className="h-11 w-1/2" />
+      </div>
     </div>
   );
 }
 
 function Empty() {
   return (
-    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-12 text-center">
-      <div className="inline-flex w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 items-center justify-center mb-3">
-        <Inbox className="w-5 h-5 text-slate-400 dark:text-slate-500" />
+    <div className="rounded-xl border border-slate-200 bg-white p-12 text-center dark:border-slate-800 dark:bg-slate-900">
+      <div className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800">
+        <Inbox className="h-5 w-5 text-slate-400 dark:text-slate-500" />
       </div>
       <p className="text-base font-semibold text-slate-700 dark:text-slate-200">Noch keine Aktivität</p>
-      <p className="text-sm text-slate-500 dark:text-slate-400 mt-1.5 max-w-sm mx-auto">
-        Sobald Sie ein Angebot mit einem Kunden teilen und dieser den Link öffnet, erscheinen
-        hier alle Aufrufe und Rückmeldungen.
+      <p className="mx-auto mt-1.5 max-w-sm text-sm text-slate-500 dark:text-slate-400">
+        Sobald Sie ein Angebot mit einer Firma teilen und diese den Link öffnet, erscheinen hier
+        alle Aufrufe, Annahmen und Änderungswünsche.
       </p>
     </div>
   );
@@ -342,7 +769,3 @@ function fmtRelative(iso: string): string {
   if (days < 7) return `vor ${days} Tag${days === 1 ? '' : 'en'}`;
   return date.toLocaleDateString('de-DE', { day: '2-digit', month: 'short', year: 'numeric' });
 }
-
-// Suppress unused-icon lint warning for icons retained for future variants
-void Check;
-void MessageSquare;

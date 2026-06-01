@@ -220,7 +220,9 @@ export const api = {
   },
   inbox: {
     list: () =>
-      request<{ entries: InboxEntry[]; generatedAt: string }>(`/inbox`),
+      request<{ entries: InboxEntry[]; generatedAt: string; viewerLastSeenAt: string | null }>(
+        `/inbox`,
+      ),
   },
   notifications: {
     unread: () => request<{ count: number }>(`/notifications/unread`),
