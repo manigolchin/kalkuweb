@@ -99,7 +99,13 @@ export function computeShareSummary(positions: Position[], params: CalcParams): 
     vk[maxI] = round(vk[maxI] + resid);
   }
 
-  const ek = [round(ekLohn), round(ekMaterial), round(ekGeraet), round(ekNu)];
+  // Geräte: EINKAUF = VERKAUF / (1 + Geräte-Zuschlag), mirroring the Excel
+  // Vorlage (J6 = gerätekosten/(1+gaereteprznt), default 10 %). The per-position
+  // Geräte rate already sits in VERKAUF — the Zuschlag only splits that into
+  // cost vs. margin, so it surfaces in the Geräte-Zuschlag-% and the Überschuss,
+  // never in the customer price (which stays Σ Min/60 × Geräte-Satz).
+  const gPct = params.geraeteZuschlagPct ?? 0;
+  const ek = [round(ekLohn), round(ekMaterial), round(ekGeraet / (1 + gPct)), round(ekNu)];
   const costType = (ekv: number, vkv: number) => ({
     ek: ekv,
     vk: vkv,

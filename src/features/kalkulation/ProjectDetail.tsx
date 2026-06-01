@@ -1141,6 +1141,16 @@ function SettingsPanel({
           onChange={(v) => onParams({ nuZuschlag: v / 100 })}
         />
         <NumField
+          label="Geräte-Satz €/h"
+          value={params.geraeteStundensatz}
+          onChange={(v) => onParams({ geraeteStundensatz: v })}
+        />
+        <NumField
+          label="Geräte Zuschlag %"
+          value={(params.geraeteZuschlagPct ?? 0) * 100}
+          onChange={(v) => onParams({ geraeteZuschlagPct: v / 100 })}
+        />
+        <NumField
           label="MwSt %"
           value={params.mwst * 100}
           onChange={(v) => onParams({ mwst: v / 100 })}
