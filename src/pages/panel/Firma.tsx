@@ -32,6 +32,7 @@ import {
   Plus,
   Trash2,
   X,
+  Database,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -80,13 +81,14 @@ const TRADE_LABEL: Record<string, string> = {
 export default function Firma() {
   const { kind: kindRaw, id: idRaw } = useParams<{ kind: string; id: string }>();
   const navigate = useNavigate();
-  const kind = (kindRaw === 'managed' || kindRaw === 'external' || kindRaw === 'local'
+  const kind = (kindRaw === 'managed' || kindRaw === 'external' || kindRaw === 'local' || kindRaw === 'directory'
     ? kindRaw
-    : null) as 'managed' | 'external' | 'local' | null;
-  /** id is `string` for local kind (nanoid), `number` for preisanfrage kinds.
-   *  We pass it through as the raw param string everywhere except the legacy
-   *  `numericId` checks that the preisanfrage-defaults endpoint needs. */
-  const idParam: string | number | null = kind === 'local' ? (idRaw ?? null) : Number(idRaw);
+    : null) as 'managed' | 'external' | 'local' | 'directory' | null;
+  /** id is a `string` for local (nanoid) and directory (slug) kinds, `number`
+   *  for the preisanfrage kinds. We pass it through as the raw param string
+   *  everywhere except the legacy numeric checks the defaults endpoint needs. */
+  const usesStringId = kind === 'local' || kind === 'directory';
+  const idParam: string | number | null = usesStringId ? (idRaw ?? null) : Number(idRaw);
 
   const [data, setData] = useState<FirmaDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -98,12 +100,12 @@ export default function Firma() {
       setLoading(false);
       return;
     }
-    if (kind !== 'local' && (!Number.isInteger(idParam) || (idParam as number) <= 0)) {
+    if (!usesStringId && (!Number.isInteger(idParam) || (idParam as number) <= 0)) {
       setError('Ungültige Firma-Referenz.');
       setLoading(false);
       return;
     }
-    if (kind === 'local' && (!idParam || typeof idParam !== 'string')) {
+    if (usesStringId && (!idParam || typeof idParam !== 'string')) {
       setError('Ungültige Firma-Referenz.');
       setLoading(false);
       return;
@@ -118,7 +120,9 @@ export default function Firma() {
         setError(
           kind === 'local'
             ? 'Diese lokale Firma gibt es nicht (mehr).'
-            : 'Diese Firma gibt es nicht (mehr) in preisanfrage.',
+            : kind === 'directory'
+              ? 'Diese Firma gibt es nicht (mehr) im KT01-Verzeichnis.'
+              : 'Diese Firma gibt es nicht (mehr) in preisanfrage.',
         );
       } else if (e instanceof ApiError && e.status === 503) {
         setError('preisanfrage.kalkus.de ist gerade nicht erreichbar.');
@@ -239,39 +243,47 @@ export default function Firma() {
       {data && (
         <>
           <Header firma={data.firma} kind={kind} />
-          {/* Calc defaults only exist for preisanfrage firmas — the
-              firma_calc_defaults table CHECK restricts kind to managed/external.
-              For local firms we show the global defaults via ProjectsCard but
-              don't render the editable form. */}
-          {kind !== 'local' && (
-            <DefaultsCard
-              kind={kind}
-              id={idParam as number}
-              initial={data.defaults}
-              displayName={data.firma.displayName}
-              onSaved={(next) => setData({ ...data, defaults: next })}
-              onReset={() =>
-                setData({
-                  ...data,
-                  defaults: {
-                    materialZuschlag: 0.12,
-                    nuZuschlag: 0.12,
-                    verrechnungslohn: 49.9,
-                    geraeteStundensatz: 0.5,
-                    isCustom: false,
-                  },
-                })
-              }
-            />
+          {kind === 'directory' ? (
+            // Directory firms are a read-only KT01 snapshot: no editable
+            // defaults, no preisanfrage projects. Offer a direct entry point.
+            <DirectoryNotice firma={data.firma} defaults={data.defaults} />
+          ) : (
+            <>
+              {/* Calc defaults only exist for preisanfrage firmas — the
+                  firma_calc_defaults table CHECK restricts kind to managed/external.
+                  For local firms we show the global defaults via ProjectsCard but
+                  don't render the editable form. */}
+              {kind !== 'local' && (
+                <DefaultsCard
+                  kind={kind}
+                  id={idParam as number}
+                  initial={data.defaults}
+                  displayName={data.firma.displayName}
+                  onSaved={(next) => setData({ ...data, defaults: next })}
+                  onReset={() =>
+                    setData({
+                      ...data,
+                      defaults: {
+                        materialZuschlag: 0.12,
+                        nuZuschlag: 0.12,
+                        verrechnungslohn: 49.9,
+                        geraeteStundensatz: 0.5,
+                        isCustom: false,
+                      },
+                    })
+                  }
+                />
+              )}
+              <ProjectsCard
+                projects={data.projects}
+                firmaKind={kind}
+                firmaId={idParam as number | string}
+                firmaDisplayName={data.firma.displayName}
+                defaults={data.defaults}
+                onChanged={load}
+              />
+            </>
           )}
-          <ProjectsCard
-            projects={data.projects}
-            firmaKind={kind}
-            firmaId={idParam as number | string}
-            firmaDisplayName={data.firma.displayName}
-            defaults={data.defaults}
-            onChanged={load}
-          />
         </>
       )}
     </div>
@@ -283,8 +295,15 @@ function Header({
   kind,
 }: {
   firma: FirmaDetail['firma'];
-  kind: 'managed' | 'external' | 'local';
+  kind: 'managed' | 'external' | 'local' | 'directory';
 }) {
+  const KIND_BADGE: Record<typeof kind, { label: string; cls: string }> = {
+    managed: { label: 'Verwaltet (preisanfrage)', cls: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200' },
+    external: { label: 'Extern (OneDrive)', cls: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200' },
+    local: { label: 'Lokal (Panel)', cls: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200' },
+    directory: { label: 'KT01-Verzeichnis', cls: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200' },
+  };
+  const badge = KIND_BADGE[kind];
   return (
     <header className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
@@ -303,21 +322,8 @@ function Header({
                 {TRADE_LABEL[firma.tradeType] ?? firma.tradeType}
               </span>
             )}
-            <span
-              className={clsx(
-                'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium',
-                kind === 'managed'
-                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
-                  : kind === 'external'
-                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
-                    : 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200',
-              )}
-            >
-              {kind === 'managed'
-                ? 'Verwaltet (preisanfrage)'
-                : kind === 'external'
-                  ? 'Extern (OneDrive)'
-                  : 'Lokal (Panel)'}
+            <span className={clsx('inline-flex items-center px-2 py-0.5 rounded text-xs font-medium', badge.cls)}>
+              {badge.label}
             </span>
           </div>
         </div>
@@ -352,6 +358,89 @@ function Stat({
         {value}
       </div>
     </div>
+  );
+}
+
+/**
+ * Read-only notice for a KT01-directory Firma — there are no preisanfrage
+ * projects to list, so we explain the source and offer a direct "Kalkulation
+ * starten" that opens a fresh (empty) calculation pre-filled with the Firma
+ * name as bidder + the global KALKU defaults.
+ */
+function DirectoryNotice({
+  firma,
+  defaults,
+}: {
+  firma: FirmaDetail['firma'];
+  defaults: FirmaDetail['defaults'];
+}) {
+  const navigate = useNavigate();
+  const [starting, setStarting] = useState(false);
+
+  async function startBlank() {
+    setStarting(true);
+    try {
+      const created = await api.projects.create({
+        name: `Kalkulation — ${firma.displayName}`,
+        client: '',
+        service: '',
+        tenderNumber: '',
+        deadline: '',
+        bidder: firma.displayName,
+        calcParams: {
+          mittellohn: 30,
+          verrechnungslohn: defaults.verrechnungslohn,
+          materialZuschlag: defaults.materialZuschlag,
+          nuZuschlag: defaults.nuZuschlag,
+          geraeteZuschlagPct: 0.1,
+          geraeteStundensatz: defaults.geraeteStundensatz,
+          zeitabzug: 0,
+          tagesstunden: 8,
+          personaleinsatz: 3,
+          mwst: 0.19,
+          zielAufschlag: 0,
+        },
+        positions: [],
+        notes: `KT01-Verzeichnis-Firma: ${firma.displayName}${firma.folderName ? ` (${firma.folderName})` : ''}`,
+      });
+      toast.success('Kalkulation angelegt — jetzt GAEB importieren oder Positionen einpflegen.');
+      navigate(`/panel/kalkulation/${created.id}`);
+    } catch (e) {
+      toast.error(`Konnte Kalkulation nicht starten: ${String(e)}`);
+      setStarting(false);
+    }
+  }
+
+  return (
+    <section
+      aria-label="KT01-Verzeichnis"
+      className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900"
+    >
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200">
+          <Database className="h-5 w-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Aus dem KT01-Verzeichnis</h2>
+          <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
+            Diese Firma stammt aus dem KT01-OneDrive. Sobald die preisanfrage-Anbindung
+            aktiv ist, erscheinen hier Ausschreibungen, Submissionsergebnisse und Kennzahlen
+            automatisch. Sie können aber schon jetzt eine Kalkulation für diese Firma starten.
+          </p>
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={startBlank}
+              disabled={starting}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+            >
+              {starting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Calculator className="h-3.5 w-3.5" />}
+              Kalkulation starten
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 

@@ -253,7 +253,7 @@ export const api = {
     list: () =>
       request<{
         rows: Array<{
-          kind: 'managed' | 'external' | 'local';
+          kind: 'managed' | 'external' | 'local' | 'directory';
           id: number | string;
           folderName: string | null;
           displayName: string;
@@ -268,6 +268,8 @@ export const api = {
         managedCount: number;
         externalCount: number;
         localCount: number;
+        /** KT01-directory rows (baked snapshot) shown after dedup vs. live. */
+        directoryCount?: number;
         totalProjects: number;
         lastScanAt: string | null;
         generatedAt: string;
@@ -278,10 +280,10 @@ export const api = {
      *  Accepts all 3 kinds. `id` type is `number | string` since local
      *  firmas use nanoid strings. Local-Firma payloads include a `notes`
      *  string on the firma object. */
-    detail: (kind: 'managed' | 'external' | 'local', id: number | string) =>
+    detail: (kind: 'managed' | 'external' | 'local' | 'directory', id: number | string) =>
       request<{
         firma: {
-          kind: 'managed' | 'external' | 'local';
+          kind: 'managed' | 'external' | 'local' | 'directory';
           id: number | string;
           folderName: string | null;
           displayName: string;
@@ -337,7 +339,7 @@ export const api = {
      *  empty positions for local firmas / local Ausschreibungen and 404
      *  for external firmas (which only carry submission-result data). */
     projectPositions: (
-      kind: 'managed' | 'external' | 'local',
+      kind: 'managed' | 'external' | 'local' | 'directory',
       firmaId: number | string,
       projectId: number | string,
     ) =>

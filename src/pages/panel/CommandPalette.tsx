@@ -123,7 +123,7 @@ const GROUP_CAP = 5;
 
 /** Firmen row type — narrowed inline to avoid re-exporting the entire api shape. */
 type FirmaRow = {
-  kind: 'managed' | 'external' | 'local';
+  kind: 'managed' | 'external' | 'local' | 'directory';
   id: number | string;
   folderName: string | null;
   displayName: string;
@@ -133,7 +133,7 @@ type FirmaRow = {
 
 type AusItem = {
   id: number | string;
-  firmaKind: 'managed' | 'external' | 'local';
+  firmaKind: 'managed' | 'external' | 'local' | 'directory';
   firmaId: number | string;
   firmaName: string;
   name: string;

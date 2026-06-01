@@ -28,11 +28,15 @@ import {
   isPreisanfrageMock,
   PreisanfrageError,
 } from '../lib/preisanfrage.js';
+import { KT01_FIRMEN, KT01_SNAPSHOT_AT } from '../data/kt01-firmen.js';
 
-/** All three Firma sources. 'local' rows live in panel-api only; the other
- *  two come from preisanfrage. The composite (kind, id) is the only safe way
- *  to address a Firma — same numeric id can repeat across managed/external. */
-const FIRMA_KIND = z.enum(['managed', 'external', 'local']);
+/** The four Firma sources. 'local' rows live in panel-api only; 'managed' +
+ *  'external' come live from preisanfrage; 'directory' rows come from the baked
+ *  KT01 snapshot (data/kt01-firmen.ts) and are read-only — they guarantee the
+ *  full company list shows even when the live preisanfrage token isn't set.
+ *  The composite (kind, id) is the only safe way to address a Firma — the same
+ *  numeric id can repeat across managed/external, and directory ids are slugs. */
+const FIRMA_KIND = z.enum(['managed', 'external', 'local', 'directory']);
 /** Just the two preisanfrage-sourced kinds — used by the legacy
  *  defaults/positions routes that don't know about local firms. */
 const PREISANFRAGE_FIRMA_KIND = z.enum(['managed', 'external']);
@@ -153,6 +157,43 @@ function handleUpstreamError(err: unknown): {
   return { status: 500, body: { error: 'internal', detail: String(err) } };
 }
 
+/** Normalise a folder/display name for dedup comparisons. */
+function normKey(s: string | null | undefined): string {
+  return (s ?? '').trim().toLowerCase();
+}
+
+/** Build the KT01-directory rows for the /firmen list, deduped against the
+ *  live preisanfrage rows. Live data always wins (it carries real project /
+ *  won numbers); the directory is the offline floor so the full company list
+ *  shows even when the preisanfrage token isn't configured. Dedup is by
+ *  folderName, falling back to displayName for the few entries without a
+ *  OneDrive folder. */
+function buildDirectoryRows(
+  liveRows: ReadonlyArray<{ folderName: string | null; displayName: string }>,
+) {
+  const liveFolders = new Set(
+    liveRows.map((r) => normKey(r.folderName)).filter((s) => s.length > 0),
+  );
+  const liveNames = new Set(liveRows.map((r) => normKey(r.displayName)));
+  return KT01_FIRMEN.filter((f) => {
+    const folderKey = normKey(f.folderName);
+    if (folderKey) return !liveFolders.has(folderKey);
+    return !liveNames.has(normKey(f.displayName));
+  }).map((f) => ({
+    kind: 'directory' as const,
+    id: f.slug,
+    folderName: f.folderName,
+    displayName: f.displayName,
+    tradeType: f.tradeType,
+    projectCount: f.projectCount ?? 0,
+    wonCount: 0,
+    wonSumBrutto: 0,
+    lastSubmissionDate: null as string | null,
+    adoptedCompanyId: null as number | null,
+    hasCustomDefaults: false,
+  }));
+}
+
 export const firmenRoute = new Hono<{ Variables: AuthVariables }>()
   /** Liveness probe — does the panel know how to talk to preisanfrage? */
   .get('/firmen/health', requireAuth, async (c) => {
@@ -225,14 +266,21 @@ export const firmenRoute = new Hono<{ Variables: AuthVariables }>()
     });
 
     if (!isPreisanfrageEnabled()) {
-      // No preisanfrage backend — still return local rows so the panel works.
+      // No preisanfrage backend (e.g. production without the service token):
+      // fall back to the baked KT01 directory + local rows so the Firmen-Liste
+      // still shows every Bauunternehmer. This is the case that guarantees the
+      // live site lists all companies even without the live integration.
+      const directoryRows = buildDirectoryRows([]);
       return c.json({
-        rows: localOut,
+        rows: [...directoryRows, ...localOut],
         managedCount: 0,
         externalCount: 0,
         localCount: localOut.length,
-        totalProjects: localOut.reduce((s, r) => s + r.projectCount, 0),
-        lastScanAt: null,
+        directoryCount: directoryRows.length,
+        totalProjects:
+          localOut.reduce((s, r) => s + r.projectCount, 0) +
+          directoryRows.reduce((s, r) => s + r.projectCount, 0),
+        lastScanAt: KT01_SNAPSHOT_AT,
         generatedAt: new Date().toISOString(),
         isMock: isPreisanfrageMock(),
         preisanfrageDisabled: true,
@@ -263,13 +311,21 @@ export const firmenRoute = new Hono<{ Variables: AuthVariables }>()
         adoptedCompanyId: r.adoptedCompanyId,
         hasCustomDefaults: defaultsByKey.has(`${r.kind}:${r.id}`),
       }));
+      // Append the baked KT01 directory, deduped against the live rows so
+      // managed/external firms never double up. When the live scan is the full
+      // set this adds nothing; it only fills gaps (e.g. a firm not yet scanned).
+      const directoryRows = buildDirectoryRows(preisanfrageOut);
       return c.json({
-        rows: [...preisanfrageOut, ...localOut],
+        rows: [...preisanfrageOut, ...directoryRows, ...localOut],
         managedCount: overview.managedCount,
         externalCount: overview.externalCount,
         localCount: localOut.length,
-        totalProjects: overview.totalProjects + localOut.reduce((s, r) => s + r.projectCount, 0),
-        lastScanAt: overview.lastScanAt,
+        directoryCount: directoryRows.length,
+        totalProjects:
+          overview.totalProjects +
+          localOut.reduce((s, r) => s + r.projectCount, 0) +
+          directoryRows.reduce((s, r) => s + r.projectCount, 0),
+        lastScanAt: overview.lastScanAt ?? KT01_SNAPSHOT_AT,
         generatedAt: new Date().toISOString(),
         isMock: isPreisanfrageMock(),
       });
@@ -342,6 +398,31 @@ export const firmenRoute = new Hono<{ Variables: AuthVariables }>()
         // so the panel UI doesn't crash on missing fields.
         defaults: serializeDefaults(null),
         projects,
+      });
+    }
+
+    // directory: read straight from the baked KT01 snapshot. No preisanfrage,
+    // no projects yet — the detail page offers "Kalkulation starten" to begin.
+    if (kind === 'directory') {
+      const entry = KT01_FIRMEN.find((f) => f.slug === idRaw);
+      if (!entry) {
+        return c.json({ error: 'firma_not_found' }, 404);
+      }
+      return c.json({
+        firma: {
+          kind: 'directory' as const,
+          id: entry.slug,
+          folderName: entry.folderName,
+          displayName: entry.displayName,
+          tradeType: entry.tradeType,
+          projectCount: entry.projectCount ?? 0,
+          wonCount: 0,
+          wonSumBrutto: 0,
+          lastSubmissionDate: null,
+          adoptedCompanyId: null,
+        },
+        defaults: serializeDefaults(null),
+        projects: [],
       });
     }
 
@@ -481,8 +562,9 @@ export const firmenRoute = new Hono<{ Variables: AuthVariables }>()
       return c.json({ projectId: projectIdRaw, count: 0, positions: [] });
     }
 
-    // Local kind with an unknown projectId — nothing to fetch upstream.
-    if (kind === 'local') {
+    // Local/directory kind with an unknown projectId — nothing to fetch
+    // upstream (directory firms carry no preisanfrage positions).
+    if (kind === 'local' || kind === 'directory') {
       return c.json({ projectId: projectIdRaw, count: 0, positions: [] });
     }
 
@@ -675,6 +757,17 @@ export const firmenRoute = new Hono<{ Variables: AuthVariables }>()
       return c.json({ error: 'invalid_firma_ref' }, 400);
     }
     const kind = kindParsed.data;
+    // Directory firms are read-only — they're a baked snapshot, not a writable
+    // Firma. Adopt the firm in preisanfrage or create a local Firma instead.
+    if (kind === 'directory') {
+      return c.json(
+        {
+          error: 'directory_firma_readonly',
+          hint: 'KT01-Verzeichnis-Firmen sind schreibgeschützt. Lege die Firma lokal an oder richte sie in preisanfrage ein.',
+        },
+        400,
+      );
+    }
     const userId = c.get('userId');
     const body = await c.req.json().catch(() => null);
     const parsed = createLocalAuschreibungSchema.safeParse(body);

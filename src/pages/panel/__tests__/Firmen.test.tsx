@@ -241,7 +241,7 @@ describe('Firmen.tsx — filters', () => {
     expect(screen.queryByText('External B')).toBeNull();
   });
 
-  test('"Nur extern" tab hides managed rows', async () => {
+  test('"Extern" tab hides managed rows', async () => {
     listMock.mockResolvedValueOnce(
       buildPayload([
         buildRow({ id: 1, displayName: 'Managed A', kind: 'managed' }),
@@ -250,7 +250,7 @@ describe('Firmen.tsx — filters', () => {
     );
     renderFirmen();
     await waitFor(() => expect(screen.getByText('External B')).toBeDefined());
-    fireEvent.click(screen.getByRole('button', { name: 'Nur extern' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Extern' }));
     expect(screen.queryByText('Managed A')).toBeNull();
     expect(screen.getByText('External B')).toBeDefined();
   });
@@ -487,9 +487,10 @@ describe('Firmen.tsx — a11y attributes', () => {
     await waitFor(() => expect(screen.getByText('Gesellchen GmbH')).toBeDefined());
     const group = screen.getByRole('group', { name: 'Filter' });
     expect(group).toBeDefined();
-    // The group must contain all 5 filter buttons (Round 11 added "Lokal").
+    // The group must contain all 6 filter buttons:
+    // Alle / Verwaltet / KT01-Verzeichnis / Extern / Lokal / Zuletzt gewonnen.
     const buttons = group.querySelectorAll('button');
-    expect(buttons.length).toBe(5);
+    expect(buttons.length).toBe(6);
   });
 
   test('active filter button reports aria-pressed="true"', async () => {
