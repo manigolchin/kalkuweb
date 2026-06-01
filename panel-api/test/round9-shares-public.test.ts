@@ -842,7 +842,9 @@ describe('Round 9 — public.ts (customer-side)', () => {
         classification: 'CLASSIFICATION_LEAK_CANARY',
       }),
     ];
-    const { token } = await seedFull({ positions });
+    // With cost breakdown + calculation hidden, NO cost data (per-position
+    // split or aggregate EINKAUF/Überschuss) may reach the customer JSON.
+    const { token } = await seedFull({ positions, settings: { showCostBreakdown: false, showCalculation: false } });
     const res = await publicApp.request(`/api/share/${token}`);
     const raw = await res.text();
     // Field-name leaks (presence of these keys in the JSON would be bad).
@@ -1276,7 +1278,8 @@ describe('Round 9 — extra coverage', () => {
   });
 
   test('Snapshot endpoint includes only stable customer fields per position', async () => {
-    const { token } = await seedFull();
+    // With cost breakdown hidden, positions carry only the minimal stable keys.
+    const { token } = await seedFull({ settings: { showCostBreakdown: false } });
     const res = await publicApp.request(`/api/share/${token}`);
     const body = await res.json() as { positions: Array<Record<string, unknown>> };
     for (const p of body.positions) {
@@ -1289,6 +1292,32 @@ describe('Round 9 — extra coverage', () => {
         );
       }
     }
+  });
+
+  test('Share payload exposes Geräte-split + summary ONLY when toggles are on (gated server-side)', async () => {
+    type ShareBody = {
+      positions: Array<Record<string, unknown>>;
+      summary: { ueberschuss: number; costTypes: { geraete: { ek: number; vk: number; zuschlagPct: number } } } | null;
+    };
+    // Geräte large enough that per-line rounding doesn't skew the ratio.
+    const bigGeraete = [fixturePos({ id: 'pb', oz: '1', materialCost: 100, timeMinutes: 600, quantity: 100 })];
+    // Toggles ON → per-position GP-split present + summary carries Geräte with
+    // EINKAUF = VERKAUF/(1+10 %), matching the Excel Vorlage (gaereteprznt).
+    const on = await seedFull({ positions: bigGeraete, settings: { showCostBreakdown: true, showCalculation: true } });
+    const onBody = (await (await publicApp.request(`/api/share/${on.token}`)).json()) as ShareBody;
+    assert.ok(onBody.positions.some((p) => 'gpGeraet' in p), 'gpGeraet present when breakdown on');
+    assert.ok(onBody.summary, 'summary present when calc on');
+    const g = onBody.summary!.costTypes.geraete;
+    assert.ok(Math.abs(g.ek - g.vk / 1.1) < 0.01, `Geräte EINKAUF should = VERKAUF/1.1 (Excel), got ek=${g.ek} vk=${g.vk}`);
+    assert.ok(g.ek < g.vk, 'Geräte EINKAUF < VERKAUF');
+    assert.ok(onBody.summary!.ueberschuss > 0, 'Überschuss present when calc on');
+
+    // Calc OFF → EINKAUF/Überschuss redacted (price-only stays).
+    const off = await seedFull({ positions: bigGeraete, settings: { showCostBreakdown: true, showCalculation: false } });
+    const offBody = (await (await publicApp.request(`/api/share/${off.token}`)).json()) as ShareBody;
+    assert.equal(offBody.summary!.ueberschuss, 0, 'Überschuss redacted when calc off');
+    assert.equal(offBody.summary!.costTypes.geraete.ek, 0, 'EINKAUF redacted when calc off');
+    assert.ok(offBody.summary!.costTypes.geraete.vk > 0, 'VERKAUF (price) still present when calc off');
   });
 
   test('parentShareId must exist (or 400 parent_not_found)', async () => {

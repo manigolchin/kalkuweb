@@ -247,6 +247,42 @@ export const publicRoute = new Hono()
     const latestVersionNumber = project.versionNumber;
     const hasNewerVersion = latestVersionNumber > snapshot.projectVersionNumber;
 
+    // Gate the payload by the share's display toggles — NOT just the UI. The
+    // calculator's choice to hide the cost breakdown / calculation must mean
+    // the data never reaches the customer (raw JSON included), so a hidden
+    // toggle can't be bypassed by reading the network response.
+    const st = share.settings;
+    const outPositions =
+      st.showCostBreakdown === false
+        ? snapshot.positions.map(({ gpLohn, gpMaterial, gpGeraet, gpNu, ...rest }) => {
+            void gpLohn; void gpMaterial; void gpGeraet; void gpNu;
+            return rest;
+          })
+        : snapshot.positions;
+    let outSummary = snapshot.summary ?? null;
+    if (outSummary && st.showTotals === false) {
+      outSummary = null; // no totals at all → no aggregate block
+    } else if (outSummary && st.showCalculation === false) {
+      // Redact EINKAUF / Zuschlag / Überschuss / KPIs (the cost+margin detail).
+      // Keep price-only fields: netto/mwst/brutto + the VERKAUF composition.
+      const redact = (ct: { ek: number; vk: number; zuschlagPct: number; differnz: number }) => ({ ek: 0, vk: ct.vk, zuschlagPct: 0, differnz: 0 });
+      outSummary = {
+        ...outSummary,
+        ekTotal: 0,
+        ueberschuss: 0,
+        mitarbeiter: 0,
+        arbeitstage: 0,
+        monate: 0,
+        totalHours: 0,
+        costTypes: {
+          lohn: redact(outSummary.costTypes.lohn),
+          material: redact(outSummary.costTypes.material),
+          geraete: redact(outSummary.costTypes.geraete),
+          nu: redact(outSummary.costTypes.nu),
+        },
+      };
+    }
+
     return c.json({
       shareId: share.id,
       token: share.token,
@@ -269,8 +305,8 @@ export const publicRoute = new Hono()
         // (which stays private; see P0-2).
         contactEmail: owner?.companyContactEmail || '',
       },
-      positions: snapshot.positions,
-      summary: snapshot.summary ?? null,
+      positions: outPositions,
+      summary: outSummary,
       createdAt: share.createdAt,
       // PART J: gate metadata for the frontend. `passwordRequired` is
       // intentionally `false` here — if it were `true` the request would
