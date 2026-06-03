@@ -33,6 +33,7 @@ import {
   Trash2,
   X,
   Database,
+  Inbox,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -304,6 +305,17 @@ function Header({
     directory: { label: 'KT01-Verzeichnis', cls: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200' },
   };
   const badge = KIND_BADGE[kind];
+  // The preisanfrage Posteingang is scoped to a managing company. Only managed
+  // firms (firma.id == companies.id) and adopted external firms (adoptedCompanyId)
+  // have one; un-adopted external / local / directory firms don't.
+  const posteingangCompanyId: number | null =
+    kind === 'managed'
+      ? typeof firma.id === 'number'
+        ? firma.id
+        : null
+      : kind === 'external'
+        ? firma.adoptedCompanyId
+        : null;
   return (
     <header className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
@@ -325,6 +337,19 @@ function Header({
             <span className={clsx('inline-flex items-center px-2 py-0.5 rounded text-xs font-medium', badge.cls)}>
               {badge.label}
             </span>
+            {posteingangCompanyId != null && (
+              <a
+                href={`https://preisanfrage.kalkus.de/posteingang?company=${posteingangCompanyId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 font-medium text-primary-700 hover:text-primary-800 dark:text-primary-300 dark:hover:text-primary-200"
+                title={`Posteingang von ${firma.displayName} in preisanfrage öffnen`}
+              >
+                <Inbox className="w-3.5 h-3.5" />
+                Posteingang
+                <ExternalLink className="w-3 h-3 opacity-70" aria-hidden />
+              </a>
+            )}
           </div>
         </div>
         <div className="grid grid-cols-3 gap-3 text-center text-sm shrink-0">
