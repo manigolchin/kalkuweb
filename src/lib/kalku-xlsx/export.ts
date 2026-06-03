@@ -191,6 +191,9 @@ export async function exportToKalkulationVorlage(data: ProjectData): Promise<Uin
         put(`L${rowIdx}`, round4((60 / p.timeMinutes) * data.calcParams.personaleinsatz));
       }
       if (p.nuCost) put(`M${rowIdx}`, round2(p.nuCost));
+      // Per-position Geräte-Satz override ("Zulage Geräte", col Z) — round-trips
+      // so a re-imported export keeps the per-row crane/lift rate.
+      if (p.geraeteSatz != null) put(`Z${rowIdx}`, p.geraeteSatz);
     }
 
     if (p.longText && p.longText.trim()) {

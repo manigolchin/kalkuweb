@@ -311,6 +311,9 @@ export type Position = {
   materialCost: number;
   timeMinutes: number;
   nuCost: number;
+  /** Per-position Geräte-Stundensatz (€/h) — Vorlage "Zulage Geräte" (col Z).
+   *  When set, overrides calcParams.geraeteStundensatz for this row. Internal. */
+  geraeteSatz?: number;
   isHeader: boolean;
   sortOrder: number;
   sectionPath: string;

@@ -152,14 +152,27 @@ if (!FIXTURES_AVAILABLE) {
       expect(result.derivedCalcParams.mwst).toBeLessThanOrEqual(0.25);
     });
 
-    test(`${ex.id} (${ex.label}): ${ex.expectErrors ? 'BLOCKS import' : 'ALLOWS import'} per the formula-error gate`, async () => {
+    test(`${ex.id} (${ex.label}): imports OK — Faktoren-sidebar formula errors are non-blocking warnings`, async () => {
       const u8 = new Uint8Array(readFileSync(ex.path));
       const result = await parseKalkulationWorkbook(u8);
       const hasBlocker = result.issues.some((i) => i.severity === 'error');
-      // ex2 is the only clean file → import allowed (ok=true, no error-severity).
-      // ex1/3/4 have U2-U4/U12 errors → blocked.
-      expect(hasBlocker).toBe(ex.expectErrors);
-      expect(result.ok).toBe(!ex.expectErrors);
+      // The U2-U4/U12 formula errors in ex1/3/4 live in the Faktoren-Lookup
+      // sidebar (cols N-W, rows 2-12) — stale #REF! to deleted helper cells,
+      // common in real Elektro/Fernwärme Vorlagen. They are inventoried as
+      // WARNINGS, not blockers: the LV positions (cols A-G) carry cached
+      // EP/GP/Material/Min values and parse fine. Only a customer-zone (A-G)
+      // formula error blocks. None of the 4 real fixtures has one, so every
+      // file imports OK. (Pre-fix this gate refused 3 of 4 real customer files.)
+      expect(hasBlocker).toBe(false);
+      expect(result.ok).toBe(true);
+      // The sidebar errors must STILL be surfaced as warnings — silently
+      // swallowing them would hide a genuinely broken Faktoren-Bibliothek.
+      if (ex.expectErrors) {
+        const faktorenWarnings = result.issues.filter(
+          (i) => i.severity === 'warning' && i.code === 'formula_error',
+        );
+        expect(faktorenWarnings.length).toBeGreaterThan(0);
+      }
     });
 
     /**

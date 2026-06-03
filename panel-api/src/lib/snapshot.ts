@@ -35,18 +35,19 @@ export function positionCostSplit(p: Position, params: CalcParams): PositionCost
   const zf = 1 + (params.zielAufschlag ?? 0);
   const adj = p.timeMinutes + (p.timeMinutes / 100) * params.zeitabzug;
   const hpu = adj / 60; // Stunden je Einheit
+  const geraeteSatz = p.geraeteSatz ?? params.geraeteStundensatz; // per-position override
   return {
     // VERKAUF (what the customer pays), incl. Ziel-Aufschlag — round per line.
     gpLohn: round(p.quantity * hpu * params.verrechnungslohn * zf),
     gpMaterial: round(p.quantity * p.materialCost * (1 + params.materialZuschlag) * zf),
-    gpGeraet: round(p.quantity * hpu * params.geraeteStundensatz * zf),
+    gpGeraet: round(p.quantity * hpu * geraeteSatz * zf),
     gpNu: round(p.quantity * p.nuCost * (1 + params.nuZuschlag) * zf),
     // EINKAUF (raw cost): Lohn at Mittellohn, Material/NU before Zuschlag,
     // Geräte before Ziel-Aufschlag. Same per-line rounding so Geräte reconciles
     // to 0 % Zuschlag when there's no markup (no phantom rounding spread).
     ekLohn: round(p.quantity * hpu * params.mittellohn),
     ekMaterial: round(p.quantity * p.materialCost),
-    ekGeraet: round(p.quantity * hpu * params.geraeteStundensatz),
+    ekGeraet: round(p.quantity * hpu * geraeteSatz),
     ekNu: round(p.quantity * p.nuCost),
   };
 }
@@ -147,7 +148,8 @@ function recomputePosition(p: Position, params: CalcParams): Position {
   // the calculator's chosen Angebotssumme. Default 0 → factor 1 → no-op.
   const zielFactor = 1 + (params.zielAufschlag ?? 0);
   const adj = p.timeMinutes + (p.timeMinutes / 100) * params.zeitabzug;
-  const epGeraet = (adj / 60) * params.geraeteStundensatz * zielFactor;
+  const geraeteSatz = p.geraeteSatz ?? params.geraeteStundensatz;
+  const epGeraet = (adj / 60) * geraeteSatz * zielFactor;
   const epLohn = (adj / 60) * params.verrechnungslohn * zielFactor;
   const epMaterial = p.materialCost * (1 + params.materialZuschlag) * zielFactor;
   const epNu = p.nuCost * (1 + params.nuZuschlag) * zielFactor;

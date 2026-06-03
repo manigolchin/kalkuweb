@@ -54,6 +54,9 @@ const positionSchema = z.object({
   materialCost: fnum(),
   timeMinutes: fnum(1e8),
   nuCost: fnum(),
+  // Per-position Geräte-Satz override ("Zulage Geräte"). Optional — must be
+  // listed here or zod strips it on save (positions are re-validated on PUT).
+  geraeteSatz: fnum().optional(),
   isHeader: z.boolean().default(false),
   sortOrder: z.number().int().nonnegative().max(1e8).default(0),
   sectionPath: z.string().max(256).default(''),

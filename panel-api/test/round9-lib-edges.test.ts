@@ -325,7 +325,7 @@ describe('lib/snapshot.ts edges', () => {
     // internalNote, preCalcs, positionType, classification, hinweisText, and the
     // PER-UNIT epLohn/epMaterial/epGeraet/epNu) is a leak.
     const internalLeakFields = new Set([
-      'materialCost', 'timeMinutes', 'nuCost', 'materialFormula',
+      'materialCost', 'timeMinutes', 'nuCost', 'materialFormula', 'geraeteSatz',
       'internalNote', 'preCalcs', 'positionType', 'classification',
       'hinweisText', 'epLohn', 'epMaterial', 'epGeraet', 'epNu',
       'visibleToCustomer', 'aufmassFormula', 'sectionPath',

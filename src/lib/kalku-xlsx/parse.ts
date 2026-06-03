@@ -270,6 +270,9 @@ export async function parseKalkulationWorkbook(
     materialZuschlag: readNumber(ws, 'K', 4) ?? DEFAULT_CALC_PARAMS.materialZuschlag,
     nuZuschlag: readNumber(ws, 'K', 5) ?? DEFAULT_CALC_PARAMS.nuZuschlag,
     geraeteZuschlagPct: readNumber(ws, 'K', 6) ?? DEFAULT_CALC_PARAMS.geraeteZuschlagPct,
+    // Global Geräte-Satz (gzuschlag, AP3) — the per-row default. Per-position
+    // overrides ("Zulage Geräte", col Z) are captured on each Position below.
+    geraeteStundensatz: readNumber(ws, 'AP', 3) ?? DEFAULT_CALC_PARAMS.geraeteStundensatz,
     // Zeitwert from J11 (e.g. -0.15 in example 1, +0.5 in example 2)
     zeitabzug: ((readNumber(ws, 'J', 11) ?? 0) * 100), // CalcParams expresses zeitabzug in percent
     mwst: readNumber(ws, 'D', 9) ?? DEFAULT_CALC_PARAMS.mwst,
@@ -290,16 +293,17 @@ export async function parseKalkulationWorkbook(
       const cell = ws[c + r];
       if (!cell) continue;
       if (isErrorCell(cell)) {
-        // Round 2 policy: ALL formula errors are blocking (severity='error').
-        // Reasoning: even though Faktoren-Lookup cells are not directly shown
-        // to the customer, the user explicitly asked for a hard gate. They
-        // can fix the file in Excel and re-import, OR (escape hatch) use the
-        // generic mapping wizard which doesn't trip on these cells.
+        // Faktoren-Lookup is sidebar REFERENCE data (cols N-W, rows 2-12), not
+        // the customer LV. A broken factor formula (often a stale #REF! to a
+        // deleted helper cell — common in real Elektro Vorlagen) must NOT block
+        // the whole import: the actual LV positions carry cached EP/Min/Material
+        // values and parse fine. So this is a WARNING. Customer-zone (A-G)
+        // formula errors stay blocking (see the row-loop below).
         issues.push({
-          severity: 'error',
+          severity: 'warning',
           location: `${sheetName}!${c}${r}`,
           code: 'formula_error',
-          message: `Faktoren-Lookup Zelle ${c}${r} liefert Formelfehler${cell.f ? ` (Formel: ${cell.f})` : ''}. Bitte in Excel reparieren.`,
+          message: `Faktoren-Bibliothek Zelle ${c}${r} liefert Formelfehler${cell.f ? ` (Formel: ${cell.f})` : ''} — Import läuft weiter, betrifft nur die Faktoren-Referenz.`,
         });
         rowFactor.cells[c] = (cell.v != null ? String(cell.v) : '#ERR');
       } else {
@@ -421,6 +425,29 @@ export async function parseKalkulationWorkbook(
           message: `Zeile ${r} hat keine OZ-Nummer — wird als anonyme Position importiert.`,
         });
       }
+      // Time-per-unit: the real Vorlage carries the raw "Zeit in min" in col Y
+      // — stable across BOTH template variants (J="Min/Einheit" where J also
+      // equals the time, AND J="Arbeitstage" where J is person-days, NOT the
+      // time). Our own export writes the time to J with Y empty. So prefer Y
+      // when it holds a positive number; otherwise fall back to J. calc.ts
+      // applies zeitabzug, so the RAW Y is the correct source (J in the
+      // Min/Einheit variant is the already-zeitabzug-adjusted AC).
+      const rawY = ws['Y' + r]?.v;
+      const timeMinutes =
+        typeof rawY === 'number' && rawY > 0
+          ? rawY
+          : typeof cells.J === 'number'
+            ? cells.J
+            : 0;
+      // Per-position Geräte-Satz ("Zulage Geräte", col Z). Store it ONLY when it
+      // overrides the project-global rate (gzuschlag) — default rows then keep
+      // following the global (re-pricing still works), while override rows
+      // (crane/lift, 5–50 €/h) are pinned so calc reproduces the Excel Geräte.
+      const rawZ = ws['Z' + r]?.v;
+      const geraeteSatzPatch =
+        typeof rawZ === 'number' && rawZ >= 0 && Math.abs(rawZ - derivedCalcParams.geraeteStundensatz) > 1e-9
+          ? { geraeteSatz: rawZ }
+          : {};
       positions.push({
         ...base,
         oz,
@@ -428,8 +455,9 @@ export async function parseKalkulationWorkbook(
         quantity: typeof cells.C === 'number' ? cells.C : parseDeNumber(cells.C),
         unit: String(cells.D ?? '').trim(),
         materialCost: typeof cells.I === 'number' ? cells.I : 0,
-        timeMinutes: typeof cells.J === 'number' ? cells.J : 0,
+        timeMinutes,
         nuCost: typeof cells.M === 'number' ? cells.M : 0,
+        ...geraeteSatzPatch,
         // Heuristic: rows that originally had an EP value get visibleToCustomer=true.
         // Internal-only rows the user adds later default to true (mirroring v1).
         visibleToCustomer: true,

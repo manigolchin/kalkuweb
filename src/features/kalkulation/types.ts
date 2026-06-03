@@ -25,6 +25,12 @@ export type Position = {
   materialCost: number;
   timeMinutes: number;
   nuCost: number;
+  /** Per-position Geräte-Stundensatz (€/h) — the Vorlage's "Zulage Geräte"
+   *  (col Z), overridable per row for special equipment (crane/lift: 5–50 €/h).
+   *  When set, calc uses it for this position's Geräte cost; when absent, the
+   *  project-global `calcParams.geraeteStundensatz` applies. Internal-only —
+   *  never exposed in the customer share snapshot. */
+  geraeteSatz?: number;
   isHeader: boolean;
   sortOrder: number;
   sectionPath: string;

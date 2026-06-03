@@ -31,7 +31,7 @@ export type PositionCalcResult = {
 };
 
 export function calculatePosition(
-  pos: Pick<Position, 'quantity' | 'materialCost' | 'timeMinutes' | 'nuCost' | 'isHeader'>,
+  pos: Pick<Position, 'quantity' | 'materialCost' | 'timeMinutes' | 'nuCost' | 'isHeader' | 'geraeteSatz'>,
   params: CalcParams,
 ): PositionCalcResult {
   if (pos.isHeader) {
@@ -46,7 +46,9 @@ export function calculatePosition(
   // (gpLohn + gpMaterial + gpGeraet + gpNu == gp).
   const zielFactor = 1 + (params.zielAufschlag ?? 0);
   const adjustedTime = pos.timeMinutes + (pos.timeMinutes / 100) * params.zeitabzug;
-  const epGeraet = (adjustedTime / 60) * params.geraeteStundensatz * zielFactor;
+  // Per-position Geräte-Satz (Vorlage "Zulage Geräte") overrides the global rate.
+  const geraeteSatz = pos.geraeteSatz ?? params.geraeteStundensatz;
+  const epGeraet = (adjustedTime / 60) * geraeteSatz * zielFactor;
   const epLohn = (adjustedTime / 60) * params.verrechnungslohn * zielFactor;
   const epMaterial = pos.materialCost * (1 + params.materialZuschlag) * zielFactor;
   const epNu = pos.nuCost * (1 + params.nuZuschlag) * zielFactor;
