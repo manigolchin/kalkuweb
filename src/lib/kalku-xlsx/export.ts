@@ -194,6 +194,12 @@ export async function exportToKalkulationVorlage(data: ProjectData): Promise<Uin
       // Per-position Geräte-Satz override ("Zulage Geräte", col Z) — round-trips
       // so a re-imported export keeps the per-row crane/lift rate.
       if (p.geraeteSatz != null) put(`Z${rowIdx}`, p.geraeteSatz);
+      // Per-position Geräte lump sum ("EP Geräte", col AA) — round-trips so a
+      // hard-coded equipment cost survives export→re-import.
+      if (p.geraeteEp != null) put(`AA${rowIdx}`, round2(p.geraeteEp));
+      // Per-position EP Löhne override ("EP Löhne", col AB) — round-trips a
+      // hard-coded specialist labor rate through export→re-import.
+      if (p.lohnEp != null) put(`AB${rowIdx}`, round2(p.lohnEp));
     }
 
     if (p.longText && p.longText.trim()) {

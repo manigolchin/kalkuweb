@@ -67,6 +67,11 @@ export type FormulaCellProps = {
   /** Per-row F1..F7 scratch slots — when set, references to F1..F7 in the
    *  expression resolve to the corresponding slot's cached value. */
   preCalcs?: PreCalcs;
+  /** Extra named numeric tokens usable in the formula (whole-word, case-
+   *  insensitive). Used by the EP-Geräte / EP-Löhne cells to expose
+   *  `Zeit`, `verrechnungslohn`, `mittellohn`, `geraetesatz`, etc. so a custom
+   *  formula can rebuild the Vorlage's own EP formula. */
+  extraTokens?: Record<string, number>;
   /** Human-readable label shown in the preview pill tooltip. */
   label?: string;
 };
@@ -81,10 +86,22 @@ function preprocessExpression(
   faktoren: FaktorEntry[] | undefined,
   q: number | undefined,
   preCalcs: PreCalcs | undefined,
+  extraTokens?: Record<string, number>,
 ): string {
   let out = expr;
   if (q !== undefined && Number.isFinite(q)) {
     out = out.replace(/\bQ\b/g, String(q));
+  }
+  // Named numeric tokens (Zeit, verrechnungslohn, …). Longest name first so a
+  // short token can't shadow a longer one that contains it.
+  if (extraTokens) {
+    const entries = Object.entries(extraTokens)
+      .filter(([, v]) => typeof v === 'number' && Number.isFinite(v))
+      .sort((a, b) => b[0].length - a[0].length);
+    for (const [name, v] of entries) {
+      const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      out = out.replace(new RegExp(`\\b${escaped}\\b`, 'gi'), String(v));
+    }
   }
   // F1-F7 substitution — case-sensitive (the Excel convention uses
   // uppercase F1..F7 and a calculator typing 'f1' likely means something
@@ -126,6 +143,7 @@ export default function FormulaCell({
   faktoren,
   contextMenge,
   preCalcs,
+  extraTokens,
   label,
 }: FormulaCellProps) {
   const d = value % 1 === 0 ? 0 : 2;
@@ -159,9 +177,9 @@ export default function FormulaCell({
   // Live evaluation for formula mode.
   const evaluation = useMemo(() => {
     if (mode !== 'formula') return null;
-    const processed = preprocessExpression(draft, faktoren, contextMenge, preCalcs);
+    const processed = preprocessExpression(draft, faktoren, contextMenge, preCalcs, extraTokens);
     return evaluateAufmass(processed);
-  }, [mode, draft, faktoren, contextMenge, preCalcs]);
+  }, [mode, draft, faktoren, contextMenge, preCalcs, extraTokens]);
 
   // Autocomplete: find the partial word at the cursor, suggest the first
   // factor name whose start matches case-insensitively. Tab to accept.
@@ -181,14 +199,19 @@ export default function FormulaCell({
     const reservedTokens: FaktorEntry[] = RESERVED_TOKENS.map(
       (t) => ({ name: t, ep: 0, sourceCol: '', sourceRow: 0, raw: {} } as FaktorEntry),
     );
-    const candidates = [...faktoren, ...fSlotTokens, ...reservedTokens]
+    const extraTokenEntries: FaktorEntry[] = extraTokens
+      ? Object.keys(extraTokens).map(
+          (t) => ({ name: t, ep: 0, sourceCol: '', sourceRow: 0, raw: {} } as FaktorEntry),
+        )
+      : [];
+    const candidates = [...faktoren, ...fSlotTokens, ...reservedTokens, ...extraTokenEntries]
       .filter((f) =>
         f.name.toLowerCase().startsWith(wl) && f.name.toLowerCase() !== wl,
       )
       .sort((a, b) => a.name.length - b.name.length);
     if (candidates.length === 0) return null;
     return { partial: word, completion: candidates[0].name.slice(word.length), full: candidates[0].name };
-  }, [mode, draft, cursor, faktoren]);
+  }, [mode, draft, cursor, faktoren, preCalcs, extraTokens]);
 
   const acceptSuggestion = useCallback(() => {
     if (!suggestion || !textareaRef.current) return;
@@ -227,7 +250,7 @@ export default function FormulaCell({
     if (raw.trim().startsWith('=')) {
       // The user switched to formula by editing in place — handle as formula.
       const f = raw.trim().replace(/^=\s*/, '');
-      const processed = preprocessExpression(f, faktoren, contextMenge, preCalcs);
+      const processed = preprocessExpression(f, faktoren, contextMenge, preCalcs, extraTokens);
       const r = evaluateAufmass(processed);
       const rounded = Math.round(r.total * 10000) / 10000;
       onCommit(rounded, f);

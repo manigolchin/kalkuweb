@@ -367,6 +367,13 @@ export type Position = {
   /** Per-position Geräte lump sum (€/unit) — Vorlage hard-coded "EP Geräte"
    *  (col AA). When set, used flat (ignores time × rate). Internal. */
   geraeteEp?: number;
+  /** Custom formula for EP Geräte (col AA) — cached result in geraeteEp. Internal. */
+  geraeteEpFormula?: string;
+  /** Per-position EP Löhne override (€/unit) — Vorlage "EP Löhne" (col AB) when
+   *  not the default time × Verrechnungslohn (specialist rate / custom). Internal. */
+  lohnEp?: number;
+  /** Custom formula for EP Löhne (col AB) — cached result in lohnEp. Internal. */
+  lohnEpFormula?: string;
   isHeader: boolean;
   sortOrder: number;
   sectionPath: string;

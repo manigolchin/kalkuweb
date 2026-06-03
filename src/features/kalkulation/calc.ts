@@ -31,7 +31,7 @@ export type PositionCalcResult = {
 };
 
 export function calculatePosition(
-  pos: Pick<Position, 'quantity' | 'materialCost' | 'timeMinutes' | 'nuCost' | 'isHeader' | 'geraeteSatz'>,
+  pos: Pick<Position, 'quantity' | 'materialCost' | 'timeMinutes' | 'nuCost' | 'isHeader' | 'geraeteSatz' | 'geraeteEp' | 'lohnEp'>,
   params: CalcParams,
 ): PositionCalcResult {
   if (pos.isHeader) {
@@ -46,10 +46,20 @@ export function calculatePosition(
   // (gpLohn + gpMaterial + gpGeraet + gpNu == gp).
   const zielFactor = 1 + (params.zielAufschlag ?? 0);
   const adjustedTime = pos.timeMinutes + (pos.timeMinutes / 100) * params.zeitabzug;
-  // Per-position Geräte-Satz (Vorlage "Zulage Geräte") overrides the global rate.
+  // Per-position Geräte. A hard-coded lump sum (Vorlage "EP Geräte" col AA)
+  // wins as a flat per-unit amount; otherwise the rate model applies — the
+  // per-position "Zulage Geräte" (col Z) rate, falling back to the global.
   const geraeteSatz = pos.geraeteSatz ?? params.geraeteStundensatz;
-  const epGeraet = (adjustedTime / 60) * geraeteSatz * zielFactor;
-  const epLohn = (adjustedTime / 60) * params.verrechnungslohn * zielFactor;
+  const epGeraet =
+    pos.geraeteEp != null
+      ? pos.geraeteEp * zielFactor
+      : (adjustedTime / 60) * geraeteSatz * zielFactor;
+  // Per-position EP Löhne (Vorlage "EP Löhne" col AB) wins flat when set
+  // (hard-coded specialist rate or custom formula); else time × Verrechnungslohn.
+  const epLohn =
+    pos.lohnEp != null
+      ? pos.lohnEp * zielFactor
+      : (adjustedTime / 60) * params.verrechnungslohn * zielFactor;
   const epMaterial = pos.materialCost * (1 + params.materialZuschlag) * zielFactor;
   const epNu = pos.nuCost * (1 + params.nuZuschlag) * zielFactor;
   const ep = epLohn + epMaterial + epGeraet + epNu;

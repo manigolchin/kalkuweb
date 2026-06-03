@@ -35,19 +35,28 @@ export function positionCostSplit(p: Position, params: CalcParams): PositionCost
   const zf = 1 + (params.zielAufschlag ?? 0);
   const adj = p.timeMinutes + (p.timeMinutes / 100) * params.zeitabzug;
   const hpu = adj / 60; // Stunden je Einheit
-  const geraeteSatz = p.geraeteSatz ?? params.geraeteStundensatz; // per-position override
+  const geraeteSatz = p.geraeteSatz ?? params.geraeteStundensatz; // per-position rate override
+  // Per-unit Geräte EP: a hard-coded lump sum (Vorlage "EP Geräte", col AA)
+  // wins flat; otherwise rate × Stunden-je-Einheit.
+  const geraeteUnit = p.geraeteEp != null ? p.geraeteEp : hpu * geraeteSatz;
+  // Per-unit Lohn EP (VK): a per-position override (Vorlage "EP Löhne", col AB —
+  // specialist rate / custom formula) wins flat; otherwise Stunden × Verrechnungs-
+  // lohn. The EINKAUF side keeps the EK/VK ratio (Mittellohn ÷ Verrechnungslohn).
+  const lohnRatio = params.verrechnungslohn > 0 ? params.mittellohn / params.verrechnungslohn : 1;
+  const lohnVkUnit = p.lohnEp != null ? p.lohnEp : hpu * params.verrechnungslohn;
+  const lohnEkUnit = p.lohnEp != null ? p.lohnEp * lohnRatio : hpu * params.mittellohn;
   return {
     // VERKAUF (what the customer pays), incl. Ziel-Aufschlag — round per line.
-    gpLohn: round(p.quantity * hpu * params.verrechnungslohn * zf),
+    gpLohn: round(p.quantity * lohnVkUnit * zf),
     gpMaterial: round(p.quantity * p.materialCost * (1 + params.materialZuschlag) * zf),
-    gpGeraet: round(p.quantity * hpu * geraeteSatz * zf),
+    gpGeraet: round(p.quantity * geraeteUnit * zf),
     gpNu: round(p.quantity * p.nuCost * (1 + params.nuZuschlag) * zf),
     // EINKAUF (raw cost): Lohn at Mittellohn, Material/NU before Zuschlag,
     // Geräte before Ziel-Aufschlag. Same per-line rounding so Geräte reconciles
     // to 0 % Zuschlag when there's no markup (no phantom rounding spread).
-    ekLohn: round(p.quantity * hpu * params.mittellohn),
+    ekLohn: round(p.quantity * lohnEkUnit),
     ekMaterial: round(p.quantity * p.materialCost),
-    ekGeraet: round(p.quantity * hpu * geraeteSatz),
+    ekGeraet: round(p.quantity * geraeteUnit),
     ekNu: round(p.quantity * p.nuCost),
   };
 }
@@ -149,8 +158,12 @@ function recomputePosition(p: Position, params: CalcParams): Position {
   const zielFactor = 1 + (params.zielAufschlag ?? 0);
   const adj = p.timeMinutes + (p.timeMinutes / 100) * params.zeitabzug;
   const geraeteSatz = p.geraeteSatz ?? params.geraeteStundensatz;
-  const epGeraet = (adj / 60) * geraeteSatz * zielFactor;
-  const epLohn = (adj / 60) * params.verrechnungslohn * zielFactor;
+  // Hard-coded "EP Geräte" (col AA) lump sum wins flat; else rate × time.
+  const epGeraet =
+    p.geraeteEp != null ? p.geraeteEp * zielFactor : (adj / 60) * geraeteSatz * zielFactor;
+  // Per-position EP Löhne override (col AB) wins flat; else time × Verrechnungslohn.
+  const epLohn =
+    p.lohnEp != null ? p.lohnEp * zielFactor : (adj / 60) * params.verrechnungslohn * zielFactor;
   const epMaterial = p.materialCost * (1 + params.materialZuschlag) * zielFactor;
   const epNu = p.nuCost * (1 + params.nuZuschlag) * zielFactor;
   const ep = epLohn + epMaterial + epGeraet + epNu;

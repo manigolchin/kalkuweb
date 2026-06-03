@@ -57,6 +57,12 @@ const positionSchema = z.object({
   // Per-position Geräte-Satz override ("Zulage Geräte"). Optional — must be
   // listed here or zod strips it on save (positions are re-validated on PUT).
   geraeteSatz: fnum().optional(),
+  // Per-position Geräte lump sum ("EP Geräte", col AA). Optional — same reason.
+  geraeteEp: fnum().optional(),
+  geraeteEpFormula: z.string().max(2000).optional(),
+  // Per-position EP Löhne override ("EP Löhne", col AB) + its formula.
+  lohnEp: fnum().optional(),
+  lohnEpFormula: z.string().max(2000).optional(),
   isHeader: z.boolean().default(false),
   sortOrder: z.number().int().nonnegative().max(1e8).default(0),
   sectionPath: z.string().max(256).default(''),
@@ -179,6 +185,10 @@ export const projectsRoute = new Hono<{ Variables: AuthVariables }>()
         id: r.id,
         name: r.data.name,
         client: r.data.client,
+        // The Bauunternehmer the calc is for — lets the list group by Firma
+        // the same way the Kunden-Feedback inbox does. Full `data` is already
+        // loaded here, so this is free.
+        bidder: r.data.bidder || '',
         service: r.data.service,
         positionCount: r.data.positions?.length || 0,
         updatedAt: r.updatedAt,

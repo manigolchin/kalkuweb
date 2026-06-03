@@ -439,14 +439,62 @@ export async function parseKalkulationWorkbook(
           : typeof cells.J === 'number'
             ? cells.J
             : 0;
-      // Per-position Geräte-Satz ("Zulage Geräte", col Z). Store it ONLY when it
-      // overrides the project-global rate (gzuschlag) — default rows then keep
-      // following the global (re-pricing still works), while override rows
-      // (crane/lift, 5–50 €/h) are pinned so calc reproduces the Excel Geräte.
+      // Per-position Geräte. The Vorlage has TWO ways to price equipment:
+      //   1) Rate-based (the common case, 274/279 rows in the MPB Biergasse
+      //      LV): "EP Geräte" (col AA) is a FORMULA = (Echte-Zeit/60) × "Zulage
+      //      Geräte" (col Z). We reproduce this with a per-position geraeteSatz
+      //      = Z, so the Stellschrauben re-price it when time changes.
+      //   2) Lump-sum override: the calculator HARD-CODES col AA with a fixed
+      //      equipment cost (crane/lift on a Baustelleneinrichtung row, or a
+      //      flat geräte on a zero-time row) that the time×Z formula can't
+      //      reproduce. ΣAA×Menge equals the Vorlage's Geräte-VERKAUF total
+      //      exactly, so col AA is the source of truth — we pin it as a flat
+      //      per-unit geraeteEp. Without this the Geräte total imports ~4–5 %
+      //      low (the "GERAETE_GAP" class in the 100-LV fidelity test).
       const rawZ = ws['Z' + r]?.v;
-      const geraeteSatzPatch =
-        typeof rawZ === 'number' && rawZ >= 0 && Math.abs(rawZ - derivedCalcParams.geraeteStundensatz) > 1e-9
-          ? { geraeteSatz: rawZ }
+      const aaCell = ws['AA' + r];
+      const rawAA = aaCell?.v;
+      // A lump-sum override is ONLY a HARD-CODED literal in col AA (no formula).
+      // When AA carries a formula it is the Vorlage's own (Echte-Zeit/60)×Z
+      // computation, which the rate model below reproduces — overriding it with
+      // the cached value would fight tiny formula/rounding differences and
+      // DEGRADE other templates (verified against the 100-LV corpus: literal-
+      // only is a no-op on formula files, lump-sum-exact on the override rows).
+      const aaIsLiteral = aaCell != null && aaCell.f == null;
+      const zRate =
+        typeof rawZ === 'number' && rawZ >= 0 ? rawZ : derivedCalcParams.geraeteStundensatz;
+      const adjForGeraete =
+        timeMinutes + (timeMinutes / 100) * derivedCalcParams.zeitabzug;
+      const formulaGeraete = (adjForGeraete / 60) * zRate;
+      let geraeteSatzPatch: { geraeteEp?: number; geraeteSatz?: number } = {};
+      if (aaIsLiteral && typeof rawAA === 'number' && rawAA >= 0 && Math.abs(rawAA - formulaGeraete) > 0.01) {
+        // Hard-coded EP-Geräte lump sum → pin flat (does not re-scale with time).
+        geraeteSatzPatch = { geraeteEp: rawAA };
+      } else if (
+        typeof rawZ === 'number' &&
+        rawZ >= 0 &&
+        Math.abs(rawZ - derivedCalcParams.geraeteStundensatz) > 1e-9
+      ) {
+        // Per-position rate override (crane/lift, 5–50 €/h) → re-prices with time.
+        geraeteSatzPatch = { geraeteSatz: rawZ };
+      }
+      // Per-position EP Löhne. Default = (Echte-Zeit/60) × Verrechnungslohn.
+      // Capture the Vorlage's col-AB value as a flat per-unit lohnEp whenever it
+      // DEVIATES from that default — which covers both
+      //   • a HARD-CODED literal (specialist rate 84,50/76,50/54,60 €/h, or a
+      //     flat labor cost on a zero-time row), and
+      //   • a FORMULA carrying the per-position Lohn factor "W"
+      //     (AC/60 × verrechnungslohn × W) — the W rows the examples use.
+      // The plain no-W formula equals the default to full precision, so it is
+      // NOT captured (lohnEp stays unset → the rate model re-prices). Unlike
+      // col AA (Geräte), col AB has no per-position rate fallback (Verrechnungs-
+      // lohn is global), so the no-W match is exact and formula-capture is safe.
+      const abCell = ws['AB' + r];
+      const rawAB = abCell?.v;
+      const formulaLohn = (adjForGeraete / 60) * derivedCalcParams.verrechnungslohn;
+      const lohnPatch =
+        typeof rawAB === 'number' && rawAB >= 0 && Math.abs(rawAB - formulaLohn) > 0.01
+          ? { lohnEp: rawAB }
           : {};
       positions.push({
         ...base,
@@ -458,6 +506,7 @@ export async function parseKalkulationWorkbook(
         timeMinutes,
         nuCost: typeof cells.M === 'number' ? cells.M : 0,
         ...geraeteSatzPatch,
+        ...lohnPatch,
         // Heuristic: rows that originally had an EP value get visibleToCustomer=true.
         // Internal-only rows the user adds later default to true (mirroring v1).
         visibleToCustomer: true,

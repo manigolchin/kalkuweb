@@ -758,6 +758,15 @@ export default function PositionTableV2({
               <ColHead className="w-[80px] bg-slate-100/70" align="right" intern>Material</ColHead>
               <ColHead className="w-[80px] bg-slate-100/70" align="right" intern>Zeit min</ColHead>
               <ColHead className="w-[80px] bg-slate-100/70" align="right" intern>NU €</ColHead>
+              <ColHead className="w-[80px] bg-slate-100/70" align="right" intern>
+                <span title="Zulage Geräte (€/h) je Position — Standard: projektweiter Geräte-Stundensatz. Zahl überschreibt diese Zeile, leeren = zurück zum Projektsatz.">Zulage Ger.</span>
+              </ColHead>
+              <ColHead className="w-[90px] bg-slate-100/70" align="right" intern>
+                <span title="EP Geräte je Einheit — Standard: Zeit/60 × Zulage Geräte. Zahl oder =Formel überschreibt diese Zeile.">EP Geräte</span>
+              </ColHead>
+              <ColHead className="w-[90px] bg-slate-100/70" align="right" intern>
+                <span title="EP Löhne je Einheit — Standard: Zeit/60 × Verrechnungslohn. Zahl oder =Formel überschreibt diese Zeile.">EP Löhne</span>
+              </ColHead>
               <ColHead className="w-[110px] bg-slate-100/70" intern>Typ</ColHead>
               {/* Header for the Vorrechnung toggle column. Was empty in
                   prior versions — labeling it helps users discover the
@@ -773,7 +782,7 @@ export default function PositionTableV2({
           <tbody>
             {groups.length === 0 && (
               <tr>
-                <td colSpan={15} className="px-6 py-16 text-center text-slate-400 border-t border-slate-100">
+                <td colSpan={18} className="px-6 py-16 text-center text-slate-400 border-t border-slate-100">
                   Noch keine Positionen. Mit <strong>+ Position</strong> oder <strong>+ Titel</strong> beginnen.
                 </td>
               </tr>
@@ -1017,7 +1026,7 @@ function GroupRows({
         <td className="bg-primary-50/60 border-t border-slate-200 p-0">
           <div className="h-full w-px bg-slate-300 mx-auto" aria-hidden />
         </td>
-        <td colSpan={6} className="bg-primary-100/40 border-t border-slate-200 px-2 py-1.5">
+        <td colSpan={9} className="bg-primary-100/40 border-t border-slate-200 px-2 py-1.5">
           {group.visibleSubtotal !== group.subtotal && (
             <div className="text-[10px] uppercase tracking-wider text-primary-800/80 text-right tabular-nums">
               ∑ Kunde: {formatEUR(group.visibleSubtotal)}
@@ -1110,6 +1119,25 @@ function PositionRow({
   chip,
 }: PositionRowProps) {
   const calc = useMemo(() => calculatePosition(p, params), [p, params]);
+  // Effective per-unit EP Geräte / EP Löhne for the editable cells. Default =
+  // the Vorlage formula (Echte-Zeit/60 × Zulage-Geräte resp. × Verrechnungslohn,
+  // pre-Ziel-Aufschlag, matching the stored override basis); a per-row override
+  // (geraeteEp / lohnEp) wins. Type a number/=formula to override, clear to revert.
+  const adjMin = p.timeMinutes + (p.timeMinutes / 100) * params.zeitabzug;
+  const epGeraeteCell = p.geraeteEp ?? (adjMin / 60) * (p.geraeteSatz ?? params.geraeteStundensatz);
+  const epLohnCell = p.lohnEp ?? (adjMin / 60) * params.verrechnungslohn;
+  // Named tokens a custom EP-Geräte / EP-Löhne formula can reference, so the
+  // calculator can rebuild the Vorlage's own formula (e.g. `=Zeit/60*verrechnungslohn*1.41`).
+  const formulaTokens = useMemo(
+    () => ({
+      Zeit: p.timeMinutes,
+      EchteZeit: adjMin,
+      verrechnungslohn: params.verrechnungslohn,
+      mittellohn: params.mittellohn,
+      geraetesatz: p.geraeteSatz ?? params.geraeteStundensatz,
+    }),
+    [p.timeMinutes, adjMin, params.verrechnungslohn, params.mittellohn, p.geraeteSatz, params.geraeteStundensatz],
+  );
   const pt = (p.positionType ?? 'standard') as PositionType;
   const internal = INTERNAL_POSITION_TYPES.has(pt);
   const hasLong = (p.longText ?? '').trim().length > 0;
@@ -1342,6 +1370,62 @@ function PositionRow({
           preCalcs={p.preCalcs}
           label="NU EK"
         />
+        {/* Zulage Geräte (col Z) — the per-position Geräte-Stundensatz that
+            drives the EP-Geräte default formula. Defaults to the project rate
+            (calcParams.geraeteStundensatz); a number here pins a per-row rate
+            (crane/lift), clearing (0) reverts to the project rate. */}
+        <FormulaCell
+          value={p.geraeteSatz ?? params.geraeteStundensatz}
+          onCommit={(v) =>
+            updateRow(p.id, { geraeteSatz: v === 0 ? undefined : v })
+          }
+          faktoren={faktoren}
+          contextMenge={p.quantity}
+          preCalcs={p.preCalcs}
+          label="Zulage Geräte (€/h)"
+        />
+        {/* EP Geräte (col AA) + EP Löhne (col AB) — per-position outputs that
+            default to the Vorlage formula but can be overridden per row with a
+            fixed number or a custom formula (like Excel). Clearing the cell
+            (empty / 0) reverts to the formula. v === 0 ⇒ drop the override. */}
+        <FormulaCell
+          value={epGeraeteCell}
+          formula={p.geraeteEpFormula}
+          onCommit={(v, f) =>
+            updateRow(
+              p.id,
+              f
+                ? { geraeteEp: v, geraeteEpFormula: f }
+                : v === 0
+                  ? { geraeteEp: undefined, geraeteEpFormula: undefined }
+                  : { geraeteEp: v, geraeteEpFormula: undefined },
+            )
+          }
+          faktoren={faktoren}
+          contextMenge={p.quantity}
+          preCalcs={p.preCalcs}
+          extraTokens={formulaTokens}
+          label="EP Geräte"
+        />
+        <FormulaCell
+          value={epLohnCell}
+          formula={p.lohnEpFormula}
+          onCommit={(v, f) =>
+            updateRow(
+              p.id,
+              f
+                ? { lohnEp: v, lohnEpFormula: f }
+                : v === 0
+                  ? { lohnEp: undefined, lohnEpFormula: undefined }
+                  : { lohnEp: v, lohnEpFormula: undefined },
+            )
+          }
+          faktoren={faktoren}
+          contextMenge={p.quantity}
+          preCalcs={p.preCalcs}
+          extraTokens={formulaTokens}
+          label="EP Löhne"
+        />
 
         <td className="bg-slate-50/70 border-t border-slate-100 px-1 py-[10px] align-top">
           <PositionTypeSelect
@@ -1434,12 +1518,13 @@ function PositionRow({
       {/* Per-row F1..F7 Vorrechnung sub-row — only renders when the
           calculator has expanded it via the F₁₇ toggle button. Spans the
           full table width. Commits each slot individually through
-          updateRow so unmodified slots stay untouched. Round 12: colSpan
-          bumped from 14 → 15 to account for the new leading checkbox col. */}
+          updateRow so unmodified slots stay untouched. colSpan tracks the
+          full intern width: leading checkbox col + the EP-Geräte/EP-Löhne
+          columns bring it to 17. */}
       {isPreCalcExpanded && (
         <PreCalcStrip
           preCalcs={p.preCalcs}
-          colSpan={15}
+          colSpan={18}
           faktoren={faktoren}
           contextMenge={p.quantity}
           positionLabel={`${(p.oz || '—').trim()} · ${p.shortText || ''}`.slice(0, 80)}
@@ -1479,7 +1564,7 @@ function PositionRow({
             </div>
           </td>
           <td className="bg-slate-50/40 border-t border-slate-100" />
-          <td colSpan={6} className="bg-slate-50/40 border-t border-slate-100" />
+          <td colSpan={9} className="bg-slate-50/40 border-t border-slate-100" />
         </tr>
       )}
     </>

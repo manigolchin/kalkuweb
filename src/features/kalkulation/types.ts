@@ -37,6 +37,18 @@ export type Position = {
    *  geraeteSatz), so the import reproduces the Excel's Geräte total exactly.
    *  Internal-only — never exposed in the customer share snapshot. */
   geraeteEp?: number;
+  /** Custom formula for EP Geräte (col AA) — stored-formula-with-cached-value,
+   *  same pattern as materialFormula. When set, geraeteEp holds the evaluated
+   *  result and this string drives re-display + re-evaluation. Internal-only. */
+  geraeteEpFormula?: string;
+  /** Per-position EP Löhne override (€/unit) — the Vorlage's "EP Löhne" (col AB)
+   *  when it is NOT the default (Zeit/60 × Verrechnungslohn): a hard-coded labor
+   *  cost (e.g. 84,50 €/h for specialist work) or a custom rate. When set, calc
+   *  uses it FLAT for this position's Lohn. Internal-only — never in the share. */
+  lohnEp?: number;
+  /** Custom formula for EP Löhne (col AB). Same stored-formula-with-cached-value
+   *  pattern as materialFormula; lohnEp holds the evaluated result. Internal. */
+  lohnEpFormula?: string;
   isHeader: boolean;
   sortOrder: number;
   sectionPath: string;
