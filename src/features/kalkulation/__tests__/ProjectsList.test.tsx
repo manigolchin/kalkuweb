@@ -62,7 +62,9 @@ const listMock = api.projects.list as ReturnType<typeof vi.fn>;
 const createMock = api.projects.create as ReturnType<typeof vi.fn>;
 const deleteMock = api.projects.delete as ReturnType<typeof vi.fn>;
 
-function buildProject(over: Partial<ProjectSummary> = {}): ProjectSummary {
+// The list endpoint returns `bidder` too (widened locally in ProjectsList);
+// allow tests to set it without touching the shared ProjectSummary type.
+function buildProject(over: Partial<ProjectSummary> & { bidder?: string } = {}): ProjectSummary & { bidder?: string } {
   return {
     id: 'p1',
     name: 'Sanierung Marktplatz',
@@ -225,6 +227,101 @@ describe('ProjectsList.tsx — load error', () => {
     listMock.mockRejectedValueOnce(new Error('network down'));
     renderList();
     await waitFor(() => expect(toastErrorSpy).toHaveBeenCalledWith('Projekte konnten nicht geladen werden.'));
+  });
+});
+
+describe('ProjectsList.tsx — Firma-Gruppierung & Suche', () => {
+  test('groups projects under company headers (bidder bevorzugt vor client)', async () => {
+    listMock.mockResolvedValueOnce({
+      projects: [
+        buildProject({ id: 'p1', name: 'Alpha', bidder: 'Müller Bau GmbH', client: 'Gemeinde X' }),
+        buildProject({ id: 'p2', name: 'Beta', bidder: 'Müller Bau GmbH', client: 'Gemeinde Y' }),
+        buildProject({ id: 'p3', name: 'Gamma', bidder: '', client: 'Stadt SB' }),
+      ],
+    });
+    renderList();
+    await waitFor(() => expect(screen.getByText('Alpha')).toBeDefined());
+    // Two company headers: the bidder firm + the client-only firm. (Company
+    // names can also appear in card subtitles, so allow multiple matches.)
+    expect(screen.getAllByText('Müller Bau GmbH').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Stadt SB').length).toBeGreaterThan(0);
+    // All three cards still render (groups expanded by default).
+    expect(screen.getAllByRole('listitem').length).toBe(3);
+  });
+
+  test('projects without bidder or client fall into the "Ohne Zuordnung" group', async () => {
+    listMock.mockResolvedValueOnce({
+      projects: [buildProject({ id: 'p1', name: 'Alpha', bidder: '', client: '' })],
+    });
+    renderList();
+    await waitFor(() => expect(screen.getByText('Alpha')).toBeDefined());
+    expect(screen.getByText('Ohne Zuordnung')).toBeDefined();
+  });
+
+  test('search filters projects by name', async () => {
+    listMock.mockResolvedValueOnce({
+      projects: [
+        buildProject({ id: 'p1', name: 'Brückensanierung', client: 'Stadt SB' }),
+        buildProject({ id: 'p2', name: 'Dachausbau', client: 'Gemeinde Y' }),
+      ],
+    });
+    renderList();
+    await waitFor(() => expect(screen.getByText('Brückensanierung')).toBeDefined());
+    fireEvent.change(screen.getByLabelText('Projekte durchsuchen'), { target: { value: 'dach' } });
+    await waitFor(() => expect(screen.queryByText('Brückensanierung')).toBeNull());
+    expect(screen.getByText('Dachausbau')).toBeDefined();
+  });
+
+  test('search by company name matches', async () => {
+    listMock.mockResolvedValueOnce({
+      projects: [
+        buildProject({ id: 'p1', name: 'Alpha', bidder: 'Müller Bau GmbH' }),
+        buildProject({ id: 'p2', name: 'Beta', bidder: 'Schmidt Tiefbau' }),
+      ],
+    });
+    renderList();
+    await waitFor(() => expect(screen.getByText('Alpha')).toBeDefined());
+    fireEvent.change(screen.getByLabelText('Projekte durchsuchen'), { target: { value: 'schmidt' } });
+    await waitFor(() => expect(screen.queryByText('Alpha')).toBeNull());
+    expect(screen.getByText('Beta')).toBeDefined();
+  });
+
+  test('no-match search shows an empty hint', async () => {
+    listMock.mockResolvedValueOnce({
+      projects: [buildProject({ id: 'p1', name: 'Alpha', client: 'Stadt SB' })],
+    });
+    renderList();
+    await waitFor(() => expect(screen.getByText('Alpha')).toBeDefined());
+    fireEvent.change(screen.getByLabelText('Projekte durchsuchen'), { target: { value: 'zzz-nope' } });
+    await waitFor(() => expect(screen.getByText(/Keine Projekte passen zur Suche/)).toBeDefined());
+  });
+
+  test('collapsing a group hides its project cards', async () => {
+    listMock.mockResolvedValueOnce({
+      projects: [buildProject({ id: 'p1', name: 'Alpha', client: 'Stadt SB' })],
+    });
+    renderList();
+    await waitFor(() => expect(screen.getByText('Alpha')).toBeDefined());
+    // The group header is the only button carrying aria-expanded. Click it to collapse.
+    fireEvent.click(screen.getByRole('button', { expanded: true }));
+    await waitFor(() => expect(screen.queryByText('Alpha')).toBeNull());
+    // Header stays visible after collapse (card subtitle gone, so now unique).
+    expect(screen.getByText('Stadt SB')).toBeDefined();
+  });
+
+  test('"Ohne Zuordnung" group sorts after named companies', async () => {
+    listMock.mockResolvedValueOnce({
+      projects: [
+        buildProject({ id: 'p1', name: 'Unassigned', bidder: '', client: '', updatedAt: '2026-06-01T00:00:00Z' }),
+        buildProject({ id: 'p2', name: 'Named', client: 'Stadt SB', updatedAt: '2026-05-01T00:00:00Z' }),
+      ],
+    });
+    renderList();
+    await waitFor(() => expect(screen.getByText('Named')).toBeDefined());
+    // Even though the unassigned project is newer, its group renders last.
+    const body = document.body.textContent || '';
+    expect(body.indexOf('Stadt SB')).toBeGreaterThanOrEqual(0);
+    expect(body.indexOf('Stadt SB')).toBeLessThan(body.indexOf('Ohne Zuordnung'));
   });
 });
 
