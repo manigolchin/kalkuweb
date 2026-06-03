@@ -21,11 +21,14 @@ import {
   Library,
   MapPin,
   ExternalLink,
+  Users,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/lib/auth';
 import { api, ApiError } from '@/lib/api';
+import { hasPanelPermission, isPanelAdmin } from '@/lib/panelPermissions';
+import type { PanelPermissionKey } from '@/features/kalkulation/types';
 import { usePanelTheme, StatusBadge, Kbd } from './ui';
 import CommandPalette from './CommandPalette';
 import PanelErrorBoundary from '@/components/panel/PanelErrorBoundary';
@@ -38,23 +41,39 @@ type NavItem = {
   comingSoon?: boolean;
   /** Opens in a new tab via <a> instead of an in-app <NavLink> route. */
   external?: boolean;
+  /** When set, the item is hidden unless the user has this feature
+   *  permission (admins implicitly pass). Unset = always visible. */
+  permission?: PanelPermissionKey;
+  /** When true, only role==='admin' sees the item. */
+  adminOnly?: boolean;
 };
 
 const NAV: NavItem[] = [
   { to: '/panel', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/panel/firmen', label: 'Firmen', icon: Building2 },
+  { to: '/panel/firmen', label: 'Firmen', icon: Building2, permission: 'firmen' },
   {
     to: 'https://preisanfrage.kalkus.de/submissionskarte',
     label: 'Submissionskarte',
     icon: MapPin,
     external: true,
+    permission: 'submissionskarte',
   },
-  { to: '/panel/kalkulation', label: 'Kalkulation', icon: Calculator },
-  { to: '/panel/vorlagen', label: 'Vorlagen', icon: Library },
-  { to: '/panel/feedback', label: 'Kunden-Feedback', icon: Inbox },
+  { to: '/panel/kalkulation', label: 'Kalkulation', icon: Calculator, permission: 'kalkulation' },
+  { to: '/panel/vorlagen', label: 'Vorlagen', icon: Library, permission: 'vorlagen' },
+  { to: '/panel/feedback', label: 'Kunden-Feedback', icon: Inbox, permission: 'feedback' },
   { to: '/panel/archiv', label: 'Archiv', icon: FolderClosed, comingSoon: true },
+  { to: '/panel/benutzer', label: 'Benutzer', icon: Users, adminOnly: true },
   { to: '/panel/einstellungen', label: 'Einstellungen', icon: Settings },
 ];
+
+/** Filter the static NAV down to what `user` may see. */
+function visibleNav(user: ReturnType<typeof useAuth>['user']): NavItem[] {
+  return NAV.filter((item) => {
+    if (item.adminOnly) return isPanelAdmin(user);
+    if (item.permission) return hasPanelPermission(user, item.permission);
+    return true;
+  });
+}
 
 const SIDEBAR_KEY = 'kalku.panel.sidebarCollapsed';
 
@@ -360,7 +379,7 @@ function Sidebar({
 
       {/* Nav */}
       <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
-        {NAV.map((item) => {
+        {visibleNav(user).map((item) => {
           const { to, label, icon: Icon, end, comingSoon, external } = item;
           const cls = (isActive: boolean) =>
             clsx(

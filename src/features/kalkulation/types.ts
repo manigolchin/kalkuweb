@@ -31,6 +31,12 @@ export type Position = {
    *  project-global `calcParams.geraeteStundensatz` applies. Internal-only —
    *  never exposed in the customer share snapshot. */
   geraeteSatz?: number;
+  /** Per-position Geräte lump sum (€/unit) — the Vorlage's hard-coded "EP
+   *  Geräte" (col AA) for site-setup/crane rows where equipment is a fixed cost
+   *  rather than time×rate. When set, calc uses it FLAT (ignores time and
+   *  geraeteSatz), so the import reproduces the Excel's Geräte total exactly.
+   *  Internal-only — never exposed in the customer share snapshot. */
+  geraeteEp?: number;
   isHeader: boolean;
   sortOrder: number;
   sectionPath: string;
@@ -442,15 +448,50 @@ export type CustomerViewPayload = {
   latestVersionNumber?: number;
 };
 
+/** Gateable panel areas. Mirrors PANEL_PERMISSION_KEYS in panel-api/src/schema.ts. */
+export type PanelPermissionKey =
+  | 'kalkulation'
+  | 'firmen'
+  | 'vorlagen'
+  | 'feedback'
+  | 'submissionskarte';
+
+export type UserRole = 'admin' | 'user';
+
 export type AuthUser = {
   id: string;
   email: string;
   name: string;
+  role: UserRole;
+  /** Effective permission map from the server (admins → every key true). */
+  permissions: Record<PanelPermissionKey, boolean>;
   companyName: string;
   companyLogoUrl: string;
   companyPhone: string;
   companyContactEmail: string;
   mustChangePassword: boolean;
+};
+
+/** Admin-panel view of any user (richer than AuthUser — includes isActive,
+ *  the raw assigned permission map, and project count). Mirrors
+ *  serializeAdminUser() in panel-api/src/routes/admin.ts. */
+export type AdminUser = {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  isActive: boolean;
+  /** What the admin actually assigned (raw, not admin-implies-all). */
+  permissions: Partial<Record<PanelPermissionKey, boolean>>;
+  /** What the user ends up with after the admin-implies-all rule. */
+  effectivePermissions: Record<PanelPermissionKey, boolean>;
+  companyName: string;
+  companyPhone: string;
+  companyContactEmail: string;
+  mustChangePassword: boolean;
+  projectCount: number;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type PositionTemplate = {

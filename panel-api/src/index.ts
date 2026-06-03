@@ -15,6 +15,7 @@ import { notificationsRoute, digestRoute } from './routes/notifications.js';
 import { presetsRoute } from './routes/presets.js';
 import { templatesRoute } from './routes/templates.js';
 import { firmenRoute } from './routes/firmen.js';
+import { adminRoute } from './routes/admin.js';
 import { rateLimit } from './lib/ratelimit.js';
 import { securityHeaders } from './lib/securityHeaders.js';
 import { requestId } from './lib/requestId.js';
@@ -109,6 +110,7 @@ app.use('/api/panel/projects', ownerBodyLimit);
 app.use('/api/panel/projects/*', ownerBodyLimit);
 app.use('/api/panel/shares/*', publicBodyLimit);
 app.use('/api/panel/share/*', publicBodyLimit);
+app.use('/api/panel/admin/*', ownerBodyLimit);
 
 app.route('/api/panel/auth', authRoute);
 app.route('/api/panel/projects', projectsRoute);
@@ -120,6 +122,7 @@ app.route('/api/panel', digestRoute);
 app.route('/api/panel', presetsRoute);
 app.route('/api/panel', templatesRoute);
 app.route('/api/panel', firmenRoute);
+app.route('/api/panel', adminRoute);
 
 app.notFound((c) => c.json({ error: 'not_found', path: c.req.path }, 404));
 

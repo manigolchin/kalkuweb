@@ -1,7 +1,9 @@
 import type {
+  AdminUser,
   AuthUser,
   CustomerViewPayload,
   InboxEntry,
+  PanelPermissionKey,
   PositionTemplate,
   ProjectDetail,
   ProjectData,
@@ -11,6 +13,29 @@ import type {
   ShareSummary,
   ViewPreset,
 } from '@/features/kalkulation/types';
+
+/** Mutable fields the admin panel can set when creating/updating a user. */
+export type AdminUserInput = {
+  email: string;
+  name: string;
+  password?: string;
+  role: 'admin' | 'user';
+  permissions: Partial<Record<PanelPermissionKey, boolean>>;
+  companyName?: string;
+  companyPhone?: string;
+  companyContactEmail?: string;
+};
+
+export type AdminUserPatch = Partial<{
+  name: string;
+  email: string;
+  role: 'admin' | 'user';
+  permissions: Partial<Record<PanelPermissionKey, boolean>>;
+  isActive: boolean;
+  companyName: string;
+  companyPhone: string;
+  companyContactEmail: string;
+}>;
 
 const BASE = '/api/panel';
 
@@ -597,5 +622,29 @@ export const api = {
           headers: password ? { 'X-Share-Password': password } : undefined,
         },
       ),
+  },
+  admin: {
+    /** List every user with role/permissions/active state. Admin only (403). */
+    listUsers: () =>
+      request<{ users: AdminUser[]; permissionKeys: PanelPermissionKey[] }>(`/admin/users`),
+    /** Create a user. If `password` is omitted the server generates one and
+     *  returns it once in `generatedPassword`. */
+    createUser: (input: AdminUserInput) =>
+      request<{ user: AdminUser; generatedPassword?: string }>(`/admin/users`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    updateUser: (id: string, patch: AdminUserPatch) =>
+      request<{ user: AdminUser }>(`/admin/users/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      }),
+    /** Reset a user's password (forces change on next login). Omit `password`
+     *  to have the server generate one and return it once. */
+    resetPassword: (id: string, password?: string) =>
+      request<{ ok: true; generatedPassword?: string }>(`/admin/users/${id}/reset-password`, {
+        method: 'POST',
+        body: JSON.stringify(password ? { password } : {}),
+      }),
   },
 };

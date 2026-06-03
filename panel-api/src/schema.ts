@@ -1,10 +1,60 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 
+/**
+ * Panel feature-permission keys. Each maps to a gateable area of the panel
+ * sidebar. An `admin` implicitly has every key; a `user` sees an area only
+ * when its key is `true` in their `permissions` map. Dashboard + Einstellungen
+ * are always available to any active user and are deliberately NOT listed
+ * here. Mirrored verbatim on the frontend in src/lib/panelPermissions.ts.
+ */
+export const PANEL_PERMISSION_KEYS = [
+  'kalkulation',
+  'firmen',
+  'vorlagen',
+  'feedback',
+  'submissionskarte',
+] as const;
+
+export type PanelPermissionKey = (typeof PANEL_PERMISSION_KEYS)[number];
+export type PanelPermissions = Partial<Record<PanelPermissionKey, boolean>>;
+export type UserRole = 'admin' | 'user';
+
+/**
+ * Resolve a user's effective permission map. Admins are granted every key
+ * regardless of their stored `permissions`; non-admins get exactly what was
+ * assigned (missing/false → no access). Single source of truth the auth
+ * routes serialize to the client and the admin routes read.
+ */
+export function effectivePermissions(user: {
+  role: string;
+  permissions: PanelPermissions | null;
+}): Record<PanelPermissionKey, boolean> {
+  const isAdmin = user.role === 'admin';
+  const out = {} as Record<PanelPermissionKey, boolean>;
+  for (const key of PANEL_PERMISSION_KEYS) {
+    out[key] = isAdmin ? true : user.permissions?.[key] === true;
+  }
+  return out;
+}
+
 export const users = sqliteTable('users', {
   id: text('id').primaryKey(),
   email: text('email').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
   name: text('name').notNull(),
+  /** 'admin' can manage users + has every feature; 'user' is gated by
+   *  `permissions`. The seed user is an admin (see seed.ts); the migration
+   *  backfills pre-existing rows to 'admin' (they are original owners). */
+  role: text('role', { enum: ['admin', 'user'] }).notNull().default('user'),
+  /** Soft deactivate. Inactive users cannot log in and are rejected by
+   *  requireAuth. We never hard-delete (projects reference ownerId). */
+  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  /** Per-user feature flags (PanelPermissionKey → boolean). Ignored for
+   *  admins. Stored as JSON; absent keys mean "no access". */
+  permissions: text('permissions', { mode: 'json' })
+    .notNull()
+    .$type<PanelPermissions>()
+    .$defaultFn(() => ({})),
   companyName: text('company_name').notNull().default(''),
   companyLogoUrl: text('company_logo_url').notNull().default(''),
   companyPhone: text('company_phone').notNull().default(''),
@@ -314,6 +364,9 @@ export type Position = {
   /** Per-position Geräte-Stundensatz (€/h) — Vorlage "Zulage Geräte" (col Z).
    *  When set, overrides calcParams.geraeteStundensatz for this row. Internal. */
   geraeteSatz?: number;
+  /** Per-position Geräte lump sum (€/unit) — Vorlage hard-coded "EP Geräte"
+   *  (col AA). When set, used flat (ignores time × rate). Internal. */
+  geraeteEp?: number;
   isHeader: boolean;
   sortOrder: number;
   sectionPath: string;

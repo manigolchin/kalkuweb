@@ -1,8 +1,9 @@
 import { lazy, Suspense } from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Outlet } from 'react-router-dom';
 import { Layout } from '@/components/layout';
 import { Home, NotFound } from '@/pages';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
+import { RequirePanelAccess } from '@/components/panel/RequirePanelAccess';
 
 // Lazy: alle Detail- und Tool-Pages (Initial-JS reduzieren)
 const NeuLanding = lazy(() => import('@/pages/NeuLanding'));
@@ -41,6 +42,7 @@ const Archiv = lazy(() => import('@/features/kalkulation/Archiv'));
 const Firmen = lazy(() => import('@/pages/panel/Firmen'));
 const Firma = lazy(() => import('@/pages/panel/Firma'));
 const Vorlagen = lazy(() => import('@/pages/panel/Vorlagen'));
+const AdminUsers = lazy(() => import('@/pages/panel/AdminUsers'));
 // Dev-only sandbox — bundled only in dev mode (tree-shaken in prod).
 const DevKalkuV2 = lazy(() => import('@/pages/DevKalkuV2'));
 
@@ -67,20 +69,49 @@ export default function App() {
           }
         >
           <Route index element={<PanelHome />} />
-          <Route path="firmen">
+          <Route
+            path="firmen"
+            element={
+              <RequirePanelAccess permission="firmen">
+                <Outlet />
+              </RequirePanelAccess>
+            }
+          >
             <Route index element={<Firmen />} />
             <Route path=":kind/:id" element={<Firma />} />
           </Route>
-          <Route path="kalkulation">
+          <Route
+            path="kalkulation"
+            element={
+              <RequirePanelAccess permission="kalkulation">
+                <Outlet />
+              </RequirePanelAccess>
+            }
+          >
             <Route index element={<ProjectsList />} />
             <Route path=":id" element={<ProjectDetail />} />
             <Route path=":id/efb" element={<ProjectEfb />} />
             <Route path=":id/actuals" element={<ProjectActuals />} />
             <Route path=":id/preisspiegel" element={<ProjectPreisspiegel />} />
           </Route>
-          <Route path="vorlagen" element={<Vorlagen />} />
-          <Route path="feedback" element={<FeedbackInbox />} />
+          <Route
+            path="vorlagen"
+            element={
+              <RequirePanelAccess permission="vorlagen">
+                <Vorlagen />
+              </RequirePanelAccess>
+            }
+          />
+          <Route
+            path="feedback"
+            element={
+              <RequirePanelAccess permission="feedback">
+                <FeedbackInbox />
+              </RequirePanelAccess>
+            }
+          />
           <Route path="archiv" element={<Archiv />} />
+          <Route path="benutzer" element={<AdminUsers />} />
           <Route path="einstellungen" element={<PanelSettings />} />
         </Route>
 

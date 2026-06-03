@@ -20,6 +20,9 @@ export async function ensureSeedUser(): Promise<void> {
     email: SEED_EMAIL,
     passwordHash: await hashPassword(SEED_PASSWORD),
     name: SEED_NAME,
+    // The bootstrap account is the admin that can create + manage all other
+    // users. On a fresh DB the CREATE TABLE default is 'user', so set it here.
+    role: 'admin',
     companyName: process.env.SEED_COMPANY || '',
     companyLogoUrl: '',
     mustChangePassword: !process.env.SEED_PASSWORD,
