@@ -26,6 +26,8 @@ import {
   Database,
   CalendarDays,
   ShieldCheck,
+  Inbox,
+  ExternalLink,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -707,6 +709,14 @@ function FirmaRowEl({
   const isUnadopted = isExternal && !row.adoptedCompanyId;
   const meta = tradeMeta(row.tradeType);
   const href = `/panel/firmen/${row.kind}/${row.id}`;
+  // Posteingang exists only for a managing preisanfrage company: managed firms
+  // (id == companies.id) and adopted external firms (adoptedCompanyId).
+  const posteingangCompanyId: number | null =
+    row.kind === 'managed' && typeof row.id === 'number'
+      ? row.id
+      : row.kind === 'external'
+        ? row.adoptedCompanyId
+        : null;
 
   return (
     <tr
@@ -813,6 +823,20 @@ function FirmaRowEl({
             >
               {archiving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
             </button>
+          )}
+          {posteingangCompanyId != null && (
+            <a
+              href={`https://preisanfrage.kalkus.de/posteingang?company=${posteingangCompanyId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-primary-600 dark:text-slate-400 dark:hover:text-primary-300"
+              title={`Posteingang von ${row.displayName} in preisanfrage öffnen`}
+            >
+              <Inbox className="h-3.5 w-3.5" />
+              <span className="hidden lg:inline">Posteingang</span>
+              <ExternalLink className="h-3 w-3 opacity-70" aria-hidden />
+            </a>
           )}
           <Link
             to={href}
