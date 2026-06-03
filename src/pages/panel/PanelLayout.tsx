@@ -81,6 +81,10 @@ export default function PanelLayout() {
   const { user, logout, setUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  // The Kalkulations-Detailseite has a very wide table (18 Spalten) and its own
+  // top PriceBar — let it use the FULL window width; every other panel page keeps
+  // the readable 1600px cap.
+  const isWidePage = /^\/panel\/kalkulation\/[^/]+$/.test(location.pathname);
   const { theme, toggle: toggleTheme } = usePanelTheme();
   const [unreadFeedback, setUnreadFeedback] = useState<number>(0);
   const [collapsed, setCollapsed] = useState<boolean>(() => {
@@ -302,7 +306,9 @@ export default function PanelLayout() {
         <main
           id="main-content"
           tabIndex={-1}
-          className="flex-1 px-4 sm:px-6 py-6 max-w-[1600px] w-full mx-auto focus:outline-none"
+          className={`flex-1 px-4 sm:px-6 py-6 w-full mx-auto focus:outline-none ${
+            isWidePage ? 'max-w-none' : 'max-w-[1600px]'
+          }`}
         >
           <PanelErrorBoundary>
             <Outlet />
