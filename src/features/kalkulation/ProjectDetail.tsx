@@ -1002,61 +1002,6 @@ function SaveIndicator({
   );
 }
 
-function TotalsCard({
-  totals,
-  positionCount,
-  visibleCount,
-  positions,
-  params,
-  onSolveTarget,
-  onResetTarget,
-}: {
-  totals: ReturnType<typeof calcTotals>;
-  positionCount: number;
-  visibleCount: number;
-  positions: Position[];
-  params: CalcParams;
-  onSolveTarget: (targetNetto: number) => void;
-  onResetTarget: () => void;
-}) {
-  return (
-    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5">
-      <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Summen</h3>
-
-      <div className="mt-3 space-y-1.5 text-sm">
-        <Row label="Lohnanteil" value={totals.totalLohn} muted />
-        <Row label="Material" value={totals.totalMaterial} muted />
-        <Row label="Geräte" value={totals.totalGeraet} muted />
-        <Row label="Nachunternehmer" value={totals.totalNu} muted />
-      </div>
-
-      <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 space-y-1.5">
-        <Row label="Netto (gesamt)" value={totals.totalNetto} strong />
-        <Row label="MwSt 19 %" value={totals.totalMwst} muted />
-        <Row label="Brutto" value={totals.totalBrutto} strong />
-      </div>
-
-      <EndbetragControl
-        positions={positions}
-        params={params}
-        totalNetto={totals.totalNetto}
-        onSolve={onSolveTarget}
-        onReset={onResetTarget}
-      />
-
-      <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
-        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-          {positionCount} {positionCount === 1 ? 'Zeile' : 'Zeilen'} insgesamt,{' '}
-          <strong className="text-emerald-700 dark:text-emerald-300">{visibleCount} für Kunde sichtbar</strong>.
-        </p>
-        <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-          Aufwand: {formatNum(totals.totalHours, 1)} h
-        </p>
-      </div>
-    </div>
-  );
-}
-
 /** Horizontal price summary shown ABOVE the position table: surfaces the final
  *  Netto/Brutto prominently and frees the full page width for the (now wide)
  *  table. Reuses EndbetragControl (bare) for the Ziel-Endbetrag input. */
@@ -1254,40 +1199,6 @@ function EndbetragControl({
           Netto-Zielsumme eingeben — der Aufschlag wird automatisch über alle Positionen verteilt.
         </p>
       )}
-    </div>
-  );
-}
-
-function Row({
-  label,
-  value,
-  muted,
-  strong,
-}: {
-  label: string;
-  value: number;
-  muted?: boolean;
-  strong?: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between">
-      <span
-        className={clsx(
-          'text-slate-500 dark:text-slate-400',
-          strong && 'text-slate-900 dark:text-slate-100 font-semibold',
-        )}
-      >
-        {label}
-      </span>
-      <span
-        className={clsx(
-          'tabular-nums',
-          muted ? 'text-slate-500 dark:text-slate-400' : 'text-slate-900 dark:text-slate-100',
-          strong && 'font-semibold',
-        )}
-      >
-        {formatEUR(value)}
-      </span>
     </div>
   );
 }
