@@ -755,16 +755,16 @@ export default function PositionTableV2({
               <th className="bg-white p-0 w-0">
                 <div className="h-9 w-px bg-slate-300 mx-auto" aria-hidden />
               </th>
-              <ColHead className="w-[80px] bg-slate-100/70" align="right" intern>Material</ColHead>
-              <ColHead className="w-[80px] bg-slate-100/70" align="right" intern>Zeit min</ColHead>
-              <ColHead className="w-[80px] bg-slate-100/70" align="right" intern>NU €</ColHead>
-              <ColHead className="w-[80px] bg-slate-100/70" align="right" intern>
+              <ColHead className="w-[108px] bg-slate-100/70" align="right" intern>Material</ColHead>
+              <ColHead className="w-[108px] bg-slate-100/70" align="right" intern>Zeit min</ColHead>
+              <ColHead className="w-[108px] bg-slate-100/70" align="right" intern>NU €</ColHead>
+              <ColHead className="w-[108px] bg-slate-100/70" align="right" intern>
                 <span title="Zulage Geräte (€/h) je Position — Standard: projektweiter Geräte-Stundensatz. Zahl überschreibt diese Zeile, leeren = zurück zum Projektsatz.">Zulage Ger.</span>
               </ColHead>
-              <ColHead className="w-[90px] bg-slate-100/70" align="right" intern>
+              <ColHead className="w-[116px] bg-slate-100/70" align="right" intern>
                 <span title="EP Geräte je Einheit — Standard: Zeit/60 × Zulage Geräte. Zahl oder =Formel überschreibt diese Zeile.">EP Geräte</span>
               </ColHead>
-              <ColHead className="w-[90px] bg-slate-100/70" align="right" intern>
+              <ColHead className="w-[116px] bg-slate-100/70" align="right" intern>
                 <span title="EP Löhne je Einheit — Standard: Zeit/60 × Verrechnungslohn. Zahl oder =Formel überschreibt diese Zeile.">EP Löhne</span>
               </ColHead>
               <ColHead className="w-[110px] bg-slate-100/70" intern>Typ</ColHead>
