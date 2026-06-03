@@ -406,25 +406,43 @@ function drawCover(doc: import('jspdf').jsPDF, parsed: ParsedGaeb, opts: PdfOpti
 }
 
 // ── Re-export back to GAEB DA XML 3.2 ────────────────────────────────────────
-export function exportGaebXml(parsed: ParsedGaeb): void {
-  const xml = buildGaebXml(parsed);
+// Datenart: 83 = Angebotsaufforderung (LV without prices), 84 = Angebot (the
+// bidder's priced LV). A Kalkulation carries EP/GP, so it exports as 84; the
+// GAEB-Konverter (which re-emits whatever it parsed) keeps the 83 default.
+export type GaebDa = '83' | '84';
+
+export function exportGaebXml(parsed: ParsedGaeb, da: GaebDa = '83'): void {
+  const xml = buildGaebXml(parsed, da);
   const blob = new Blob([xml], { type: 'application/xml' });
-  downloadBlob(blob, `${safeFilename(parsed.projectName ?? 'gaeb')}.x83`);
+  downloadBlob(blob, `${safeFilename(parsed.projectName ?? 'gaeb')}.x${da}`);
 }
 
 function escXml(s: string): string {
   return s
+    // XML 1.0 forbids C0 control chars except tab/newline/CR. Strip the rest
+    // (a stray form-feed/vertical-tab pasted from Word/PDF would otherwise make
+    // the whole document unparseable → silent total data loss on re-import).
+    // eslint-disable-next-line no-control-regex -- stripping XML-illegal control chars is the intent
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
 
-function buildGaebXml(parsed: ParsedGaeb): string {
+/** Render a number for a GAEB XML value (UP/IT/Qty): never exponential, never
+ *  NaN/Infinity (returns null → caller omits the element), trailing zeros
+ *  trimmed. GAEB DA XML uses '.' as the decimal separator (machine format). */
+function xmlNum(n: number): string | null {
+  if (!Number.isFinite(n)) return null;
+  return n.toFixed(6).replace(/\.?0+$/, '') || '0';
+}
+
+export function buildGaebXml(parsed: ParsedGaeb, da: GaebDa = '83'): string {
   const today = new Date().toISOString().slice(0, 10);
   const lines: string[] = [];
   lines.push('<?xml version="1.0" encoding="utf-8"?>');
-  lines.push('<GAEB xmlns="http://www.gaeb.de/GAEB_DA_XML/DA83/3.2">');
+  lines.push(`<GAEB xmlns="http://www.gaeb.de/GAEB_DA_XML/DA${da}/3.2">`);
   lines.push('  <GAEBInfo>');
   lines.push('    <Version>3.2</Version>');
   lines.push(`    <Date>${today}</Date>`);
@@ -435,13 +453,22 @@ function buildGaebXml(parsed: ParsedGaeb): string {
   lines.push(`    <Cur>${escXml(parsed.currency)}</Cur>`);
   lines.push('  </PrjInfo>');
   lines.push('  <Award>');
-  lines.push('    <DP>83</DP>');
+  lines.push(`    <DP>${da}</DP>`);
   if (parsed.awardingAuthority) {
     lines.push('    <OWN>');
     lines.push('      <Address>');
     lines.push(`        <Name1>${escXml(parsed.awardingAuthority)}</Name1>`);
     lines.push('      </Address>');
     lines.push('    </OWN>');
+  }
+  // For a DA84 Angebot the Bieter is the whole point — emit it so it survives
+  // re-import (parseGaebDaXml reads <Bidder><Name1>).
+  if (parsed.bidder) {
+    lines.push('    <Bidder>');
+    lines.push('      <Address>');
+    lines.push(`        <Name1>${escXml(parsed.bidder)}</Name1>`);
+    lines.push('      </Address>');
+    lines.push('    </Bidder>');
   }
   lines.push('    <BoQ>');
   lines.push('      <BoQInfo>');
@@ -451,11 +478,15 @@ function buildGaebXml(parsed: ParsedGaeb): string {
   lines.push('      <BoQBody>');
   lines.push('        <Itemlist>');
   for (const p of parsed.positions) {
+    if (p.type === 'group') continue; // groups (Titel) carry no price — emit only priced items
     lines.push(`          <Item RNoPart="${escXml(p.pos)}">`);
-    if (p.menge != null) lines.push(`            <Qty>${p.menge}</Qty>`);
+    const qty = p.menge != null ? xmlNum(p.menge) : null;
+    if (qty != null) lines.push(`            <Qty>${qty}</Qty>`);
     if (p.einheit) lines.push(`            <QU>${escXml(p.einheit)}</QU>`);
-    if (p.ep != null) lines.push(`            <UP>${p.ep}</UP>`);
-    if (p.gp != null) lines.push(`            <IT>${p.gp}</IT>`);
+    const up = p.ep != null ? xmlNum(p.ep) : null;
+    if (up != null) lines.push(`            <UP>${up}</UP>`);
+    const it = p.gp != null ? xmlNum(p.gp) : null;
+    if (it != null) lines.push(`            <IT>${it}</IT>`);
     lines.push('            <Description>');
     lines.push('              <CompleteText>');
     if (p.langtext) {
@@ -480,14 +511,43 @@ function buildGaebXml(parsed: ParsedGaeb): string {
   return lines.join('\n');
 }
 
-// ── Re-export back to GAEB 90 ASCII (D83) ────────────────────────────────────
-export function exportGaeb90(parsed: ParsedGaeb): void {
+// ── Re-export back to GAEB 90 ASCII (D83 / D84) ──────────────────────────────
+// Non-ASCII chars in the 0x80–0x9F window of windows-1252 (€, typographic
+// quotes, …) live at different code points in Unicode; everything else ≤ 0xFF
+// maps 1:1 to latin1. Encoding to single bytes keeps the fixed-column grid
+// intact (a UTF-8 Blob would emit 2 bytes for every umlaut and shift every
+// column). Unmappable chars become '?'.
+const WIN1252_HIGH: Record<number, number> = {
+  0x20ac: 0x80, 0x201a: 0x82, 0x0192: 0x83, 0x201e: 0x84, 0x2026: 0x85, 0x2020: 0x86,
+  0x2021: 0x87, 0x02c6: 0x88, 0x2030: 0x89, 0x0160: 0x8a, 0x2039: 0x8b, 0x0152: 0x8c,
+  0x017d: 0x8e, 0x2018: 0x91, 0x2019: 0x92, 0x201c: 0x93, 0x201d: 0x94, 0x2022: 0x95,
+  0x2013: 0x96, 0x2014: 0x97, 0x02dc: 0x98, 0x2122: 0x99, 0x0161: 0x9a, 0x203a: 0x9b,
+  0x0153: 0x9c, 0x017e: 0x9e, 0x0178: 0x9f,
+};
+export function encodeWin1252(s: string): Uint8Array {
+  const out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    out[i] = c <= 0xff ? c : (WIN1252_HIGH[c] ?? 0x3f);
+  }
+  return out;
+}
+
+export function exportGaeb90(parsed: ParsedGaeb, da: GaebDa = '83'): void {
+  const text = buildGaeb90(parsed, da);
+  const blob = new Blob([encodeWin1252(text) as BlobPart], { type: 'text/plain;charset=windows-1252' });
+  downloadBlob(blob, `${safeFilename(parsed.projectName ?? 'gaeb')}.d${da}`);
+}
+
+export function buildGaeb90(parsed: ParsedGaeb, da: GaebDa = '83'): string {
   const lines: string[] = [];
   let lineNo = 1;
   const tag = (s: string) =>
     s.padEnd(74, ' ') + String(lineNo++).padStart(6, '0');
 
-  lines.push(tag('00        83L                                                 1122PPP0090'));
+  // Record 00 carries the Datenart token ("83L" → "84L" for a priced Angebot);
+  // same fixed width, so the layout is preserved.
+  lines.push(tag('00        83L                                                 1122PPP0090'.replace('83L', `${da}L`)));
   if (parsed.date || parsed.projectName) {
     lines.push(tag('01' + (parsed.projectDescription ?? parsed.projectName ?? '').slice(0, 40).padEnd(40, ' ') + (parsed.date ?? '').slice(0, 8).padEnd(8, ' ')));
   }
@@ -498,23 +558,30 @@ export function exportGaeb90(parsed: ParsedGaeb): void {
     lines.push(tag('03' + parsed.awardingAuthority.slice(0, 70).padEnd(70, ' ')));
   }
 
+  // Fixed-width numeric field (14 cols): magnitude × factor, zero-padded.
+  // GAEB 90 numeric fields are unsigned; we clamp to ≥ 0 (a Kalkulation never
+  // yields negative EP/GP) and slice to the width so the column grid can never
+  // break, even for pathological inputs.
+  const numField = (v: number | undefined, factor: number): string => {
+    if (v == null || !Number.isFinite(v)) return ' '.repeat(14);
+    const s = Math.max(0, Math.round(v * factor)).toString();
+    return s.length > 14 ? s.slice(-14) : s.padStart(14, '0');
+  };
+
   let truncatedOzCount = 0;
   for (const p of parsed.positions) {
+    if (p.type === 'group') continue; // Titel/groups aren't priced positions
     const ozDigits = p.pos.replace(/\./g, '');
     if (ozDigits.length > 9) truncatedOzCount++;
     const oz = ozDigits.slice(0, 9).padEnd(9, ' ');
     const flags = 'NNN';
-    const mengeStr = p.menge != null
-      ? Math.round(p.menge * 1000).toString().padStart(14, '0')
-      : '              ';
+    const mengeStr = numField(p.menge, 1000);
     const einheit = (p.einheit ?? '').slice(0, 4).padEnd(4, ' ');
-    const ep = p.ep != null
-      ? Math.round(p.ep * 100).toString().padStart(14, '0')
-      : '              ';
-    const gp = p.gp != null
-      ? Math.round(p.gp * 100).toString().padStart(14, '0')
-      : '              ';
-    lines.push(tag('21' + oz + flags + '         ' + mengeStr + einheit + ep + gp));
+    const ep = numField(p.ep, 100);
+    const gp = numField(p.gp, 100);
+    // 11-space gap (orig. cols 15–25) so Menge starts at col 26 — the offset
+    // parseGaebAscii reads back. (Was 9; the 2-col drift corrupted every value.)
+    lines.push(tag('21' + oz + flags + '           ' + mengeStr + einheit + ep + gp));
     if (p.kurztext) {
       for (const piece of chunk(p.kurztext, 70)) {
         lines.push(tag('25   ' + piece.padEnd(70, ' ')));
@@ -534,16 +601,22 @@ export function exportGaeb90(parsed: ParsedGaeb): void {
     );
   }
 
-  const blob = new Blob([lines.join('\r\n')], { type: 'text/plain;charset=windows-1252' });
-  downloadBlob(blob, `${safeFilename(parsed.projectName ?? 'gaeb')}.d83`);
+  return lines.join('\r\n');
 }
 
 function chunk(s: string, n: number): string[] {
-  const words = s.split(/\s+/);
+  const words = s.split(/\s+/).filter(Boolean);
   const out: string[] = [];
   let cur = '';
-  for (const w of words) {
-    if ((cur + ' ' + w).trim().length > n) {
+  for (let w of words) {
+    // A single token longer than the field width must be hard-split, otherwise
+    // it would overflow the fixed-width text record.
+    while (w.length > n) {
+      if (cur) { out.push(cur); cur = ''; }
+      out.push(w.slice(0, n));
+      w = w.slice(n);
+    }
+    if ((cur ? cur + ' ' + w : w).length > n) {
       if (cur) out.push(cur);
       cur = w;
     } else {

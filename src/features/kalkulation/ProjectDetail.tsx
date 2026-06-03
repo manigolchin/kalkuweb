@@ -22,6 +22,9 @@ import {
   ChevronDown,
   Target,
   Eraser,
+  FileSpreadsheet,
+  FileCode2,
+  FileDigit,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -289,6 +292,27 @@ export default function ProjectDetail() {
     URL.revokeObjectURL(url);
   }
 
+  async function exportToPdf() {
+    if (!data) return;
+    try {
+      const { exportProjectPdf } = await import('./exportFormats');
+      await exportProjectPdf(data);
+    } catch {
+      toast.error('PDF-Export fehlgeschlagen.');
+    }
+  }
+
+  async function exportToGaeb(variant: 'xml' | 'd90') {
+    if (!data) return;
+    try {
+      const mod = await import('./exportFormats');
+      if (variant === 'xml') mod.exportProjectGaebXml(data);
+      else mod.exportProjectGaeb90(data);
+    } catch {
+      toast.error('GAEB-Export fehlgeschlagen.');
+    }
+  }
+
   function onShareCreated(share: ShareSummary) {
     setProject((p) => {
       if (!p) return p;
@@ -398,10 +422,12 @@ export default function ProjectDetail() {
             <Upload className="w-4 h-4" />
             Importieren
           </button>
-          <button onClick={exportToExcel} className="btn btn-secondary flex items-center gap-2">
-            <Download className="w-4 h-4" />
-            Excel
-          </button>
+          <ExportMenu
+            onExcel={exportToExcel}
+            onPdf={exportToPdf}
+            onGaebXml={() => exportToGaeb('xml')}
+            onGaeb90={() => exportToGaeb('d90')}
+          />
           <button
             onClick={() => setShowShare({})}
             className="btn btn-primary flex items-center gap-2"
@@ -412,8 +438,23 @@ export default function ProjectDetail() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5">
+      <div className="space-y-4">
         <div className="space-y-4 min-w-0">
+          {totals && (
+            <PriceBar
+              totals={totals}
+              positionCount={data.positions.length}
+              visibleCount={visibleCount}
+              positions={data.positions}
+              params={data.calcParams}
+              onSolveTarget={(target) =>
+                updateCalcParams({
+                  zielAufschlag: solveZielAufschlag(data.positions, data.calcParams, target),
+                })
+              }
+              onResetTarget={() => updateCalcParams({ zielAufschlag: 0 })}
+            />
+          )}
           {showSettings && (
             <SettingsPanel
               meta={data}
@@ -510,27 +551,16 @@ export default function ProjectDetail() {
           )}
         </div>
 
-        <aside className="space-y-4">
-          <TotalsCard
-            totals={totals!}
-            positionCount={data.positions.length}
-            visibleCount={visibleCount}
-            positions={data.positions}
-            params={data.calcParams}
-            onSolveTarget={(target) =>
-              updateCalcParams({
-                zielAufschlag: solveZielAufschlag(data.positions, data.calcParams, target),
-              })
-            }
-            onResetTarget={() => updateCalcParams({ zielAufschlag: 0 })}
-          />
+        {/* Geteilte Links — unter der Tabelle (sekundär; „Mit Kunde teilen“ ist
+            oben in der Toolbar, der finale Preis ganz oben in der PriceBar). */}
+        <div className="max-w-lg">
           <SharesCard
             shares={activeShares}
             allShares={project.shares}
             projectUpdatedAt={project.updatedAt}
             onOpenShare={() => setShowShare({})}
           />
-        </aside>
+        </div>
       </div>
 
       {showShare && (
@@ -740,6 +770,94 @@ export function ToolsMenu({
   );
 }
 
+export function ExportMenu({
+  onExcel,
+  onPdf,
+  onGaebXml,
+  onGaeb90,
+}: {
+  onExcel: () => void;
+  onPdf: () => void;
+  onGaebXml: () => void;
+  onGaeb90: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onClickOutside);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const pick = (fn: () => void) => () => {
+    setOpen(false);
+    fn();
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((s) => !s)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={clsx(
+          'btn btn-secondary flex items-center gap-2',
+          open && 'bg-primary-50 text-primary-700 border-primary-200 dark:bg-primary-500/10 dark:text-primary-100',
+        )}
+        title="Excel · PDF · GAEB exportieren"
+      >
+        <Download className="w-4 h-4" />
+        Export
+        <ChevronDown className={clsx('w-3 h-3 transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 mt-1.5 w-64 z-40 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl overflow-hidden"
+        >
+          <MenuButton
+            icon={FileSpreadsheet}
+            label="Excel"
+            sub="Kalkulations-Vorlage (.xlsx)"
+            onClick={pick(onExcel)}
+          />
+          <MenuButton
+            icon={FileText}
+            label="PDF"
+            sub="Angebot zum Drucken & Senden"
+            onClick={pick(onPdf)}
+          />
+          <div className="border-t border-slate-100 dark:border-slate-800" />
+          <MenuButton
+            icon={FileCode2}
+            label="GAEB (DA XML)"
+            sub="Angebot .x84 — Standard-Austauschformat"
+            onClick={pick(onGaebXml)}
+          />
+          <MenuButton
+            icon={FileDigit}
+            label="GAEB 90"
+            sub="Angebot .d84 — ASCII-Altformat"
+            onClick={pick(onGaeb90)}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MenuLink({
   to,
   icon: Icon,
@@ -939,6 +1057,93 @@ function TotalsCard({
   );
 }
 
+/** Horizontal price summary shown ABOVE the position table: surfaces the final
+ *  Netto/Brutto prominently and frees the full page width for the (now wide)
+ *  table. Reuses EndbetragControl (bare) for the Ziel-Endbetrag input. */
+function PriceBar({
+  totals,
+  positionCount,
+  visibleCount,
+  positions,
+  params,
+  onSolveTarget,
+  onResetTarget,
+}: {
+  totals: ReturnType<typeof calcTotals>;
+  positionCount: number;
+  visibleCount: number;
+  positions: Position[];
+  params: CalcParams;
+  onSolveTarget: (targetNetto: number) => void;
+  onResetTarget: () => void;
+}) {
+  return (
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-4 sm:px-5 py-4 shadow-sm">
+      <div className="flex flex-col xl:flex-row xl:items-center gap-4 xl:gap-6">
+        {/* Kosten-Zerlegung — kompakt, horizontal */}
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+          <BreakItem label="Lohn" value={totals.totalLohn} />
+          <BreakItem label="Material" value={totals.totalMaterial} />
+          <BreakItem label="Geräte" value={totals.totalGeraet} />
+          <BreakItem label="NU" value={totals.totalNu} />
+          <span className="hidden lg:inline text-[11px] text-slate-400 dark:text-slate-500 whitespace-nowrap">
+            {positionCount} {positionCount === 1 ? 'Zeile' : 'Zeilen'} ·{' '}
+            <span className="text-emerald-700 dark:text-emerald-300 font-medium">{visibleCount} sichtbar</span> ·{' '}
+            {formatNum(totals.totalHours, 1)} h
+          </span>
+        </div>
+
+        {/* Endbetrag-Steuerung + finaler Preis — rechtsbündig & prominent */}
+        <div className="flex flex-col sm:flex-row sm:items-end gap-4 xl:ml-auto">
+          <div className="sm:w-[230px] shrink-0">
+            <EndbetragControl
+              bare
+              positions={positions}
+              params={params}
+              totalNetto={totals.totalNetto}
+              onSolve={onSolveTarget}
+              onReset={onResetTarget}
+            />
+          </div>
+          <div className="flex items-end gap-5 sm:gap-7 sm:border-l sm:border-slate-200 sm:dark:border-slate-700 sm:pl-6">
+            <PriceFigure label="Netto" value={totals.totalNetto} />
+            <PriceFigure label="Brutto · inkl. 19 % MwSt" value={totals.totalBrutto} accent />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BreakItem({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex flex-col leading-tight">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+        {label}
+      </span>
+      <span className="text-sm tabular-nums text-slate-600 dark:text-slate-300">{formatEUR(value)}</span>
+    </div>
+  );
+}
+
+function PriceFigure({ label, value, accent = false }: { label: string; value: number; accent?: boolean }) {
+  return (
+    <div className="flex flex-col leading-tight">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 whitespace-nowrap">
+        {label}
+      </span>
+      <span
+        className={clsx(
+          'text-xl sm:text-2xl font-bold tabular-nums whitespace-nowrap',
+          accent ? 'text-primary-700 dark:text-primary-300' : 'text-slate-900 dark:text-white',
+        )}
+      >
+        {formatEUR(value)}
+      </span>
+    </div>
+  );
+}
+
 /** Parse a user-typed amount using German conventions: "." groups thousands,
  *  "," is the decimal separator. Falls back to a lone-dot-as-thousands reading
  *  so "24.000" → 24000 (the common case from a WhatsApp "24k netto"). Returns
@@ -962,12 +1167,16 @@ function EndbetragControl({
   totalNetto,
   onSolve,
   onReset,
+  bare = false,
 }: {
   positions: Position[];
   params: CalcParams;
   totalNetto: number;
   onSolve: (targetNetto: number) => void;
   onReset: () => void;
+  /** When true, drop the card's top divider/margin so the control can sit
+   *  inline in the horizontal PriceBar. */
+  bare?: boolean;
 }) {
   const base = useMemo(() => baseNetto(positions, params), [positions, params]);
   const ziel = params.zielAufschlag ?? 0;
@@ -987,7 +1196,7 @@ function EndbetragControl({
   };
 
   return (
-    <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
+    <div className={bare ? '' : 'mt-4 pt-3 border-t border-slate-100 dark:border-slate-800'}>
       <div className="flex items-center justify-between mb-1.5">
         <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1">
           <Target className="w-3 h-3" />

@@ -314,11 +314,15 @@ function parseOnorm(doc: Document): XmlParseResult {
 
 function parseGermanNumber(text: string): number {
   if (!text) return NaN;
-  const cleaned = text.trim().replace(/\s/g, '').replace(/\./g, '').replace(/,/g, '.');
-  // If both . and , exist, the , is the decimal separator
-  if (/[\d.]+,\d/.test(text)) {
-    const n = parseFloat(text.replace(/\./g, '').replace(',', '.'));
-    return n;
+  const t = text.trim().replace(/\s/g, '');
+  if (!t) return NaN;
+  // German formatting (e.g. "1.234,56"): dots are thousands separators, comma
+  // is the decimal — strip dots, swap comma to a dot.
+  if (t.includes(',')) {
+    return parseFloat(t.replace(/\./g, '').replace(',', '.'));
   }
-  return parseFloat(cleaned);
+  // GAEB DA XML and ÖNorm A2063 are machine formats: '.' IS the decimal
+  // separator (e.g. <UP>12.50</UP> = 12.5). Parse it directly — the previous
+  // code stripped the dot and read 12.50 as 1250.
+  return parseFloat(t);
 }
