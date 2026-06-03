@@ -1,12 +1,13 @@
 /**
  * Tests for the ToolsMenu "Werkzeuge" dropdown inside ProjectDetail.tsx.
  *
- * The component collapses 5 actions into one dropdown:
+ * The component collapses 6 actions into one dropdown:
  *   - EFB 221/222/223         → Link to /panel/kalkulation/{id}/efb
  *   - Preisspiegel            → Link to /panel/kalkulation/{id}/preisspiegel
  *   - Nachkalkulation         → Link to /panel/kalkulation/{id}/actuals
  *   - Submit-Validator        → calls onValidate
  *   - Versionen vergleichen   → calls onDiff (disabled when only one snapshot)
+ *   - Preise zurücksetzen     → calls onReset (destructive; confirm lives in the parent)
  *
  * Covers open/close, click-outside, ESC, link-hrefs, callback wiring, disabled
  * state, chevron rotation, and aria attributes.
@@ -30,11 +31,13 @@ type RenderOpts = {
   hasMultipleSnapshots?: boolean;
   onValidate?: () => void;
   onDiff?: () => void;
+  onReset?: () => void;
 };
 
 function renderToolsMenu(opts: RenderOpts = {}) {
   const onValidate = opts.onValidate ?? vi.fn();
   const onDiff = opts.onDiff ?? vi.fn();
+  const onReset = opts.onReset ?? vi.fn();
   const utils = render(
     <MemoryRouter>
       <ToolsMenu
@@ -42,10 +45,11 @@ function renderToolsMenu(opts: RenderOpts = {}) {
         hasMultipleSnapshots={opts.hasMultipleSnapshots ?? true}
         onValidate={onValidate}
         onDiff={onDiff}
+        onReset={onReset}
       />
     </MemoryRouter>,
   );
-  return { ...utils, onValidate, onDiff };
+  return { ...utils, onValidate, onDiff, onReset };
 }
 
 function getTrigger() {
@@ -87,18 +91,19 @@ describe('ToolsMenu', () => {
     expect(screen.getByRole('menu')).toBeTruthy();
   });
 
-  test('opened menu contains exactly 5 items in the documented order', () => {
+  test('opened menu contains exactly 6 items in the documented order', () => {
     renderToolsMenu();
     fireEvent.click(getTrigger());
     const menu = screen.getByRole('menu');
     const items = within(menu).getAllByRole('menuitem');
-    expect(items).toHaveLength(5);
+    expect(items).toHaveLength(6);
     const labels = items.map((el) => el.textContent ?? '');
     expect(labels[0]).toMatch(/EFB 221\/222\/223/);
     expect(labels[1]).toMatch(/Preisspiegel/);
     expect(labels[2]).toMatch(/Nachkalkulation/);
     expect(labels[3]).toMatch(/Submit-Validator/);
     expect(labels[4]).toMatch(/Versionen vergleichen/);
+    expect(labels[5]).toMatch(/Preise zurücksetzen/);
   });
 
   test('menu links carry the correct href for the given projectId prop', () => {
@@ -183,6 +188,25 @@ describe('ToolsMenu', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
+  test('clicking "Preise zurücksetzen" calls onReset and closes the menu', () => {
+    const onReset = vi.fn();
+    renderToolsMenu({ onReset });
+    fireEvent.click(getTrigger());
+    const resetBtn = screen.getByRole('menuitem', { name: /Preise zurücksetzen/ });
+    fireEvent.click(resetBtn);
+    expect(onReset).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  test('"Preise zurücksetzen" renders as a destructive (red) menu item', () => {
+    renderToolsMenu();
+    fireEvent.click(getTrigger());
+    const resetBtn = screen.getByRole('menuitem', { name: /Preise zurücksetzen/ }) as HTMLButtonElement;
+    // The danger variant tints the label red instead of slate.
+    expect(resetBtn.innerHTML).toMatch(/text-red-700/);
+    expect(resetBtn.disabled).toBe(false);
+  });
+
   test('clicking disabled "Versionen vergleichen" does NOT call onDiff', () => {
     const onDiff = vi.fn();
     renderToolsMenu({ hasMultipleSnapshots: false, onDiff });
@@ -232,5 +256,6 @@ describe('ToolsMenu', () => {
     expect(screen.getByText(/NU\/Lieferant-Angebote vergleichen/)).toBeTruthy();
     expect(screen.getByText(/Soll vs\. Ist nach Ausführung/)).toBeTruthy();
     expect(screen.getByText(/Original-LV gegen Kalkulation prüfen/)).toBeTruthy();
+    expect(screen.getByText(/Alle Positionen auf 0 € — nicht umkehrbar/)).toBeTruthy();
   });
 });

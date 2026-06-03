@@ -21,6 +21,7 @@ import {
   Wrench,
   ChevronDown,
   Target,
+  Eraser,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -198,6 +199,51 @@ export default function ProjectDetail() {
     setData((d) => (d ? { ...d, calcParams: { ...d.calcParams, ...patch } } : d));
   }, []);
 
+  // "Preise zurücksetzen" — wipe every non-header position's calculator inputs
+  // (Material/Zeit/NU + per-row Geräte-Satz + the inline formulas & F1..F7
+  // scratch cells) so each row falls back to "EP fehlt" / 0,00 €. Mengen, OZ,
+  // Texte, Sichtbarkeit und die globalen Stellschrauben bleiben unberührt —
+  // dies setzt nur die eingegebenen Preise zurück, nicht das LV selbst.
+  // Requires an explicit confirm because it's irreversible. recalcAll keeps the
+  // stored EP/GP consistent immediately; the debounced auto-save persists it.
+  const resetAllPrices = useCallback(() => {
+    if (!data) return;
+    const resettable = data.positions.filter((p) => !p.isHeader).length;
+    if (resettable === 0) {
+      toast('Keine Positionen zum Zurücksetzen vorhanden.');
+      return;
+    }
+    if (
+      typeof window !== 'undefined' &&
+      !window.confirm(
+        `Alle Preise von ${resettable} ${resettable === 1 ? 'Position' : 'Positionen'} auf 0 € zurücksetzen? ` +
+          'Material, Zeit, NU und Geräte-Sätze werden geleert. Mengen und Texte bleiben erhalten. ' +
+          'Diese Aktion lässt sich nicht rückgängig machen.',
+      )
+    ) {
+      return;
+    }
+    const cleared = data.positions.map((p) =>
+      p.isHeader
+        ? p
+        : {
+            ...p,
+            materialCost: 0,
+            timeMinutes: 0,
+            nuCost: 0,
+            geraeteSatz: undefined,
+            materialFormula: undefined,
+            timeMinutesFormula: undefined,
+            nuFormula: undefined,
+            preCalcs: undefined,
+          },
+    );
+    updatePositions(recalcAll(cleared, data.calcParams));
+    toast.success(
+      `Alle Preise zurückgesetzt — ${resettable} ${resettable === 1 ? 'Position' : 'Positionen'} auf 0 €.`,
+    );
+  }, [data, updatePositions]);
+
   async function snapshotVersion() {
     if (!data) return;
     try {
@@ -342,6 +388,7 @@ export default function ProjectDetail() {
             hasMultipleSnapshots={project.shares.filter((s) => !s.revokedAt).length >= 2}
             onValidate={() => setShowSubmit(true)}
             onDiff={() => setShowDiff(true)}
+            onReset={resetAllPrices}
           />
           <button
             onClick={() => setShowImport(true)}
@@ -586,11 +633,13 @@ export function ToolsMenu({
   hasMultipleSnapshots,
   onValidate,
   onDiff,
+  onReset,
 }: {
   projectId: string;
   hasMultipleSnapshots: boolean;
   onValidate: () => void;
   onDiff: () => void;
+  onReset: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -622,7 +671,7 @@ export function ToolsMenu({
           'btn btn-secondary flex items-center gap-2',
           open && 'bg-primary-50 text-primary-700 border-primary-200 dark:bg-primary-500/10 dark:text-primary-100',
         )}
-        title="EFB · Nachkalk · Preisspiegel · Validieren · Vergleichen"
+        title="EFB · Nachkalk · Preisspiegel · Validieren · Vergleichen · Preise zurücksetzen"
       >
         <Wrench className="w-4 h-4" />
         Werkzeuge
@@ -674,6 +723,17 @@ export function ToolsMenu({
               onDiff();
             }}
           />
+          <div className="border-t border-slate-100 dark:border-slate-800" />
+          <MenuButton
+            icon={Eraser}
+            label="Preise zurücksetzen"
+            sub="Alle Positionen auf 0 € — nicht umkehrbar"
+            danger
+            onClick={() => {
+              setOpen(false);
+              onReset();
+            }}
+          />
         </div>
       )}
     </div>
@@ -715,12 +775,14 @@ function MenuButton({
   sub,
   onClick,
   disabled,
+  danger,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   sub: string;
   onClick: () => void;
   disabled?: boolean;
+  danger?: boolean;
 }) {
   return (
     <button
@@ -728,11 +790,28 @@ function MenuButton({
       onClick={onClick}
       disabled={disabled}
       role="menuitem"
-      className="w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+      className={clsx(
+        'w-full flex items-start gap-3 px-3 py-2.5 text-left transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent',
+        danger
+          ? 'hover:bg-red-50 dark:hover:bg-red-950/30'
+          : 'hover:bg-slate-50 dark:hover:bg-slate-800',
+      )}
     >
-      <Icon className="w-4 h-4 mt-0.5 text-primary-600 dark:text-primary-300 flex-shrink-0" />
+      <Icon
+        className={clsx(
+          'w-4 h-4 mt-0.5 flex-shrink-0',
+          danger ? 'text-red-600 dark:text-red-400' : 'text-primary-600 dark:text-primary-300',
+        )}
+      />
       <div className="min-w-0">
-        <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{label}</p>
+        <p
+          className={clsx(
+            'text-sm font-semibold',
+            danger ? 'text-red-700 dark:text-red-300' : 'text-slate-800 dark:text-slate-100',
+          )}
+        >
+          {label}
+        </p>
         <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{sub}</p>
       </div>
     </button>
