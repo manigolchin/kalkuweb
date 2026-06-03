@@ -16,9 +16,72 @@ import {
 import { calcTotals, calculatePosition, formatEUR } from './calc';
 import { api } from '@/lib/api';
 
+function formatDeadline(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: 'long', year: 'numeric' });
+  } catch {
+    return iso;
+  }
+}
+
+/**
+ * Professional cover note for the calculation, modeled on the calculators'
+ * own WhatsApp/E-Mail style. The calculator inserts it with one click and then
+ * edits as needed (tone, the gelb-markiert position numbers, the Rückmeldung
+ * time). The Angebote-folder link is appended verbatim when the project carries
+ * one — ShareView renders the message with newlines preserved and URLs clickable.
+ */
+function buildCoverNote(opts: {
+  projectName: string;
+  customerName?: string;
+  mitarbeiter: number;
+  deadline?: string;
+  angeboteFolderUrl?: string;
+}): string {
+  const greeting = opts.customerName?.trim() ? `Hallo ${opts.customerName.trim()},` : 'Hallo,';
+  const ma = opts.mitarbeiter > 0 ? opts.mitarbeiter : 3;
+  const lines = [
+    greeting,
+    '',
+    `im Folgenden erhältst du die Kalkulation zum Projekt „${opts.projectName || 'Bauleistung'}".`,
+    '',
+    'Bitte prüfe insbesondere die markierten Positionen.',
+    '',
+    'Wir haben dir die Kalkulation mit verschiedenen Stundensätzen sowie unterschiedlichen Zuschlägen erstellt.',
+    '',
+    `Wir sind in allen Versionen von ${ma} Mitarbeitern ausgegangen.`,
+    '',
+    'Eine genaue Ausführungsfrist wurde hier nicht festgelegt.',
+    '',
+    'In der Kostenaufschlüsselung siehst du, mit welchen Materialpreisen wir je Position gerechnet haben.',
+    '',
+    'Wenn dir eine unserer Varianten zusagt, bestätige uns diese bitte als Rückmeldung.',
+    '',
+    'Solltest du einen anderen Stundensatz oder andere Zuschläge wünschen, teile uns dies gerne mit.',
+    '',
+    'Bitte gib uns deine finale Rückmeldung bis spätestens morgen früh, 09:00 Uhr.',
+  ];
+  if (opts.deadline) {
+    const d = formatDeadline(opts.deadline);
+    if (d) lines.push('', `Abgabetermin der Submission: ${d}.`);
+  }
+  if (opts.angeboteFolderUrl?.trim()) {
+    lines.push(
+      '',
+      'Die Angebote, die wir erhalten haben, kannst du über folgenden Link einsehen:',
+      opts.angeboteFolderUrl.trim(),
+    );
+  }
+  return lines.join('\n');
+}
+
 type Props = {
   projectId: string;
   projectName: string;
+  /** Abgabedatum (ISO) — used by the cover-note template. */
+  deadline?: string;
+  /** SharePoint-Link zum „04_Angebote"-Ordner — appended to the template. */
+  angeboteFolderUrl?: string;
   positions: Position[];
   calcParams: import('./types').CalcParams;
   existingShares: ShareSummary[];
@@ -31,6 +94,8 @@ type Props = {
 export default function ShareDialog({
   projectId,
   projectName,
+  deadline,
+  angeboteFolderUrl,
   positions,
   calcParams,
   existingShares,
@@ -477,17 +542,45 @@ export default function ShareDialog({
                     />
                   </label>
                 </div>
-                <label className="block mt-3">
-                  <span className="text-xs font-medium text-slate-600">
-                    Begrüßung für den Kunden (optional)
-                  </span>
+                <div className="mt-3">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="text-xs font-medium text-slate-600">
+                      Begrüßung für den Kunden (optional)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSettings({
+                          ...settings,
+                          message: buildCoverNote({
+                            projectName,
+                            customerName: settings.customerName,
+                            mitarbeiter: calcParams.personaleinsatz,
+                            deadline,
+                            angeboteFolderUrl,
+                          }),
+                        })
+                      }
+                      className="text-xs font-medium text-primary-600 hover:text-primary-700 inline-flex items-center gap-1"
+                      title="Professionelle Begrüßung einfügen (danach frei bearbeitbar)"
+                    >
+                      <FilePlus className="w-3.5 h-3.5" />
+                      Vorlage einfügen
+                    </button>
+                  </div>
                   <textarea
-                    className="mt-1 input min-h-[60px] resize-y"
+                    className="input min-h-[120px] resize-y"
                     placeholder="Sehr geehrte Familie Schmidt, anbei das Angebot für Ihren Umbau …"
                     value={settings.message || ''}
                     onChange={(e) => setSettings({ ...settings, message: e.target.value })}
                   />
-                </label>
+                  {!angeboteFolderUrl && (
+                    <span className="text-[10px] text-slate-400 mt-1 block">
+                      Tipp: Hinterlege den Angebote-Ordner-Link in den Projekt-Stellschrauben, dann
+                      fügt die Vorlage ihn automatisch ein.
+                    </span>
+                  )}
+                </div>
               </section>
 
               <section>

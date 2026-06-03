@@ -432,8 +432,8 @@ export default function ShareView() {
 
           {settings.message && (
             <div className="mt-5 pt-5 border-t border-slate-100">
-              <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
-                {settings.message}
+              <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap break-words">
+                <LinkifiedText text={settings.message} />
               </p>
             </div>
           )}
@@ -1324,4 +1324,34 @@ function formatDate(iso: string): string {
 
 function formatDateLong(d: Date): string {
   return d.toLocaleDateString('de-DE', { day: '2-digit', month: 'long', year: 'numeric' });
+}
+
+/**
+ * Render text with http(s) URLs turned into safe clickable links. Splits on a
+ * capturing URL regex (odd indices are the matched URLs) and renders plain
+ * strings + <a> elements — no dangerouslySetInnerHTML, so the customer's
+ * greeting can't inject markup. External links get rel="noopener noreferrer"
+ * (reverse-tabnabbing guard) + target="_blank".
+ */
+function LinkifiedText({ text }: { text: string }) {
+  const parts = text.split(/(https?:\/\/[^\s]+)/);
+  return (
+    <>
+      {parts.map((part, i) =>
+        i % 2 === 1 ? (
+          <a
+            key={i}
+            href={part}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary-600 underline decoration-primary-300 underline-offset-2 break-all hover:text-primary-700"
+          >
+            {part}
+          </a>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  );
 }

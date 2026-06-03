@@ -181,6 +181,11 @@ export type ProjectData = {
   calcParams: CalcParams;
   positions: Position[];
   notes?: string;
+  /** SharePoint-Link zum „04_Angebote"-Ordner dieser Ausschreibung (die
+   *  eingegangenen Lieferanten-/Subunternehmer-Angebote). Vom Kalkulator
+   *  eingefügt; die Share-Vorlage übernimmt ihn in die Kunden-Begrüßung,
+   *  damit der Kunde die Angebote einsehen kann. */
+  angeboteFolderUrl?: string;
   /** Round 4 PART P — full-fidelity capture (all optional for back-compat
    *  with projects created pre-Round-4 that don't have these fields). */
   zuschlagOriginal?: ZuschlagMatrix;

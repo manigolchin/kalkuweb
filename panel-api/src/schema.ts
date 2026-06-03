@@ -358,6 +358,9 @@ export type ProjectData = {
   calcParams: CalcParams;
   positions: Position[];
   notes?: string;
+  /** SharePoint-Link zum „04_Angebote"-Ordner der Ausschreibung. Optional;
+   *  round-trips via the projectData passthrough schema. */
+  angeboteFolderUrl?: string;
 };
 
 export type ShareSettings = {

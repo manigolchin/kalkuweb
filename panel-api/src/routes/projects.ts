@@ -199,6 +199,7 @@ export const projectsRoute = new Hono<{ Variables: AuthVariables }>()
       calcParams: { ...DEFAULT_CALC_PARAMS, ...(body.calcParams || {}) },
       positions: body.positions || [],
       notes: body.notes,
+      angeboteFolderUrl: body.angeboteFolderUrl,
     };
     await db.insert(projects).values({
       id,

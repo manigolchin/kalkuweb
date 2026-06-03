@@ -490,6 +490,8 @@ export default function ProjectDetail() {
         <ShareDialog
           projectId={project.id}
           projectName={data.name}
+          deadline={data.deadline}
+          angeboteFolderUrl={data.angeboteFolderUrl}
           positions={data.positions}
           calcParams={data.calcParams}
           existingShares={project.shares}
@@ -1118,6 +1120,23 @@ function SettingsPanel({
           type="date"
         />
       </div>
+
+      <label className="block mt-3">
+        <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
+          Angebote-Ordner (SharePoint-Link)
+        </span>
+        <input
+          type="url"
+          value={meta.angeboteFolderUrl || ''}
+          onChange={(e) => onMeta({ angeboteFolderUrl: e.target.value })}
+          placeholder="https://…sharepoint.com/…/04_Angebote"
+          className="mt-1 input text-sm font-mono"
+        />
+        <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 block">
+          Link zum „04_Angebote"-Ordner der Ausschreibung — wird über „Vorlage einfügen" in die
+          Kunden-Begrüßung übernommen, damit der Kunde die eingegangenen Angebote einsehen kann.
+        </span>
+      </label>
 
       <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 sm:grid-cols-5 gap-3">
         <NumField
