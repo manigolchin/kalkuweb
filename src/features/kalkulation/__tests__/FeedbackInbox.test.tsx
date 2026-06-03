@@ -159,7 +159,7 @@ beforeEach(() => {
 /* ── Master list rendering ────────────────────────────────────────── */
 
 describe('FeedbackInbox — master list', () => {
-  test('renders one list item per entry showing the company = project.bidder', async () => {
+  test('renders a company group header per Firma (company = project.bidder)', async () => {
     inboxListMock.mockResolvedValueOnce(
       listPayload([
         buildEntry({ share: { id: 's1' } as InboxEntry['share'], project: { bidder: 'Alpha Bau GmbH' } as InboxEntry['project'] }),
@@ -202,6 +202,83 @@ describe('FeedbackInbox — master list', () => {
     renderInbox();
     await waitFor(() => expect(screen.getByText('Visible GmbH')).toBeDefined());
     expect(document.querySelectorAll('button[aria-current]').length).toBe(1);
+  });
+});
+
+/* ── Company grouping + Firma resolution ──────────────────────────── */
+
+describe('FeedbackInbox — company grouping', () => {
+  test('threads with the same bidder collapse under one company header', async () => {
+    inboxListMock.mockResolvedValueOnce(
+      listPayload([
+        buildEntry({ share: { id: 's1' } as InboxEntry['share'], project: { name: 'Projekt Eins', bidder: 'Same GmbH' } as InboxEntry['project'] }),
+        buildEntry({ share: { id: 's2' } as InboxEntry['share'], project: { name: 'Projekt Zwei', bidder: 'Same GmbH' } as InboxEntry['project'] }),
+        buildEntry({ share: { id: 's3' } as InboxEntry['share'], project: { name: 'Projekt Drei', bidder: 'Andere GmbH' } as InboxEntry['project'] }),
+      ]),
+    );
+    renderInbox();
+    await waitFor(() => expect(screen.getByText('Same GmbH')).toBeDefined());
+    // Company shown ONCE (the group header), not repeated per thread row.
+    expect(screen.getAllByText('Same GmbH').length).toBe(1);
+    // Header carries the offer count.
+    expect(screen.getByText('2 Angebote')).toBeDefined();
+    // 3 thread rows across 2 groups.
+    expect(document.querySelectorAll('button[aria-current]').length).toBe(3);
+  });
+
+  test('collapsing a company header hides its threads', async () => {
+    inboxListMock.mockResolvedValueOnce(
+      listPayload([
+        buildEntry({ share: { id: 's1' } as InboxEntry['share'], project: { name: 'Sichtbar A', bidder: 'Klapp GmbH' } as InboxEntry['project'] }),
+        buildEntry({ share: { id: 's2' } as InboxEntry['share'], project: { name: 'Sichtbar B', bidder: 'Klapp GmbH' } as InboxEntry['project'] }),
+      ]),
+    );
+    renderInbox();
+    await waitFor(() => expect(screen.getByText('Sichtbar A')).toBeDefined());
+    expect(document.querySelectorAll('button[aria-current]').length).toBe(2);
+    // The group header is the only button whose name carries the company.
+    fireEvent.click(screen.getByRole('button', { name: /Klapp GmbH/ }));
+    expect(document.querySelectorAll('button[aria-current]').length).toBe(0);
+    expect(screen.getByText('Klapp GmbH')).toBeDefined(); // header stays visible
+  });
+
+  test('resolves the Firma from the share recipient when bidder is empty', async () => {
+    inboxListMock.mockResolvedValueOnce(
+      listPayload([
+        buildEntry({
+          share: {
+            id: 's1',
+            settings: {
+              brandHeader: 'minimal',
+              allowApproval: true,
+              allowChangeRequests: true,
+              showTotals: true,
+              showMwst: true,
+              customerName: 'Empfänger Bau GmbH',
+            },
+          } as InboxEntry['share'],
+          project: { bidder: '', client: '' } as InboxEntry['project'],
+        }),
+      ]),
+    );
+    renderInbox();
+    await waitFor(() => expect(screen.getByText('Empfänger Bau GmbH')).toBeDefined());
+    expect(screen.queryByText('Unbekannte Firma')).toBeNull();
+  });
+
+  test('resolves the Firma from a responder name when bidder + recipient are empty', async () => {
+    inboxListMock.mockResolvedValueOnce(
+      listPayload([
+        buildEntry({
+          share: { id: 's1' } as InboxEntry['share'],
+          project: { bidder: '', client: '' } as InboxEntry['project'],
+          responses: [buildResponse({ responseType: 'approve', customerName: 'Antwort Bau GmbH' })],
+        }),
+      ]),
+    );
+    renderInbox();
+    await waitFor(() => expect(screen.getByText('Antwort Bau GmbH')).toBeDefined());
+    expect(screen.queryByText('Unbekannte Firma')).toBeNull();
   });
 });
 
@@ -323,7 +400,8 @@ describe('FeedbackInbox — detail pane', () => {
     );
     renderInbox();
     await waitFor(() => expect(screen.getByText('Detail Bau GmbH')).toBeDefined());
-    fireEvent.click(screen.getByRole('button', { name: /Detail Bau GmbH/ }));
+    // The company is the group header; open the thread by its project name.
+    fireEvent.click(screen.getByRole('button', { name: /Neubau Kita/ }));
 
     // Project link → /panel/kalkulation/:id
     await waitFor(() => {
@@ -358,7 +436,7 @@ describe('FeedbackInbox — detail pane', () => {
     );
     renderInbox();
     await waitFor(() => expect(screen.getByText('Gesellchen GmbH')).toBeDefined());
-    fireEvent.click(screen.getByRole('button', { name: /Gesellchen GmbH/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Sanierung Marktplatz/ }));
 
     // OZ + shortText are detail-only (the list snippet shows just the change
     // text). The change text shows in BOTH the list snippet and the detail
@@ -393,7 +471,7 @@ describe('FeedbackInbox — detail pane', () => {
     );
     renderInbox();
     await waitFor(() => expect(screen.getByText('Gesellchen GmbH')).toBeDefined());
-    fireEvent.click(screen.getByRole('button', { name: /Gesellchen GmbH/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Sanierung Marktplatz/ }));
 
     for (const [, label] of intents) {
       await waitFor(() => expect(screen.getByText(label)).toBeDefined());
@@ -409,7 +487,7 @@ describe('FeedbackInbox — detail pane', () => {
     );
     renderInbox();
     await waitFor(() => expect(screen.getByText('Gesellchen GmbH')).toBeDefined());
-    fireEvent.click(screen.getByRole('button', { name: /Gesellchen GmbH/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Sanierung Marktplatz/ }));
     await waitFor(() => expect(screen.getByText('Angebot angenommen')).toBeDefined());
   });
 });
@@ -582,7 +660,10 @@ describe('FeedbackInbox — "neu" marker', () => {
     );
     renderInbox();
     await waitFor(() => expect(screen.getByText('Neu GmbH')).toBeDefined());
-    expect(screen.getByText('1 neu')).toBeDefined();
+    // The page-header counter and a group's unread badge can both read "1 neu";
+    // assert the page-header counter specifically (it lives in the banner).
+    const banner = screen.getByRole('banner');
+    expect(within(banner).getByText('1 neu')).toBeDefined();
   });
 
   test('NO "neu" counter when all activity is older than viewerLastSeenAt', async () => {

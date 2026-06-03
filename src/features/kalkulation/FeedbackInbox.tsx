@@ -1,13 +1,19 @@
 /**
  * Kunden-Feedback — professional master-detail inbox.
  *
- * Left: a scannable list of feedback threads, one per shared Angebot, grouped
- * by the COMPANY (Firma = project.bidder) the offer belongs to, with status,
- * unread ("neu") markers, and search/type filters.
+ * Left: feedback threads (one per shared Angebot) collected into collapsible
+ * COMPANY (Firma) groups — every offer for the same Bauunternehmer sits under
+ * one header (avatar + name + offer count + unread badge) so the list stays
+ * tidy even when a firm has several shares. Per thread: project, status,
+ * unread ("neu") marker, change/comment counts; plus search/type filters.
  *
  * Right: the selected thread's full activity — approvals/changes/rejections
  * plus per-position comments — each change/comment resolved to WHICH position
  * (OZ + short text) so the calculator instantly sees what the customer touched.
+ *
+ * The Firma is resolved best-effort (project.bidder → the share's recipient
+ * name → a responder's name → the Auftraggeber) so far fewer threads fall
+ * back to the generic "Unbekannte Firma" bucket.
  *
  * Data: api.inbox.list() (see panel-api/src/routes/inbox.ts). Deep-link
  * /panel/feedback?oz=<OZ> auto-selects the thread containing that position.
@@ -32,6 +38,7 @@ import {
   Hash,
   Clock,
   ChevronRight,
+  ChevronDown,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -78,8 +85,66 @@ function initials(name: string): string {
   return (words[0] ?? cleaned).slice(0, 2).toUpperCase() || '–';
 }
 
+/**
+ * Resolve WHICH FIRMA an offer belongs to, best-effort so the list rarely
+ * shows the generic fallback:
+ *   1. project.bidder        — the Bauunternehmer the calc was made for
+ *   2. share recipient name  — whom the calculator addressed the share to
+ *   3. a responder's name    — whoever signed an approval / change request
+ *   4. project.client        — the Auftraggeber (last resort, not the bidder)
+ */
 function companyOf(entry: InboxEntry): string {
-  return entry.project?.bidder?.trim() || entry.project?.client?.trim() || 'Unbekannte Firma';
+  const bidder = entry.project?.bidder?.trim();
+  if (bidder) return bidder;
+  const recipient = entry.share.settings.customerName?.trim();
+  if (recipient) return recipient;
+  const responder = entry.responses.find((r) => r.customerName?.trim())?.customerName?.trim();
+  if (responder) return responder;
+  const client = entry.project?.client?.trim();
+  if (client) return client;
+  return 'Unbekannte Firma';
+}
+
+/* ── Company grouping for the master list ──────────────────────────── */
+type CompanyGroupData = {
+  /** Stable map key — lowercased company name, or the unknown sentinel. */
+  key: string;
+  company: string;
+  threads: InboxEntry[];
+  /** Most-recent activity across the group's threads (sort key). */
+  lastTs: number;
+  /** How many of the group's threads have unread activity. */
+  unread: number;
+  isUnknown: boolean;
+};
+
+const UNKNOWN_GROUP_KEY = '__unknown__';
+
+/** Bucket the (already recency-sorted) threads by Firma. Known companies are
+ *  ordered by most-recent activity; the "Unbekannte Firma" bucket sinks last. */
+function groupByCompany(
+  threads: InboxEntry[],
+  meta: Map<string, ThreadMeta>,
+): CompanyGroupData[] {
+  const map = new Map<string, CompanyGroupData>();
+  for (const e of threads) {
+    const company = companyOf(e);
+    const isUnknown = company === 'Unbekannte Firma';
+    const key = isUnknown ? UNKNOWN_GROUP_KEY : company.toLowerCase();
+    let g = map.get(key);
+    if (!g) {
+      g = { key, company, threads: [], lastTs: 0, unread: 0, isUnknown };
+      map.set(key, g);
+    }
+    g.threads.push(e);
+    const tm = meta.get(e.share.id)!;
+    if (tm.lastTs > g.lastTs) g.lastTs = tm.lastTs;
+    if (tm.hasUnread) g.unread += 1;
+  }
+  return [...map.values()].sort((a, b) => {
+    if (a.isUnknown !== b.isUnknown) return a.isUnknown ? 1 : -1;
+    return b.lastTs - a.lastTs;
+  });
 }
 
 /* ── Per-thread derived metadata ───────────────────────────────────── */
@@ -143,6 +208,7 @@ export default function FeedbackInbox() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<FilterId>('all');
   const [unreadOnly, setUnreadOnly] = useState(false);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [searchParams, setSearchParams] = useSearchParams();
   const ozParam = searchParams.get('oz');
   const handledOz = useRef<string | null>(null);
@@ -232,6 +298,17 @@ export default function FeedbackInbox() {
     [entries, selectedId],
   );
 
+  const groups = useMemo(() => groupByCompany(threads, meta), [threads, meta]);
+
+  function toggleGroup(key: string) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
   const totalUnread = useMemo(
     () => [...meta.values()].filter((m) => m.hasUnread).length,
     [meta],
@@ -259,7 +336,7 @@ export default function FeedbackInbox() {
           <div>
             <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Kunden-Feedback</h1>
             <p className="text-sm text-slate-500 dark:text-slate-400">
-              Rückmeldungen aller geteilten Angebote — nach Firma sortiert.
+              Rückmeldungen aller geteilten Angebote — nach Firma gruppiert.
               {totalUnread > 0 && (
                 <span className="ml-1 font-medium text-primary-600 dark:text-primary-300">
                   {totalUnread} neu
@@ -342,24 +419,30 @@ export default function FeedbackInbox() {
 
             <p className="text-xs text-slate-400 dark:text-slate-500">
               {threads.length} {threads.length === 1 ? 'Eintrag' : 'Einträge'}
+              {groups.length > 0 && (
+                <> · {groups.length} {groups.length === 1 ? 'Firma' : 'Firmen'}</>
+              )}
             </p>
 
-            <ul className="space-y-2 overflow-y-auto pr-0.5 lg:max-h-[calc(100vh-18rem)]">
-              {threads.length === 0 && (
-                <li className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-400 dark:border-slate-800">
+            <div className="space-y-2.5 overflow-y-auto pr-0.5 lg:max-h-[calc(100vh-18rem)]">
+              {groups.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-400 dark:border-slate-800">
                   Keine Rückmeldung passt zu Suche und Filter.
-                </li>
+                </div>
+              ) : (
+                groups.map((g) => (
+                  <CompanyGroup
+                    key={g.key}
+                    group={g}
+                    collapsed={collapsed.has(g.key)}
+                    onToggle={() => toggleGroup(g.key)}
+                    meta={meta}
+                    selectedId={selectedId}
+                    onSelect={setSelectedId}
+                  />
+                ))
               )}
-              {threads.map((e) => (
-                <ThreadListItem
-                  key={e.share.id}
-                  entry={e}
-                  meta={meta.get(e.share.id)!}
-                  selected={e.share.id === selectedId}
-                  onSelect={() => setSelectedId(e.share.id)}
-                />
-              ))}
-            </ul>
+            </div>
           </div>
 
           {/* ── Detail ── */}
@@ -394,6 +477,85 @@ export default function FeedbackInbox() {
 
 /* ────────────────────────────────────────────────────────────────── */
 
+/** One Firma section: a header (avatar + name + offer count + unread badge)
+ *  that collapses, over the firm's threads. Company is shown ONCE here so the
+ *  thread rows below can stay focused on the project + its status. */
+function CompanyGroup({
+  group,
+  collapsed,
+  onToggle,
+  meta,
+  selectedId,
+  onSelect,
+}: {
+  group: CompanyGroupData;
+  collapsed: boolean;
+  onToggle: () => void;
+  meta: Map<string, ThreadMeta>;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={!collapsed}
+        className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
+      >
+        <span
+          aria-hidden
+          className={clsx(
+            'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xs font-bold',
+            tintFor(group.company),
+          )}
+        >
+          {initials(group.company)}
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="inline-flex items-center gap-1.5">
+            <Building2 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+            <span
+              className={clsx(
+                'truncate font-semibold',
+                group.isUnknown
+                  ? 'italic text-slate-500 dark:text-slate-400'
+                  : 'text-slate-900 dark:text-slate-100',
+              )}
+            >
+              {group.company}
+            </span>
+          </span>
+          <span className="pl-5 text-xs text-slate-400 dark:text-slate-500">
+            {group.threads.length} {group.threads.length === 1 ? 'Angebot' : 'Angebote'}
+          </span>
+        </span>
+        {group.unread > 0 && (
+          <span className="inline-flex shrink-0 items-center rounded-full bg-primary-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-600 dark:bg-primary-500/15 dark:text-primary-300">
+            {group.unread} neu
+          </span>
+        )}
+        <ChevronDown
+          className={clsx('h-4 w-4 shrink-0 text-slate-400 transition-transform', collapsed && '-rotate-90')}
+        />
+      </button>
+      {!collapsed && (
+        <ul className="space-y-1.5 border-t border-slate-100 p-2 dark:border-slate-800/80">
+          {group.threads.map((e) => (
+            <ThreadListItem
+              key={e.share.id}
+              entry={e}
+              meta={meta.get(e.share.id)!}
+              selected={e.share.id === selectedId}
+              onSelect={() => onSelect(e.share.id)}
+            />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 function ThreadListItem({
   entry,
   meta,
@@ -405,7 +567,6 @@ function ThreadListItem({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const company = companyOf(entry);
   const summary = buildSnippet(entry);
   return (
     <li>
@@ -414,25 +575,18 @@ function ThreadListItem({
         onClick={onSelect}
         aria-current={selected}
         className={clsx(
-          'w-full rounded-xl border p-3 text-left transition-colors',
+          'w-full rounded-xl border px-3 py-2.5 text-left transition-colors',
           selected
             ? 'border-primary-300 bg-primary-50 ring-1 ring-primary-300 dark:border-primary-500/50 dark:bg-primary-500/10 dark:ring-primary-500/40'
             : 'border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800/50',
         )}
       >
-        <div className="flex items-start gap-3">
-          <span
-            aria-hidden
-            className={clsx(
-              'mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xs font-bold',
-              tintFor(company),
-            )}
-          >
-            {initials(company)}
-          </span>
+        <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="truncate font-semibold text-slate-900 dark:text-slate-100">{company}</span>
+              <span className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">
+                {entry.project?.name || 'Unbenanntes Projekt'}
+              </span>
               {meta.hasUnread && (
                 <span className="h-2 w-2 shrink-0 rounded-full bg-primary-500" title="Neu seit Ihrem letzten Besuch" />
               )}
@@ -440,9 +594,6 @@ function ThreadListItem({
                 {fmtRelative(new Date(meta.lastTs).toISOString())}
               </time>
             </div>
-            <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-              {entry.project?.name || 'Unbenanntes Projekt'}
-            </p>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               <StatusPill status={meta.status} />
               {meta.changeCount > 0 && (
@@ -454,7 +605,7 @@ function ThreadListItem({
             </div>
             {summary && <p className="mt-1.5 line-clamp-1 text-xs italic text-slate-400 dark:text-slate-500">{summary}</p>}
           </div>
-          <ChevronRight className="mt-2 hidden h-4 w-4 shrink-0 text-slate-300 lg:block dark:text-slate-600" />
+          <ChevronRight className="mt-1 hidden h-4 w-4 shrink-0 text-slate-300 lg:block dark:text-slate-600" />
         </div>
       </button>
     </li>
