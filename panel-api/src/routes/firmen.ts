@@ -581,11 +581,12 @@ export const firmenRoute = new Hono<{ Variables: AuthVariables }>()
       return c.json({ error: 'integration_disabled' }, 503);
     }
     try {
-      const positions = await getProjectPositions(projectId);
+      const result = await getProjectPositions(projectId);
       return c.json({
         projectId,
-        count: positions.length,
-        positions,
+        count: result.positions.length,
+        positions: result.positions,
+        angeboteFolderShareUrl: result.angeboteFolderShareUrl,
       });
     } catch (err) {
       const { status, body } = handleUpstreamError(err);

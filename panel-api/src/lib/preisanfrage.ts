@@ -338,10 +338,15 @@ export async function listManagedProjects(companyId: number, opts?: {
  *  what we need to seed a kalku-website Position[] — calls upstream
  *  `GET /api/projects/{id}` (which includes positions[]) and projects
  *  the shape down to the kalku-website Position fields. */
-export async function getProjectPositions(projectId: number): Promise<PreisanfragePosition[]> {
-  if (isMockMode()) return getMockProjectPositions(projectId);
+export async function getProjectPositions(projectId: number): Promise<{
+  positions: PreisanfragePosition[];
+  /** Real "anyone-with-link" share URL to the project's 04_Angebote folder,
+   *  minted lazily by preisanfrage on this detail fetch. Null if unavailable. */
+  angeboteFolderShareUrl: string | null;
+}> {
+  if (isMockMode()) return { positions: getMockProjectPositions(projectId), angeboteFolderShareUrl: null };
   const key = `positions:${projectId}`;
-  const hit = cached<PreisanfragePosition[]>(key);
+  const hit = cached<{ positions: PreisanfragePosition[]; angeboteFolderShareUrl: string | null }>(key);
   if (hit) return hit;
   type RawPos = {
     oz: string;
@@ -351,7 +356,7 @@ export async function getProjectPositions(projectId: number): Promise<Preisanfra
     unit: string;
     page_number?: number | null;
   };
-  type RawProject = { positions: RawPos[] };
+  type RawProject = { positions: RawPos[]; angebote_folder_share_url?: string | null };
   const raw = await call<RawProject>(`/api/projects/${projectId}`);
   const rows = (raw.positions ?? []).map((p) => ({
     oz: p.oz ?? '',
@@ -365,7 +370,7 @@ export async function getProjectPositions(projectId: number): Promise<Preisanfra
     isHeader: !p.quantity || !p.unit,
     pageNumber: p.page_number ?? null,
   }));
-  return cache(key, rows);
+  return cache(key, { positions: rows, angeboteFolderShareUrl: raw.angebote_folder_share_url ?? null });
 }
 
 export async function listExternalProjects(externalFirmaId: number): Promise<PreisanfrageExternalProject[]> {

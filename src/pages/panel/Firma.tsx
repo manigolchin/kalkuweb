@@ -759,9 +759,13 @@ function ProjectsCard({
       // have positions in preisanfrage yet, so we leave positions empty
       // and let the calculator upload the GAEB manually.
       const seededPositions: NonNullable<Parameters<typeof api.projects.create>[0]['positions']> = [];
+      // Real "anyone-with-link" 04_Angebote share URL minted by preisanfrage on
+      // the detail fetch — preferred over the derived internal path below.
+      let angeboteFolderShareUrl: string | null = null;
       if (p.source === 'managed') {
         try {
           const res = await api.firmen.projectPositions(firmaKind, firmaId, p.id);
+          angeboteFolderShareUrl = res.angeboteFolderShareUrl ?? null;
           // The route validates (kind, firmaId, projectId) and then asks
           // preisanfrage for the GAEB-parsed positions. project_id is the
           // upstream's globally-unique id; firmaId is kept in the URL for
@@ -835,9 +839,10 @@ function ProjectsCard({
         },
         positions: seededPositions,
         notes: `Aus preisanfrage importiert — Firma: ${firmaDisplayName} (${firmaKind}), Ref: ${p.source}:${p.id}`,
-        // Auto-fill the „04_Angebote"-Ordner link from the project's OneDrive
-        // folder so the calculator can expose it to the customer with one toggle.
-        angeboteFolderUrl: deriveAngeboteFolderUrl(p.oneDriveShareUrl),
+        // Prefer the real "anyone-with-link" share URL preisanfrage minted for the
+        // 04_Angebote folder; fall back to deriving an internal path from the
+        // OneDrive URL (used in mock mode / before preisanfrage has the link).
+        angeboteFolderUrl: angeboteFolderShareUrl ?? deriveAngeboteFolderUrl(p.oneDriveShareUrl),
       });
       const seededN = seededPositions.length;
       toast.success(

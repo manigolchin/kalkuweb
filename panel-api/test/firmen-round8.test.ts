@@ -139,11 +139,11 @@ test('mock isolation: getProjectPositions returns fresh array each call', async 
   try {
     const { getProjectPositions } = await import('../src/lib/preisanfrage.js');
     const first = await getProjectPositions(1001);
-    first.length = 0;            // wipe the array
-    first.push({ oz: 'EVIL', shortText: 'hax', longText: '', quantity: 0, unit: '', isHeader: false });
+    first.positions.length = 0;            // wipe the array
+    first.positions.push({ oz: 'EVIL', shortText: 'hax', longText: '', quantity: 0, unit: '', isHeader: false });
     const second = await getProjectPositions(1001);
-    assert.ok(second.length > 10, 'second call returns the full fixture, not the mutated array');
-    assert.ok(!second.some((p) => p.oz === 'EVIL'));
+    assert.ok(second.positions.length > 10, 'second call returns the full fixture, not the mutated array');
+    assert.ok(!second.positions.some((p) => p.oz === 'EVIL'));
   } finally {
     if (oldMock === undefined) delete process.env.PREISANFRAGE_MOCK;
     else process.env.PREISANFRAGE_MOCK = oldMock;
@@ -233,13 +233,28 @@ test('getProjectPositions: maps page_number → pageNumber, infers isHeader from
     }),
   );
   const ps = await getProjectPositions(123);
-  assert.equal(ps.length, 2);
-  assert.equal(ps[0].pageNumber, 3);
-  assert.equal(ps[0].isHeader, true, 'no qty + no unit → header inferred');
-  assert.equal(ps[0].longText, '', 'null long_text → empty string');
-  assert.equal(ps[1].pageNumber, 4);
-  assert.equal(ps[1].isHeader, false, 'has qty + unit → not a header');
-  assert.equal(ps[1].longText, 'desc');
+  assert.equal(ps.positions.length, 2);
+  assert.equal(ps.positions[0].pageNumber, 3);
+  assert.equal(ps.positions[0].isHeader, true, 'no qty + no unit → header inferred');
+  assert.equal(ps.positions[0].longText, '', 'null long_text → empty string');
+  assert.equal(ps.positions[1].pageNumber, 4);
+  assert.equal(ps.positions[1].isHeader, false, 'has qty + unit → not a header');
+  assert.equal(ps.positions[1].longText, 'desc');
+  assert.equal(ps.angeboteFolderShareUrl, null, 'no angebote_folder_share_url in response → null');
+});
+
+test('getProjectPositions: maps angebote_folder_share_url → angeboteFolderShareUrl', async () => {
+  const { getProjectPositions, _clearPreisanfrageCache } = await import('../src/lib/preisanfrage.js');
+  _clearPreisanfrageCache();
+  mockFetch(async () =>
+    jsonResponse({
+      positions: [],
+      angebote_folder_share_url: 'https://kalku.sharepoint.com/:f:/s/kt01/abc123',
+    }),
+  );
+  const ps = await getProjectPositions(456);
+  assert.equal(ps.angeboteFolderShareUrl, 'https://kalku.sharepoint.com/:f:/s/kt01/abc123');
+  assert.equal(ps.positions.length, 0);
 });
 
 test('listExternalProjects: maps every snake_case field correctly', async () => {
@@ -452,5 +467,6 @@ test('getProjectPositions: tolerates positions[] absent entirely (returns [])', 
   _clearPreisanfrageCache();
   mockFetch(async () => jsonResponse({ /* no positions field */ }));
   const ps = await getProjectPositions(1);
-  assert.equal(ps.length, 0);
+  assert.equal(ps.positions.length, 0);
+  assert.equal(ps.angeboteFolderShareUrl, null, 'absent angebote url → null');
 });

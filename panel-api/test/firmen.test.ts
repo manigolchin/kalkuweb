@@ -183,14 +183,14 @@ test('preisanfrage MOCK: getProjectPositions returns Ludwigschule rows for Gesel
     const { getProjectPositions, _clearPreisanfrageCache } = await import('../src/lib/preisanfrage.js');
     _clearPreisanfrageCache();
     const ps = await getProjectPositions(1001);
-    assert.ok(ps.length > 10, 'Ludwigschule fixture should have many positions');
+    assert.ok(ps.positions.length > 10, 'Ludwigschule fixture should have many positions');
     // Mobilbauzaun is the position the formula audit was based on — keep it canonical.
-    const mobilbauzaun = ps.find((p) => p.shortText.toLowerCase().includes('mobilbauzaun'));
+    const mobilbauzaun = ps.positions.find((p) => p.shortText.toLowerCase().includes('mobilbauzaun'));
     assert.ok(mobilbauzaun, 'Mobilbauzaun position should be present');
     assert.equal(mobilbauzaun!.unit, 'm');
     assert.equal(mobilbauzaun!.quantity, 100, 'Menge canonical 100 (NOT 100000 like the bug case)');
     // Headers are flagged so the calculator hides EP columns on them.
-    const headers = ps.filter((p) => p.isHeader);
+    const headers = ps.positions.filter((p) => p.isHeader);
     assert.ok(headers.length >= 4, 'expect at least 4 header rows (Baustelle/Gerüst/Abbruch/Sanierung)');
   } finally {
     process.env.PREISANFRAGE_SERVICE_JWT = oldJwt;
@@ -206,7 +206,7 @@ test('preisanfrage MOCK: getProjectPositions returns [] for unknown project id',
     const { getProjectPositions, _clearPreisanfrageCache } = await import('../src/lib/preisanfrage.js');
     _clearPreisanfrageCache();
     const ps = await getProjectPositions(99999);
-    assert.equal(ps.length, 0);
+    assert.equal(ps.positions.length, 0);
   } finally {
     if (oldMock === undefined) delete process.env.PREISANFRAGE_MOCK;
     else process.env.PREISANFRAGE_MOCK = oldMock;

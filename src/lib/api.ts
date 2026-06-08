@@ -389,6 +389,9 @@ export const api = {
           isHeader: boolean;
           pageNumber?: number | null;
         }>;
+        /** Real "anyone-with-link" share URL to the 04_Angebote folder, minted
+         *  by preisanfrage on the detail fetch. Null/absent if unavailable. */
+        angeboteFolderShareUrl?: string | null;
       }>(`/firmen/${kind}/${firmaId}/projects/${projectId}/positions`),
     updateDefaults: (
       kind: 'managed' | 'external',
