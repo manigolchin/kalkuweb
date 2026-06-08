@@ -32,6 +32,17 @@ const createShareSchema = z.object({
     showCostBreakdown: z.boolean().default(true),
     // EINKAUF / Zuschlag / Überschuss + KPIs in the summary. Off = Kurzfassung.
     showCalculation: z.boolean().default(true),
+    // Customer-view button to the „04_Angebote" folder + the frozen link it
+    // opens. The URL is constrained to http(s) HERE so a javascript:/data: URL
+    // can never be persisted and later rendered as a button href in the
+    // customer view (the public route also re-checks before exposing it).
+    showAngebote: z.boolean().optional(),
+    angeboteFolderUrl: z
+      .string()
+      .max(1000)
+      .url()
+      .refine((u) => /^https?:\/\//i.test(u), { message: 'must be http(s)' })
+      .optional(),
     bindefristDays: z.number().int().min(1).max(365).optional(),
     /** PART J: optional gate password. Plaintext over TLS, server hashes
      *  with bcrypt cost 12. Never returned to the client.

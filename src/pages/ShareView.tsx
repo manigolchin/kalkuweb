@@ -28,6 +28,8 @@ import {
   X,
   SlidersHorizontal,
   Plus,
+  FolderOpen,
+  ExternalLink,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api, ApiError } from '@/lib/api';
@@ -499,6 +501,32 @@ export default function ShareView() {
               </p>
             </div>
           )}
+
+          {/* Toggle-gated button to the „04_Angebote" folder. The server only
+              ships angeboteFolderUrl when showAngebote is on + the value is an
+              http(s) URL; the regex here is a defensive second check before we
+              render it as an href. Opens in a new tab (the folder lives on the
+              firm's SharePoint, not in this app). */}
+          {settings.showAngebote &&
+            settings.angeboteFolderUrl &&
+            /^https?:\/\//i.test(settings.angeboteFolderUrl) && (
+              <div className="mt-5 pt-5 border-t border-slate-100">
+                <a
+                  href={settings.angeboteFolderUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-testid="share-angebote-button"
+                  className="inline-flex items-center gap-2 h-10 px-4 rounded-lg border border-primary-200 bg-primary-50 text-sm font-semibold text-primary-700 hover:bg-primary-100 transition-colors"
+                >
+                  <FolderOpen className="w-4 h-4" />
+                  Eingegangene Angebote ansehen
+                  <ExternalLink className="w-3.5 h-3.5 opacity-60" />
+                </a>
+                <p className="text-xs text-slate-400 mt-2">
+                  Öffnet den Ordner mit den eingegangenen Lieferanten-Angeboten in einem neuen Tab.
+                </p>
+              </div>
+            )}
         </div>
 
         {/* Kalkulations-Übersicht — the professional summary block. Gated by

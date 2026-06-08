@@ -313,6 +313,16 @@ export type ShareSettings = {
    *  KPIs in the summary. Optional + treated as `true` when absent. Turn off
    *  for a margin-free "Kurzfassung". */
   showCalculation?: boolean;
+  /** Show a button in the customer view that opens the „04_Angebote"-Ordner
+   *  (the supplier/subcontractor offers behind the prices). Off/absent = no
+   *  button, and the server never ships `angeboteFolderUrl` to the customer. */
+  showAngebote?: boolean;
+  /** SharePoint-Link to this Ausschreibung's „04_Angebote" folder, frozen for
+   *  this share. Only reaches the customer when `showAngebote` is true AND the
+   *  value is an http(s) URL — gated server-side, never trusted from settings
+   *  alone. Must be an "anyone-with-link" share URL or the customer hits a
+   *  Microsoft login wall. */
+  angeboteFolderUrl?: string;
   bindefristDays?: number;
   /** PART H: optional plaintext password set by the calculator at share-create
    *  time. The server hashes it; the client never sees the hash back. The

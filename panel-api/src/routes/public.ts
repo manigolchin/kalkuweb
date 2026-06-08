@@ -366,10 +366,21 @@ export const publicRoute = new Hono()
       };
     }
 
+    // Gate the „04_Angebote" link the same way as the cost data above: the
+    // button only reaches the customer when the calculator turned it on AND the
+    // stored value is a real http(s) URL. When off, strip the URL entirely — it
+    // points at the firm's internal SharePoint and must never ship to a customer
+    // who shouldn't see it. `showAngebote` is normalised to the gated result so
+    // the client can trust the flag without re-deriving it.
+    const angeboteUrl = typeof st.angeboteFolderUrl === 'string' ? st.angeboteFolderUrl : '';
+    const showAngebote = st.showAngebote === true && /^https?:\/\//i.test(angeboteUrl);
+    const outSettings: typeof st = { ...st, showAngebote };
+    if (!showAngebote) delete outSettings.angeboteFolderUrl;
+
     return c.json({
       shareId: share.id,
       token: share.token,
-      settings: share.settings,
+      settings: outSettings,
       snapshotHash: share.snapshotHash,
       snapshottedAt: snapshot.snapshottedAt,
       nachtragNumber: share.nachtragNumber,

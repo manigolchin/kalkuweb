@@ -41,6 +41,20 @@ import { api, ApiError } from '@/lib/api';
 import { formatEUR } from '@/features/kalkulation/calc';
 import { Skeleton } from '@/components/panel/Skeleton';
 
+/** Derive the customer-facing „04_Angebote"-link from a preisanfrage project's
+ *  OneDrive folder URL. That folder is a fixed sibling inside every project
+ *  folder, so we append it to the (trailing-slash-trimmed) base. Only http(s)
+ *  bases qualify — anything else returns undefined so we never seed a bogus
+ *  href. NOTE: the result is an internal SharePoint path; the calculator may
+ *  still need to swap in an "anyone-with-link" share URL before an external
+ *  customer can actually open it (done in the Share-Dialog per share). */
+function deriveAngeboteFolderUrl(oneDriveShareUrl?: string | null): string | undefined {
+  if (!oneDriveShareUrl) return undefined;
+  const base = oneDriveShareUrl.trim().replace(/\/+$/, '');
+  if (!/^https?:\/\//i.test(base)) return undefined;
+  return `${base}/04_Angebote`;
+}
+
 /** Round 11 — status enum for local Ausschreibungen. Keep colors stable so
  *  the panel reads like a Kanban (offen=slate, in-progress=amber, done=blue,
  *  win=green, loss=rose). */
@@ -821,6 +835,9 @@ function ProjectsCard({
         },
         positions: seededPositions,
         notes: `Aus preisanfrage importiert — Firma: ${firmaDisplayName} (${firmaKind}), Ref: ${p.source}:${p.id}`,
+        // Auto-fill the „04_Angebote"-Ordner link from the project's OneDrive
+        // folder so the calculator can expose it to the customer with one toggle.
+        angeboteFolderUrl: deriveAngeboteFolderUrl(p.oneDriveShareUrl),
       });
       const seededN = seededPositions.length;
       toast.success(

@@ -506,6 +506,12 @@ export type ShareSettings = {
    *  KPIs (Mitarbeiter/Stunden/Arbeitstage/Monate) in the summary. Absent =
    *  treated as `true`. Turn off for a margin-free "Kurzfassung". */
   showCalculation?: boolean;
+  /** Show a button in the customer view linking to the „04_Angebote" folder.
+   *  Mirror of the client type. The URL below only reaches the customer when
+   *  this is true AND it is an http(s) URL (gated in routes/public.ts). */
+  showAngebote?: boolean;
+  /** Frozen SharePoint link to this Ausschreibung's „04_Angebote" folder. */
+  angeboteFolderUrl?: string;
   /** Bindefrist in Tagen ab Erstellungs-/Snapshot-Zeit. Default 30, per BGB §§ 145 ff. */
   bindefristDays?: number;
 };

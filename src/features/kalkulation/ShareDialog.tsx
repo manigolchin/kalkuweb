@@ -28,15 +28,15 @@ function formatDeadline(iso: string): string {
  * Professional cover note for the calculation, modeled on the calculators'
  * own WhatsApp/E-Mail style. The calculator inserts it with one click and then
  * edits as needed (tone, the gelb-markiert position numbers, the Rückmeldung
- * time). The Angebote-folder link is appended verbatim when the project carries
- * one — ShareView renders the message with newlines preserved and URLs clickable.
+ * time). The Angebote-folder link is NOT injected here — it reaches the customer
+ * as a dedicated, toggle-gated button so the „showAngebote" setting stays the
+ * single control point (a raw URL in the free-text message would bypass it).
  */
 function buildCoverNote(opts: {
   projectName: string;
   customerName?: string;
   mitarbeiter: number;
   deadline?: string;
-  angeboteFolderUrl?: string;
 }): string {
   const greeting = opts.customerName?.trim() ? `Hallo ${opts.customerName.trim()},` : 'Hallo,';
   const ma = opts.mitarbeiter > 0 ? opts.mitarbeiter : 3;
@@ -64,13 +64,6 @@ function buildCoverNote(opts: {
   if (opts.deadline) {
     const d = formatDeadline(opts.deadline);
     if (d) lines.push('', `Abgabetermin der Submission: ${d}.`);
-  }
-  if (opts.angeboteFolderUrl?.trim()) {
-    lines.push(
-      '',
-      'Die Angebote, die wir erhalten haben, kannst du über folgenden Link einsehen:',
-      opts.angeboteFolderUrl.trim(),
-    );
   }
   return lines.join('\n');
 }
@@ -146,6 +139,10 @@ export default function ShareDialog({
       showTotals: true,
       showMwst: true,
       showLongText: true,
+      // Default on when the project carries an Angebote-folder link (Q3). A
+      // Nachtrag inherits whatever the parent share decided.
+      showAngebote: parentShare?.settings.showAngebote ?? !!angeboteFolderUrl,
+      angeboteFolderUrl: parentShare?.settings.angeboteFolderUrl ?? angeboteFolderUrl ?? '',
     };
     if (parentShare) {
       const created = new Date(parentShare.createdAt).toLocaleDateString('de-DE', {
@@ -557,7 +554,6 @@ export default function ShareDialog({
                             customerName: settings.customerName,
                             mitarbeiter: calcParams.personaleinsatz,
                             deadline,
-                            angeboteFolderUrl,
                           }),
                         })
                       }
@@ -576,8 +572,9 @@ export default function ShareDialog({
                   />
                   {!angeboteFolderUrl && (
                     <span className="text-[10px] text-slate-400 mt-1 block">
-                      Tipp: Hinterlege den Angebote-Ordner-Link in den Projekt-Stellschrauben, dann
-                      fügt die Vorlage ihn automatisch ein.
+                      Tipp: Hinterlege den Angebote-Ordner-Link in den Projekt-Stellschrauben — dann
+                      kannst du ihn dem Kunden weiter unten als Button „Eingegangene Angebote
+                      ansehen" zeigen.
                     </span>
                   )}
                 </div>
@@ -628,7 +625,33 @@ export default function ShareDialog({
                     checked={settings.showCalculation ?? true}
                     onChange={(v) => setSettings({ ...settings, showCalculation: v })}
                   />
+                  <Toggle
+                    label="Angebote-Ordner zeigen"
+                    description="Button zum „04_Angebote“-Ordner (eingegangene Lieferanten-Angebote)."
+                    checked={settings.showAngebote ?? false}
+                    onChange={(v) => setSettings({ ...settings, showAngebote: v })}
+                  />
                 </div>
+                {settings.showAngebote && (
+                  <label className="block mt-3">
+                    <span className="text-xs font-medium text-slate-600">
+                      Angebote-Ordner-Link (für den Button)
+                    </span>
+                    <input
+                      type="url"
+                      data-testid="share-angebote-url-input"
+                      className="mt-1 input text-sm font-mono"
+                      placeholder="https://…sharepoint.com/…/04_Angebote"
+                      value={settings.angeboteFolderUrl || ''}
+                      onChange={(e) => setSettings({ ...settings, angeboteFolderUrl: e.target.value })}
+                    />
+                    <span className="text-[10px] text-slate-400 mt-1 block">
+                      Der Kunde sieht einen Button „Eingegangene Angebote ansehen“, der diesen Link in
+                      einem neuen Tab öffnet. Es muss ein „Jeder mit dem Link“-Freigabelink sein —
+                      ein interner SharePoint-Pfad zeigt dem Kunden nur eine Anmeldeseite.
+                    </span>
+                  </label>
+                )}
               </section>
 
               {/* PART H — security & expiry */}
