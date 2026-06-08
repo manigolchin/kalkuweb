@@ -18,8 +18,27 @@ import type {
   ShareSettings,
 } from './types';
 import { formatEUR, formatNum } from './calc';
+import { nanoid } from 'nanoid';
 
 type CustomerPosition = CustomerViewPayload['positions'][number];
+
+/** One wish sitting in the customer's "Wunsch-Korb" before it is sent. Carries
+ *  display info (where/unit/currentValue) on top of the wire payload so the
+ *  basket can render an Ist→Wunsch line without re-deriving anything. */
+export type WunschBasketItem = {
+  /** Stable id for removal. */
+  key: string;
+  scope: ChangeRequestScope;
+  positionOz?: string;
+  /** Display label for WHERE — "1.4.1.1 · RZA01" or "Gesamtangebot". */
+  where: string;
+  field: ChangeRequestField;
+  unit: ChangeRequestUnit;
+  currentValue: number | null;
+  requestedValue: number | null;
+  direction?: 'lower' | 'higher';
+  note?: string;
+};
 
 /** Per-field working draft the composer holds (raw, unparsed). */
 export type FieldDraft = {
@@ -37,6 +56,42 @@ export function parseDeNumber(s: string): number | null {
   if (!t) return null;
   const n = parseFloat(t.replace(/\s/g, '').replace(/\./g, '').replace(',', '.'));
   return Number.isFinite(n) ? n : null;
+}
+
+/** Build rich Wunsch-Korb items from a draft map — same dropping rules as
+ *  `assembleChangeRequests`, plus the display info (where/unit/Ist value) so the
+ *  basket can render each line standalone. */
+export function draftsToBasketItems(
+  scope: ChangeRequestScope,
+  drafts: ChangeRequestDraftMap,
+  opts: { positionOz?: string; where: string; currentValueFor: (f: ChangeRequestField) => number | null },
+): WunschBasketItem[] {
+  return assembleChangeRequests(scope, opts.positionOz, drafts).map((inp) => ({
+    key: nanoid(10),
+    scope: inp.scope,
+    positionOz: inp.positionOz,
+    where: opts.where,
+    field: inp.field,
+    unit: unitFor(scope, inp.field),
+    currentValue: opts.currentValueFor(inp.field),
+    requestedValue: inp.requestedValue ?? null,
+    // A draft only ever produces an explicit günstiger/höher; narrow away the
+    // 'exact'/'unspecified' members the wider ChangeRequestInput type carries.
+    direction: inp.direction === 'lower' || inp.direction === 'higher' ? inp.direction : undefined,
+    note: inp.note,
+  }));
+}
+
+/** Back to the wire payload when the customer finally sends the basket. */
+export function basketItemToInput(item: WunschBasketItem): ChangeRequestInput {
+  return {
+    scope: item.scope,
+    positionOz: item.scope === 'position' ? item.positionOz : undefined,
+    field: item.field,
+    requestedValue: item.requestedValue,
+    direction: item.direction,
+    note: item.note,
+  };
 }
 
 /** Turn a draft map into the wire payload, dropping empty fields. The server

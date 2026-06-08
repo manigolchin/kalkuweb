@@ -10,6 +10,8 @@ import {
   assembleChangeRequests,
   rollupChangeRequests,
   formatSignedEUR,
+  draftsToBasketItems,
+  basketItemToInput,
 } from '../changeRequest';
 import type { ShareCalcSummary, CustomerViewPayload, InboxChangeRequest } from '../types';
 
@@ -178,5 +180,34 @@ describe('changeRequest — rollupChangeRequests (negotiation summary)', () => {
     expect(formatSignedEUR(-50)).toContain('−');
     expect(formatSignedEUR(-50)).toContain('50,00');
     expect(formatSignedEUR(120)).toContain('+');
+  });
+});
+
+describe('changeRequest — Wunsch-Korb helpers', () => {
+  test('draftsToBasketItems builds rich items + basketItemToInput round-trips', () => {
+    const items = draftsToBasketItems(
+      'position',
+      { material: { requestedValue: '400', note: 'zu teuer' } },
+      { positionOz: '1.1', where: '1.1 · Y', currentValueFor: () => 500 },
+    );
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      scope: 'position', positionOz: '1.1', where: '1.1 · Y', field: 'material',
+      unit: 'eur', currentValue: 500, requestedValue: 400, note: 'zu teuer',
+    });
+    expect(items[0].key).toBeTruthy();
+    expect(basketItemToInput(items[0])).toEqual({
+      scope: 'position', positionOz: '1.1', field: 'material', requestedValue: 400, direction: undefined, note: 'zu teuer',
+    });
+  });
+
+  test('global basket items drop the positionOz on conversion', () => {
+    const items = draftsToBasketItems(
+      'global',
+      { endbetrag: { requestedValue: '', direction: 'lower', note: '' } },
+      { where: 'Gesamtangebot', currentValueFor: () => 800 },
+    );
+    expect(items[0]).toMatchObject({ scope: 'global', field: 'endbetrag', unit: 'eur', currentValue: 800, direction: 'lower' });
+    expect(basketItemToInput(items[0]).positionOz).toBeUndefined();
   });
 });

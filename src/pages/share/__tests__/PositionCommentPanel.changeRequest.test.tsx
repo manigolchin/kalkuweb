@@ -16,7 +16,7 @@ const pos = {
 } as CustomerViewPayload['positions'][number];
 
 function setup(extra: Partial<ComponentProps<typeof PositionCommentPanel>> = {}) {
-  const onSubmitChangeRequests = vi.fn().mockResolvedValue(undefined);
+  const onAddChangeRequests = vi.fn();
   const onSubmitToServer = vi.fn().mockResolvedValue(undefined);
   const onClose = vi.fn();
   render(
@@ -32,12 +32,12 @@ function setup(extra: Partial<ComponentProps<typeof PositionCommentPanel>> = {})
       onSetCustomerName={() => {}}
       onSetCustomerEmail={() => {}}
       showCostBreakdown
-      onSubmitChangeRequests={onSubmitChangeRequests}
+      onAddChangeRequests={onAddChangeRequests}
       onSubmitToServer={onSubmitToServer}
       {...extra}
     />,
   );
-  return { onSubmitChangeRequests, onSubmitToServer, onClose };
+  return { onAddChangeRequests, onSubmitToServer, onClose };
 }
 
 describe('PositionCommentPanel — Änderungswunsch composer', () => {
@@ -66,46 +66,49 @@ describe('PositionCommentPanel — Änderungswunsch composer', () => {
     expect(editor.textContent).toContain('500,00'); // gpMaterial from the position
   });
 
-  test('submitting a value posts the structured wish then closes', async () => {
-    const { onSubmitChangeRequests, onClose } = setup();
+  test('a value adds a basket item then closes', async () => {
+    const { onAddChangeRequests, onClose } = setup();
     fireEvent.click(screen.getByTestId('cr-chip-position-material'));
     fireEvent.change(screen.getByTestId('cr-value-position-material'), { target: { value: '400' } });
     fireEvent.click(screen.getByTestId('position-comment-submit'));
-    await waitFor(() => expect(onSubmitChangeRequests).toHaveBeenCalledTimes(1));
-    expect(onSubmitChangeRequests.mock.calls[0][0]).toEqual([
-      { scope: 'position', positionOz: '1.4.1.1', field: 'material', requestedValue: 400, direction: undefined, note: undefined },
-    ]);
+    await waitFor(() => expect(onAddChangeRequests).toHaveBeenCalledTimes(1));
+    const items = onAddChangeRequests.mock.calls[0][0];
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      scope: 'position', positionOz: '1.4.1.1', field: 'material',
+      requestedValue: 400, unit: 'eur', currentValue: 500, where: '1.4.1.1 · RZA01 Leuchte',
+    });
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
   test('günstiger/höher direction without a value is captured', async () => {
-    const { onSubmitChangeRequests } = setup();
+    const { onAddChangeRequests } = setup();
     fireEvent.click(screen.getByTestId('cr-chip-position-lohn'));
     fireEvent.click(screen.getByTestId('cr-dir-position-lohn-lower'));
     fireEvent.click(screen.getByTestId('position-comment-submit'));
-    await waitFor(() => expect(onSubmitChangeRequests).toHaveBeenCalledTimes(1));
-    expect(onSubmitChangeRequests.mock.calls[0][0]).toEqual([
-      { scope: 'position', positionOz: '1.4.1.1', field: 'lohn', requestedValue: null, direction: 'lower', note: undefined },
-    ]);
+    await waitFor(() => expect(onAddChangeRequests).toHaveBeenCalledTimes(1));
+    expect(onAddChangeRequests.mock.calls[0][0][0]).toMatchObject({
+      field: 'lohn', requestedValue: null, direction: 'lower',
+    });
   });
 
   test('percent quick-button prefills the discounted Wunschwert', async () => {
-    const { onSubmitChangeRequests } = setup();
+    const { onAddChangeRequests } = setup();
     fireEvent.click(screen.getByTestId('cr-chip-position-material'));
     // gpMaterial = 500 → −10 % → 450
     fireEvent.click(screen.getByTestId('cr-pct-position-material-10'));
     expect((screen.getByTestId('cr-value-position-material') as HTMLInputElement).value).toBe('450,00');
     fireEvent.click(screen.getByTestId('position-comment-submit'));
-    await waitFor(() => expect(onSubmitChangeRequests).toHaveBeenCalledTimes(1));
-    expect(onSubmitChangeRequests.mock.calls[0][0]).toEqual([
-      { scope: 'position', positionOz: '1.4.1.1', field: 'material', requestedValue: 450, direction: 'lower', note: undefined },
-    ]);
+    await waitFor(() => expect(onAddChangeRequests).toHaveBeenCalledTimes(1));
+    expect(onAddChangeRequests.mock.calls[0][0][0]).toMatchObject({
+      field: 'material', requestedValue: 450, direction: 'lower',
+    });
   });
 
-  test('closes without posting when nothing is entered', async () => {
-    const { onSubmitChangeRequests, onSubmitToServer, onClose } = setup();
+  test('closes without adding when nothing is entered', async () => {
+    const { onAddChangeRequests, onSubmitToServer, onClose } = setup();
     fireEvent.click(screen.getByTestId('position-comment-submit'));
-    expect(onSubmitChangeRequests).not.toHaveBeenCalled();
+    expect(onAddChangeRequests).not.toHaveBeenCalled();
     expect(onSubmitToServer).not.toHaveBeenCalled();
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
