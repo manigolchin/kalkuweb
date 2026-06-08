@@ -49,6 +49,19 @@ describe('changeRequest — number parse/format', () => {
     expect(parseDeNumber('abc')).toBeNull();
   });
 
+  test('parseDeNumber accepts decimal-POINT input (habit) without 100x blowup', () => {
+    expect(parseDeNumber('950.50')).toBeCloseTo(950.5); // not 95050
+    expect(parseDeNumber('950.5')).toBeCloseTo(950.5);
+    expect(parseDeNumber('0.5')).toBeCloseTo(0.5);
+    expect(parseDeNumber('-5.5')).toBeCloseTo(-5.5);
+    // 3+ trailing digits or multiple dots → thousands separators.
+    expect(parseDeNumber('1.234')).toBe(1234);
+    expect(parseDeNumber('1.234.567')).toBe(1234567);
+    expect(parseDeNumber('100.000')).toBe(100000);
+    // comma always wins as the decimal sep.
+    expect(parseDeNumber('1.234,5')).toBeCloseTo(1234.5);
+  });
+
   test('formatChangeValue per unit', () => {
     expect(formatChangeValue(1071.54, 'eur')).toBe(formatEUR(1071.54));
     expect(formatChangeValue(60, 'min')).toBe('60 min');

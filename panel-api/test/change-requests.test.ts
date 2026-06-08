@@ -37,7 +37,9 @@ async function ownerHeaders(userId: string, email: string): Promise<{ Cookie: st
 
 type Seed = { token: string; shareId: string; projectId: string; ownerId: string };
 
-async function seed(opts: { allowChangeRequests?: boolean } = {}): Promise<Seed> {
+async function seed(
+  opts: { allowChangeRequests?: boolean; showCostBreakdown?: boolean; showTotals?: boolean } = {},
+): Promise<Seed> {
   const now = new Date();
   const ownerId = nanoid(16);
   const projectId = nanoid(16);
@@ -70,7 +72,10 @@ async function seed(opts: { allowChangeRequests?: boolean } = {}): Promise<Seed>
       brandHeader: 'co-branded' as const,
       allowApproval: true,
       allowChangeRequests: opts.allowChangeRequests ?? true,
-      showTotals: true, showMwst: true, showCostBreakdown: true, showCalculation: true,
+      showTotals: opts.showTotals ?? true,
+      showMwst: true,
+      showCostBreakdown: opts.showCostBreakdown ?? true,
+      showCalculation: true,
     },
     snapshotData: {
       snapshottedAt: now.toISOString(),
@@ -201,6 +206,26 @@ describe('Round 12 — POST /share/:token/change-requests', () => {
   test('all-empty items → 400 (nothing actionable)', async () => {
     const { token } = await seed();
     const res = await post(token, { items: [{ scope: 'global', field: 'endbetrag' }] });
+    assert.equal(res.status, 400);
+  });
+
+  test('rejects a cost-type wish when the share hides the breakdown → 400', async () => {
+    const { token } = await seed({ showCostBreakdown: false });
+    const res = await post(token, {
+      items: [{ scope: 'position', positionOz: '1.4.1.1', field: 'material', requestedValue: 400 }],
+    });
+    assert.equal(res.status, 400);
+    assert.equal((await res.json() as { error: string }).error, 'invalid_change_request');
+    // Menge stays allowed (always shown).
+    const ok = await post(token, {
+      items: [{ scope: 'position', positionOz: '1.4.1.1', field: 'menge', requestedValue: 3 }],
+    });
+    assert.equal(ok.status, 200);
+  });
+
+  test('rejects an Endbetrag wish when totals are hidden → 400', async () => {
+    const { token } = await seed({ showTotals: false });
+    const res = await post(token, { items: [{ scope: 'global', field: 'endbetrag', requestedValue: 1 }] });
     assert.equal(res.status, 400);
   });
 

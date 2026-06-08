@@ -19,6 +19,7 @@ import {
   type ChangeRequestScope,
   type ChangeRequestUnit,
   type ShareSnapshot,
+  type ShareSettings,
 } from '../schema.js';
 import { clientIp, clientFingerprint } from '../lib/middleware.js';
 import { buildLegacySnapshot, snapshotHash } from '../lib/snapshot.js';
@@ -196,10 +197,28 @@ const changeRequestsSchema = z.object({
  *  per-position Arbeitszeit). Returns null when the combo is not allowed. */
 function changeRequestContext(
   snapshot: ShareSnapshot | null,
+  settings: ShareSettings,
   scope: ChangeRequestScope,
   positionOz: string | undefined,
   field: ChangeRequestField,
 ): { unit: ChangeRequestUnit; currentValue: number | null } | null {
+  // Visibility gate — mirror the client's `availableFields` so a crafted POST
+  // can't lodge a wish against a figure the share never revealed to this
+  // customer (defense-in-depth; the UI already only offers visible fields).
+  const breakdown = settings.showCostBreakdown !== false;
+  const calc = settings.showCalculation !== false;
+  const fieldVisible =
+    field === 'sonstiges' || field === 'menge' || field === 'gesamtpreis'
+      ? true
+      : field === 'endbetrag'
+        ? !!settings.showTotals
+        : field === 'zeit'
+          ? scope === 'global'
+            ? calc
+            : true
+          : /* lohn | material | geraete */ breakdown;
+  if (!fieldVisible) return null;
+
   const summary = snapshot?.summary ?? null;
   if (scope === 'global') {
     switch (field) {
@@ -737,7 +756,7 @@ export const publicRoute = new Hono()
 
     const rows: Array<typeof changeRequests.$inferInsert> = [];
     for (const item of parsed.data.items) {
-      const ctx = changeRequestContext(snapshot, item.scope, item.positionOz, item.field);
+      const ctx = changeRequestContext(snapshot, share.settings, item.scope, item.positionOz, item.field);
       // Reject the whole batch on a structurally-invalid item (bad scope/field
       // combo, or a position OZ that isn't in this share's snapshot) so the
       // customer gets a clear error rather than silently-dropped wishes.

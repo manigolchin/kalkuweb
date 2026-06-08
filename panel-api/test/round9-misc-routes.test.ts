@@ -349,8 +349,11 @@ describe('routes/inbox.ts', () => {
   test('GET /inbox orders by latest activity desc (newest response first)', async () => {
     const owner = await seedUser();
     const projectId = await seedProject({ ownerId: owner.id });
-    const { id: shareOld } = await seedShare({ projectId });
-    const { id: shareNew } = await seedShare({ projectId });
+    // Push both shares' createdAt well into the past so the staggered RESPONSE
+    // times (not the near-simultaneous createdAt) drive the ordering — otherwise
+    // act() = max(respondedAt, createdAt) ties on createdAt ≈ now and flakes.
+    const { id: shareOld } = await seedShare({ projectId, createdAtOffsetMs: -600_000 });
+    const { id: shareNew } = await seedShare({ projectId, createdAtOffsetMs: -600_000 });
     await seedResponse({ shareId: shareOld, respondedAt: new Date(Date.now() - 60_000) });
     await seedResponse({ shareId: shareNew, respondedAt: new Date() });
     const res = await inboxApp.request('/api/inbox', {

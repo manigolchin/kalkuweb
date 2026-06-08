@@ -50,11 +50,24 @@ export type FieldDraft = {
 };
 export type ChangeRequestDraftMap = Partial<Record<ChangeRequestField, FieldDraft>>;
 
-/** Parse a German-formatted number. "1.234,56" → 1234.56, "" → null. */
+/**
+ * Parse a customer-typed number tolerantly. Handles both German ("1.234,56")
+ * and the decimal-POINT input people reach for out of habit ("950.50"):
+ *  - a comma present → it's the decimal sep, dots are thousands separators.
+ *  - no comma, but a single dot with 1–2 trailing digits ("950.5", "12.50")
+ *    → that dot is a decimal point (NOT a thousands sep — otherwise the wish
+ *    silently becomes 100× too large).
+ *  - otherwise dots are thousands separators ("1.234", "1.234.567").
+ */
 export function parseDeNumber(s: string): number | null {
-  const t = s.trim();
+  let t = s.trim().replace(/\s/g, '');
   if (!t) return null;
-  const n = parseFloat(t.replace(/\s/g, '').replace(/\./g, '').replace(',', '.'));
+  if (t.includes(',')) {
+    t = t.replace(/\./g, '').replace(',', '.');
+  } else if (!/^-?\d+\.\d{1,2}$/.test(t)) {
+    t = t.replace(/\./g, '');
+  }
+  const n = parseFloat(t);
   return Number.isFinite(n) ? n : null;
 }
 
