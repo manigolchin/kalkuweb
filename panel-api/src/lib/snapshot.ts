@@ -7,7 +7,18 @@ import type {
   ShareSnapshotSummary,
 } from '../schema.js';
 
-const round = (n: number, d = 2) => Math.round(n * 10 ** d) / 10 ** d;
+// Half-away-from-zero rounding that matches Excel's "Präzision wie angezeigt"
+// + the client calc.ts. Plain Math.round(n * 100) rounds the wrong way at the
+// X.XX5 boundary (binary FP leaves an exact half a few ULP low, e.g. 1.275 →
+// 1.27499…), so the customer share would drift a cent from the calculator.
+// Nudge toward away-from-zero before rounding; ≤1e-9 relative only rescues true
+// halves and never disturbs a genuine non-boundary value.
+const round = (n: number, d = 2): number => {
+  if (!Number.isFinite(n)) return n;
+  const f = 10 ** d;
+  const x = n * f;
+  return Math.round(x + Math.sign(x) * Math.abs(x) * 1e-9) / f;
+};
 
 /** German Arbeitstage-pro-Monat divisor (≈ 261 Werktage / 12). Matches the
  *  calculator's Vorlage so the customer's "Monate" reads the same. */
@@ -33,30 +44,35 @@ export function positionCostSplit(p: Position, params: CalcParams): PositionCost
     return { gpLohn: 0, gpMaterial: 0, gpGeraet: 0, gpNu: 0, ekLohn: 0, ekMaterial: 0, ekGeraet: 0, ekNu: 0 };
   }
   const zf = 1 + (params.zielAufschlag ?? 0);
-  const adj = p.timeMinutes + (p.timeMinutes / 100) * params.zeitabzug;
+  // Round the adjusted time (col AC) to the cent — "Präzision wie angezeigt",
+  // matching recomputePosition + the client calc + the Excel.
+  const adj = round(p.timeMinutes + (p.timeMinutes / 100) * params.zeitabzug);
   const hpu = adj / 60; // Stunden je Einheit
   const geraeteSatz = p.geraeteSatz ?? params.geraeteStundensatz; // per-position rate override
-  // Per-unit Geräte EP: a hard-coded lump sum (Vorlage "EP Geräte", col AA)
-  // wins flat; otherwise rate × Stunden-je-Einheit.
-  const geraeteUnit = p.geraeteEp != null ? p.geraeteEp : hpu * geraeteSatz;
-  // Per-unit Lohn EP (VK): a per-position override (Vorlage "EP Löhne", col AB —
-  // specialist rate / custom formula) wins flat; otherwise Stunden × Verrechnungs-
-  // lohn. The EINKAUF side keeps the EK/VK ratio (Mittellohn ÷ Verrechnungslohn).
+  // Per-unit VERKAUF components, each rounded to the cent — these ARE the
+  // Vorlage's cols AA/AB/AJ/AK, so Σ(Menge × component) reconciles with the
+  // line's gp (= Menge × EP) exactly the way the Excel's GP split does.
+  // Geräte: a hard-coded lump sum ("EP Geräte", col AA) wins flat; else rate ×
+  // Stunden-je-Einheit. Lohn: a per-position override ("EP Löhne", col AB —
+  // specialist rate / custom formula) wins flat; else Stunden × Verrechnungslohn.
+  const geraeteVkUnit = round(p.geraeteEp != null ? p.geraeteEp * zf : hpu * geraeteSatz * zf);
+  const lohnVkUnit = round(p.lohnEp != null ? p.lohnEp * zf : hpu * params.verrechnungslohn * zf);
+  const materialVkUnit = round(p.materialCost * (1 + params.materialZuschlag) * zf);
+  const nuVkUnit = round(p.nuCost * (1 + params.nuZuschlag) * zf);
+  // EINKAUF (raw cost): Lohn at Mittellohn (keeps the EK/VK ratio), Material/NU
+  // before Zuschlag, Geräte before Ziel-Aufschlag — so Geräte reconciles to 0 %
+  // Zuschlag when there's no markup (no phantom rounding spread).
   const lohnRatio = params.verrechnungslohn > 0 ? params.mittellohn / params.verrechnungslohn : 1;
-  const lohnVkUnit = p.lohnEp != null ? p.lohnEp : hpu * params.verrechnungslohn;
   const lohnEkUnit = p.lohnEp != null ? p.lohnEp * lohnRatio : hpu * params.mittellohn;
+  const geraeteEkUnit = p.geraeteEp != null ? p.geraeteEp : hpu * geraeteSatz;
   return {
-    // VERKAUF (what the customer pays), incl. Ziel-Aufschlag — round per line.
-    gpLohn: round(p.quantity * lohnVkUnit * zf),
-    gpMaterial: round(p.quantity * p.materialCost * (1 + params.materialZuschlag) * zf),
-    gpGeraet: round(p.quantity * geraeteUnit * zf),
-    gpNu: round(p.quantity * p.nuCost * (1 + params.nuZuschlag) * zf),
-    // EINKAUF (raw cost): Lohn at Mittellohn, Material/NU before Zuschlag,
-    // Geräte before Ziel-Aufschlag. Same per-line rounding so Geräte reconciles
-    // to 0 % Zuschlag when there's no markup (no phantom rounding spread).
+    gpLohn: round(p.quantity * lohnVkUnit),
+    gpMaterial: round(p.quantity * materialVkUnit),
+    gpGeraet: round(p.quantity * geraeteVkUnit),
+    gpNu: round(p.quantity * nuVkUnit),
     ekLohn: round(p.quantity * lohnEkUnit),
     ekMaterial: round(p.quantity * p.materialCost),
-    ekGeraet: round(p.quantity * geraeteUnit),
+    ekGeraet: round(p.quantity * geraeteEkUnit),
     ekNu: round(p.quantity * p.nuCost),
   };
 }
@@ -83,7 +99,7 @@ export function computeShareSummary(positions: Position[], params: CalcParams): 
 
   for (const p of positions) {
     if (p.isHeader) continue;
-    const adj = p.timeMinutes + (p.timeMinutes / 100) * params.zeitabzug;
+    const adj = round(p.timeMinutes + (p.timeMinutes / 100) * params.zeitabzug);
     totalHours += (adj / 60) * p.quantity;
     netto += p.gp;
     const s = positionCostSplit(p, params);
@@ -156,26 +172,32 @@ function recomputePosition(p: Position, params: CalcParams): Position {
   // Ziel-Aufschlag scales every cost component so the share snapshot matches
   // the calculator's chosen Angebotssumme. Default 0 → factor 1 → no-op.
   const zielFactor = 1 + (params.zielAufschlag ?? 0);
-  const adj = p.timeMinutes + (p.timeMinutes / 100) * params.zeitabzug;
+  // "Präzision wie angezeigt": the Vorlage rounds the adjusted time (col AC) and
+  // each cost component (cols AA/AB/AJ/AK) to the cent, EP (col E) = the SUM of
+  // those rounded cents, GP (col F) = Menge × EP. Mirror that exactly so the
+  // customer share shows the same per-position money as the calculator + Excel.
+  const adj = round(p.timeMinutes + (p.timeMinutes / 100) * params.zeitabzug);
   const geraeteSatz = p.geraeteSatz ?? params.geraeteStundensatz;
   // Hard-coded "EP Geräte" (col AA) lump sum wins flat; else rate × time.
-  const epGeraet =
-    p.geraeteEp != null ? p.geraeteEp * zielFactor : (adj / 60) * geraeteSatz * zielFactor;
+  const epGeraet = round(
+    p.geraeteEp != null ? p.geraeteEp * zielFactor : (adj / 60) * geraeteSatz * zielFactor,
+  );
   // Per-position EP Löhne override (col AB) wins flat; else time × Verrechnungslohn.
-  const epLohn =
-    p.lohnEp != null ? p.lohnEp * zielFactor : (adj / 60) * params.verrechnungslohn * zielFactor;
-  const epMaterial = p.materialCost * (1 + params.materialZuschlag) * zielFactor;
-  const epNu = p.nuCost * (1 + params.nuZuschlag) * zielFactor;
-  const ep = epLohn + epMaterial + epGeraet + epNu;
-  const gp = p.quantity * ep;
+  const epLohn = round(
+    p.lohnEp != null ? p.lohnEp * zielFactor : (adj / 60) * params.verrechnungslohn * zielFactor,
+  );
+  const epMaterial = round(p.materialCost * (1 + params.materialZuschlag) * zielFactor);
+  const epNu = round(p.nuCost * (1 + params.nuZuschlag) * zielFactor);
+  const ep = round(epGeraet + epLohn + epMaterial + epNu);
+  const gp = round(p.quantity * ep);
   return {
     ...p,
-    epLohn: round(epLohn),
-    epMaterial: round(epMaterial),
-    epGeraet: round(epGeraet),
-    epNu: round(epNu),
-    ep: round(ep),
-    gp: round(gp),
+    epLohn,
+    epMaterial,
+    epGeraet,
+    epNu,
+    ep,
+    gp,
   };
 }
 

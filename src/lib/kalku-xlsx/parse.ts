@@ -273,8 +273,13 @@ export async function parseKalkulationWorkbook(
     // Global Geräte-Satz (gzuschlag, AP3) — the per-row default. Per-position
     // overrides ("Zulage Geräte", col Z) are captured on each Position below.
     geraeteStundensatz: readNumber(ws, 'AP', 3) ?? DEFAULT_CALC_PARAMS.geraeteStundensatz,
-    // Zeitwert from J11 (e.g. -0.15 in example 1, +0.5 in example 2)
-    zeitabzug: ((readNumber(ws, 'J', 11) ?? 0) * 100), // CalcParams expresses zeitabzug in percent
+    // Zeitabzug as a percent. The Vorlage's named range `zeitabzug` IS this
+    // percent value, held EXACTLY in cell AP5 (e.g. -55, +50, -15). Read it
+    // directly: deriving it as J11×100 (J11 = zeitabzug/100) reintroduces binary
+    // -FP error — e.g. -0.55×100 = -55.00000000000001 — which then drags the
+    // rounded adjusted-time (AC) a cent off on boundary rows. Fall back to
+    // J11×100 only when AP5 is absent.
+    zeitabzug: readNumber(ws, 'AP', 5) ?? ((readNumber(ws, 'J', 11) ?? 0) * 100),
     mwst: readNumber(ws, 'D', 9) ?? DEFAULT_CALC_PARAMS.mwst,
   };
 
@@ -461,22 +466,24 @@ export async function parseKalkulationWorkbook(
       // DEGRADE other templates (verified against the 100-LV corpus: literal-
       // only is a no-op on formula files, lump-sum-exact on the override rows).
       const aaIsLiteral = aaCell != null && aaCell.f == null;
-      const zRate =
-        typeof rawZ === 'number' && rawZ >= 0 ? rawZ : derivedCalcParams.geraeteStundensatz;
+      // Excel evaluates an EMPTY col-Z as 0 inside `AA = AC/60 * Z`: Stundenlohn/
+      // Regie rows leave Z blank, so the Vorlage prices ZERO Geräte on them. An
+      // absent Z therefore means rate 0 for THIS row — NOT the global Geräte-Satz.
+      // Only a present `=gzuschlag` (cached = the global default) keeps the row
+      // live on the global rate. Falling back to the global on a blank Z was
+      // inventing a phantom Geräte cost on every Stundenlohn position.
+      const effectiveZ = typeof rawZ === 'number' && rawZ >= 0 ? rawZ : 0;
       const adjForGeraete =
         timeMinutes + (timeMinutes / 100) * derivedCalcParams.zeitabzug;
-      const formulaGeraete = (adjForGeraete / 60) * zRate;
+      const formulaGeraete = (adjForGeraete / 60) * effectiveZ;
       let geraeteSatzPatch: { geraeteEp?: number; geraeteSatz?: number } = {};
       if (aaIsLiteral && typeof rawAA === 'number' && rawAA >= 0 && Math.abs(rawAA - formulaGeraete) > 0.01) {
         // Hard-coded EP-Geräte lump sum → pin flat (does not re-scale with time).
         geraeteSatzPatch = { geraeteEp: rawAA };
-      } else if (
-        typeof rawZ === 'number' &&
-        rawZ >= 0 &&
-        Math.abs(rawZ - derivedCalcParams.geraeteStundensatz) > 1e-9
-      ) {
-        // Per-position rate override (crane/lift, 5–50 €/h) → re-prices with time.
-        geraeteSatzPatch = { geraeteSatz: rawZ };
+      } else if (Math.abs(effectiveZ - derivedCalcParams.geraeteStundensatz) > 1e-9) {
+        // Per-position rate override (blank Z → 0; crane/lift literal 5–50 €/h)
+        // → re-prices with time off the pinned rate.
+        geraeteSatzPatch = { geraeteSatz: effectiveZ };
       }
       // Per-position EP Löhne. Default = (Echte-Zeit/60) × Verrechnungslohn.
       // Capture the Vorlage's col-AB value as a flat per-unit lohnEp whenever it

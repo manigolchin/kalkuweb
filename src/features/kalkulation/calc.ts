@@ -14,7 +14,19 @@ export const DEFAULT_CALC_PARAMS: CalcParams = {
   zielAufschlag: 0,
 };
 
-const round = (n: number, d = 2) => Math.round(n * 10 ** d) / 10 ** d;
+// Half-away-from-zero rounding that matches Excel's "Präzision wie angezeigt".
+// A plain Math.round(n * 100) is wrong at the X.XX5 boundary: the Vorlage's
+// chained arithmetic (Y → AC → AA/AB) leaves an exact half a few ULP low in
+// binary FP (e.g. 1.275 → 1.27499…), so Math.round drops it DOWN while Excel
+// rounds it UP (1.275 → 1.28). Nudge toward away-from-zero before rounding; the
+// nudge is ≤1e-9 relative — far below the 2-dp grid, so it only ever rescues a
+// true half and never disturbs a genuine non-boundary value.
+const round = (n: number, d = 2): number => {
+  if (!Number.isFinite(n)) return n;
+  const f = 10 ** d;
+  const x = n * f;
+  return Math.round(x + Math.sign(x) * Math.abs(x) * 1e-9) / f;
+};
 
 export type PositionCalcResult = {
   epLohn: number;
@@ -45,32 +57,40 @@ export function calculatePosition(
   // (before rounding) so the EFB/Nachkalkulation breakdown stays consistent
   // (gpLohn + gpMaterial + gpGeraet + gpNu == gp).
   const zielFactor = 1 + (params.zielAufschlag ?? 0);
-  const adjustedTime = pos.timeMinutes + (pos.timeMinutes / 100) * params.zeitabzug;
+  // The Vorlage is stored with "Präzision wie angezeigt", so the adjusted time
+  // (col AC) AND each cost component (Geräte/Lohn/Material/NU = cols AA/AB/AJ/AK)
+  // are rounded to the cent, EP (col E) is the SUM of those rounded cents, and
+  // GP (col F) = Menge × EP. Reproducing that exact rounding chain is what makes
+  // an imported position show the Excel's money to the cent (sum-then-round drifts
+  // ±0.01 per line and amplifies into euros on large quantities).
+  const adjustedTime = round(pos.timeMinutes + (pos.timeMinutes / 100) * params.zeitabzug);
   // Per-position Geräte. A hard-coded lump sum (Vorlage "EP Geräte" col AA)
   // wins as a flat per-unit amount; otherwise the rate model applies — the
   // per-position "Zulage Geräte" (col Z) rate, falling back to the global.
   const geraeteSatz = pos.geraeteSatz ?? params.geraeteStundensatz;
-  const epGeraet =
+  const epGeraet = round(
     pos.geraeteEp != null
       ? pos.geraeteEp * zielFactor
-      : (adjustedTime / 60) * geraeteSatz * zielFactor;
+      : (adjustedTime / 60) * geraeteSatz * zielFactor,
+  );
   // Per-position EP Löhne (Vorlage "EP Löhne" col AB) wins flat when set
   // (hard-coded specialist rate or custom formula); else time × Verrechnungslohn.
-  const epLohn =
+  const epLohn = round(
     pos.lohnEp != null
       ? pos.lohnEp * zielFactor
-      : (adjustedTime / 60) * params.verrechnungslohn * zielFactor;
-  const epMaterial = pos.materialCost * (1 + params.materialZuschlag) * zielFactor;
-  const epNu = pos.nuCost * (1 + params.nuZuschlag) * zielFactor;
-  const ep = epLohn + epMaterial + epGeraet + epNu;
-  const gp = pos.quantity * ep;
+      : (adjustedTime / 60) * params.verrechnungslohn * zielFactor,
+  );
+  const epMaterial = round(pos.materialCost * (1 + params.materialZuschlag) * zielFactor);
+  const epNu = round(pos.nuCost * (1 + params.nuZuschlag) * zielFactor);
+  const ep = round(epGeraet + epLohn + epMaterial + epNu);
+  const gp = round(pos.quantity * ep);
   return {
-    epLohn: round(epLohn),
-    epMaterial: round(epMaterial),
-    epGeraet: round(epGeraet),
-    epNu: round(epNu),
-    ep: round(ep),
-    gp: round(gp),
+    epLohn,
+    epMaterial,
+    epGeraet,
+    epNu,
+    ep,
+    gp,
     gpLohn: round(pos.quantity * epLohn),
     gpMaterial: round(pos.quantity * epMaterial),
     gpGeraet: round(pos.quantity * epGeraet),

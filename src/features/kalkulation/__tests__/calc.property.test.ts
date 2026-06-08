@@ -229,12 +229,17 @@ describe('calc.ts — zielAufschlag (Endbetrag-Zielpreis)', () => {
     expect(r).toEqual(baseline);
   });
 
-  test('ep and gp scale linearly by (1 + zielAufschlag)', () => {
+  test('ep and gp scale ~linearly by (1 + zielAufschlag)', () => {
     const p = pos({ materialCost: 100, timeMinutes: 45, nuCost: 20, quantity: 4 });
     const base = calculatePosition(p, { ...DEFAULT_CALC_PARAMS, zielAufschlag: 0 });
     const up = calculatePosition(p, { ...DEFAULT_CALC_PARAMS, zielAufschlag: 0.2 });
-    expect(Math.abs(up.ep - base.ep * 1.2)).toBeLessThanOrEqual(0.01);
-    expect(Math.abs(up.gp - base.gp * 1.2)).toBeLessThanOrEqual(0.05);
+    // Each cost component (Geräte/Lohn/Material/NU) is rounded to the cent
+    // INDEPENDENTLY so an imported position matches the Excel Vorlage exactly
+    // ("Präzision wie angezeigt"). That makes the markup only APPROXIMATELY
+    // linear — up to ~½ cent of rounding noise per component on ep, amplified
+    // by quantity on gp. Both are well within a fraction of a cent per part.
+    expect(Math.abs(up.ep - base.ep * 1.2)).toBeLessThanOrEqual(0.05);
+    expect(Math.abs(up.gp - base.gp * 1.2)).toBeLessThanOrEqual(0.2);
   });
 
   test('every cost component scales — breakdown stays consistent (gpLohn+… == gp)', () => {
@@ -290,7 +295,10 @@ describe('calc.ts — zielAufschlag (Endbetrag-Zielpreis)', () => {
     const target = 30000;
     const z = solveZielAufschlag(ps, active, target);
     const realized = calcTotals(ps, { ...DEFAULT_CALC_PARAMS, zielAufschlag: z }).totalNetto;
-    expect(Math.abs(realized - target)).toBeLessThanOrEqual(0.01 * ps.length + 0.02);
+    // Per-component cent-rounding (Excel parity) makes the closed-form solve land
+    // within a few cents of the target — a hair more here because we re-solve over
+    // an already-active markup, compounding the per-line rounding.
+    expect(Math.abs(realized - target)).toBeLessThanOrEqual(0.05 * ps.length + 0.05);
   });
 
   test('solveZielAufschlag: a target below the basis yields a negative z (Nachlass)', () => {
