@@ -49,7 +49,7 @@ import type { InboxEntry, InboxComment, InboxChangeRequest, ShareResponse } from
 import { FIELD_LABEL, DIRECTION_LABEL, formatChangeValue } from './changeRequest';
 import { Skeleton, Breadcrumb } from '@/pages/panel/ui';
 
-type FilterId = 'all' | 'changes' | 'comments' | 'approved' | 'rejected' | 'viewed';
+type FilterId = 'all' | 'wuensche' | 'changes' | 'comments' | 'approved' | 'rejected' | 'viewed';
 
 const INTENT_LABEL: Record<InboxComment['intent'], string> = {
   accept: 'Akzeptiert',
@@ -279,6 +279,31 @@ export default function FeedbackInbox() {
     }
   }
 
+  // Round 12: resolve every open change request of a thread in one click.
+  async function resolveManyChangeRequests(ids: string[], resolved: boolean) {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    setEntries((prev) =>
+      prev
+        ? prev.map((e) => ({
+            ...e,
+            changeRequests: (e.changeRequests ?? []).map((cr) =>
+              idSet.has(cr.id)
+                ? { ...cr, resolvedAt: resolved ? new Date().toISOString() : null }
+                : cr,
+            ),
+          }))
+        : prev,
+    );
+    try {
+      await Promise.all(ids.map((id) => api.inbox.resolveChangeRequest(id, resolved)));
+      toast.success(resolved ? 'Alle Wünsche als erledigt markiert.' : 'Wieder geöffnet.');
+    } catch {
+      toast.error('Konnte nicht gespeichert werden.');
+      load();
+    }
+  }
+
   useEffect(() => {
     load();
   }, []);
@@ -315,17 +340,23 @@ export default function FeedbackInbox() {
       .filter((e) => {
         const tm = meta.get(e.share.id)!;
         if (unreadOnly && !tm.hasUnread) return false;
+        if (filter === 'wuensche' && tm.changeRequestCount === 0) return false;
         if (filter === 'changes' && tm.changeCount === 0) return false;
         if (filter === 'comments' && tm.commentCount === 0) return false;
         if (filter === 'approved' && tm.status !== 'approved') return false;
         if (filter === 'rejected' && tm.status !== 'rejected') return false;
-        if (filter === 'viewed' && (e.responses.length > 0 || e.comments.length > 0)) return false;
+        if (
+          filter === 'viewed' &&
+          (e.responses.length > 0 || e.comments.length > 0 || (e.changeRequests?.length ?? 0) > 0)
+        )
+          return false;
         if (!q) return true;
         const hay = [
           companyOf(e),
           e.project?.name ?? '',
           e.project?.client ?? '',
           ...e.comments.map((c) => `${c.shortText ?? ''} ${c.text}`),
+          ...(e.changeRequests ?? []).map((cr) => `${cr.shortText ?? ''} ${FIELD_LABEL[cr.field]} ${cr.note}`),
           ...e.responses.flatMap((r) => [
             r.customerName ?? '',
             r.payload.message ?? '',
@@ -367,6 +398,7 @@ export default function FeedbackInbox() {
 
   const FILTERS: ReadonlyArray<{ id: FilterId; label: string }> = [
     { id: 'all', label: 'Alle' },
+    { id: 'wuensche', label: 'Wünsche' },
     { id: 'changes', label: 'Änderungen' },
     { id: 'comments', label: 'Kommentare' },
     { id: 'approved', label: 'Angenommen' },
@@ -504,6 +536,7 @@ export default function FeedbackInbox() {
                 highlightOz={ozParam}
                 lastSeen={lastSeen}
                 onResolveChangeRequest={resolveChangeRequest}
+                onResolveAllChangeRequests={resolveManyChangeRequests}
                 onBack={() => {
                   setSelectedId(null);
                   if (ozParam) {
@@ -683,17 +716,21 @@ function ThreadDetail({
   highlightOz,
   lastSeen,
   onResolveChangeRequest,
+  onResolveAllChangeRequests,
   onBack,
 }: {
   entry: InboxEntry;
   highlightOz: string | null;
   lastSeen: number;
   onResolveChangeRequest: (id: string, resolved: boolean) => void;
+  onResolveAllChangeRequests: (ids: string[], resolved: boolean) => void;
   onBack: () => void;
 }) {
   const company = companyOf(entry);
   const project = entry.project!;
   const feed = useMemo(() => buildFeed(entry), [entry]);
+  const changeReqs = entry.changeRequests ?? [];
+  const openCrIds = changeReqs.filter((cr) => !cr.resolvedAt).map((cr) => cr.id);
   const shareUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/share/${entry.share.token}`;
 
   return (
@@ -748,6 +785,36 @@ function ThreadDetail({
           </div>
         </div>
       </div>
+
+      {/* Round 12: Änderungswunsch summary + bulk resolve */}
+      {changeReqs.length > 0 && (
+        <div
+          data-testid="cr-summary"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-primary-200 bg-primary-50/60 px-4 py-2.5 dark:border-primary-500/30 dark:bg-primary-500/10"
+        >
+          <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm font-medium text-primary-900 dark:text-primary-100">
+            <SlidersHorizontal className="h-4 w-4" />
+            {changeReqs.length} {changeReqs.length === 1 ? 'Änderungswunsch' : 'Änderungswünsche'}
+            {openCrIds.length > 0 ? (
+              <span className="text-primary-700 dark:text-primary-300">· {openCrIds.length} offen</span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                <CheckCircle2 className="h-3.5 w-3.5" /> alle erledigt
+              </span>
+            )}
+          </span>
+          {openCrIds.length > 0 && (
+            <button
+              type="button"
+              data-testid="cr-resolve-all"
+              onClick={() => onResolveAllChangeRequests(openCrIds, true)}
+              className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-white px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:bg-slate-900 dark:text-emerald-300"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" /> Alle erledigt
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Activity feed */}
       <div className="space-y-3">

@@ -46,14 +46,17 @@ function buildCr(over: Partial<InboxChangeRequest> = {}): InboxChangeRequest {
   };
 }
 
-function buildEntry(changeRequests: InboxChangeRequest[]): InboxEntry {
+function buildEntry(
+  changeRequests: InboxChangeRequest[],
+  over: { shareId?: string; projectName?: string } = {},
+): InboxEntry {
   return {
     project: {
-      id: 'p1', name: 'Sanierung', client: 'Stadt', bidder: 'Bau GmbH',
+      id: `p-${over.shareId ?? 's1'}`, name: over.projectName ?? 'Sanierung', client: 'Stadt', bidder: 'Bau GmbH',
       service: 'elektro', versionNumber: 1, updatedAt: '2026-05-20T00:00:00Z',
     },
     share: {
-      id: 's1', token: 'token-abcdef123456', visiblePositionIds: [],
+      id: over.shareId ?? 's1', token: `token-${over.shareId ?? 'abcdef123456'}`, visiblePositionIds: [],
       settings: { brandHeader: 'minimal', allowApproval: true, allowChangeRequests: true, showTotals: true, showMwst: true },
       createdAt: '2026-05-19T00:00:00Z', lastViewedAt: '2026-05-20T10:00:00Z', viewCount: 1, snapshotHash: 'h1',
     },
@@ -135,6 +138,40 @@ describe('FeedbackInbox — Änderungswünsche', () => {
   test('master list shows the Wünsche chip with the count', async () => {
     listMock.mockResolvedValueOnce(listPayload([buildEntry([buildCr(), buildCr({ id: 'cr2' })])]));
     renderInbox();
-    await waitFor(() => expect(screen.getByText(/Wünsche/).textContent).toContain('2'));
+    // The "Wünsche" filter button also matches /Wünsche/, so look for the chip
+    // specifically (the one carrying the "2" count).
+    await waitFor(() =>
+      expect(screen.getAllByText(/Wünsche/).some((el) => /2\s*Wünsche/.test(el.textContent || ''))).toBe(true),
+    );
+  });
+
+  test('the "Wünsche" filter hides threads without change requests', async () => {
+    listMock.mockResolvedValueOnce(
+      listPayload([
+        buildEntry([buildCr()], { shareId: 's1', projectName: 'Mit Wunsch' }),
+        buildEntry([], { shareId: 's2', projectName: 'Ohne Wunsch' }),
+      ]),
+    );
+    renderInbox();
+    await waitFor(() => expect(document.querySelectorAll('button[aria-current]').length).toBe(2));
+    fireEvent.click(screen.getByRole('button', { name: 'Wünsche' }));
+    await waitFor(() => expect(document.querySelectorAll('button[aria-current]').length).toBe(1));
+    expect(screen.queryByText('Ohne Wunsch')).toBeNull();
+  });
+
+  test('thread summary banner + "Alle erledigt" bulk-resolves every open wish', async () => {
+    resolveMock.mockResolvedValue({ ok: true, id: 'x', resolvedAt: '2026-05-21T00:00:00Z' });
+    listMock.mockResolvedValueOnce(
+      listPayload([buildEntry([buildCr({ id: 'a' }), buildCr({ id: 'b' })])]),
+    );
+    await openThread();
+    const summary = await screen.findByTestId('cr-summary');
+    expect(summary.textContent).toContain('2 Änderungswünsche');
+    expect(summary.textContent).toContain('2 offen');
+    fireEvent.click(screen.getByTestId('cr-resolve-all'));
+    expect(resolveMock).toHaveBeenCalledTimes(2);
+    expect(resolveMock).toHaveBeenCalledWith('a', true);
+    expect(resolveMock).toHaveBeenCalledWith('b', true);
+    await waitFor(() => expect(screen.getByTestId('cr-summary').textContent).toContain('alle erledigt'));
   });
 });

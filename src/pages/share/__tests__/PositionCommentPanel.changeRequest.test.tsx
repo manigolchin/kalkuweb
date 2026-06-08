@@ -89,6 +89,19 @@ describe('PositionCommentPanel — Änderungswunsch composer', () => {
     ]);
   });
 
+  test('percent quick-button prefills the discounted Wunschwert', async () => {
+    const { onSubmitChangeRequests } = setup();
+    fireEvent.click(screen.getByTestId('cr-chip-position-material'));
+    // gpMaterial = 500 → −10 % → 450
+    fireEvent.click(screen.getByTestId('cr-pct-position-material-10'));
+    expect((screen.getByTestId('cr-value-position-material') as HTMLInputElement).value).toBe('450,00');
+    fireEvent.click(screen.getByTestId('position-comment-submit'));
+    await waitFor(() => expect(onSubmitChangeRequests).toHaveBeenCalledTimes(1));
+    expect(onSubmitChangeRequests.mock.calls[0][0]).toEqual([
+      { scope: 'position', positionOz: '1.4.1.1', field: 'material', requestedValue: 450, direction: 'lower', note: undefined },
+    ]);
+  });
+
   test('closes without posting when nothing is entered', async () => {
     const { onSubmitChangeRequests, onSubmitToServer, onClose } = setup();
     fireEvent.click(screen.getByTestId('position-comment-submit'));

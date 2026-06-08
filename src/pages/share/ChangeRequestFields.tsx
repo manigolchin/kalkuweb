@@ -18,6 +18,7 @@ import {
   type ChangeRequestDraftMap,
   type FieldDraft,
 } from '@/features/kalkulation/changeRequest';
+import { formatNum } from '@/features/kalkulation/calc';
 
 const EMPTY: FieldDraft = { requestedValue: '', note: '' };
 
@@ -132,6 +133,29 @@ export default function ChangeRequestFields({ scope, fields, currentValueFor, dr
                     )}
                   </span>
                 </label>
+              </div>
+            )}
+
+            {/* Quick percent-discount: prefill the Wunschwert from the current value. */}
+            {!isSonstiges && unit === 'eur' && current != null && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-slate-400">Schnell:</span>
+                {[3, 5, 10].map((pct) => (
+                  <button
+                    key={pct}
+                    type="button"
+                    data-testid={`cr-pct-${scope}-${field}-${pct}`}
+                    onClick={() =>
+                      patch(field, {
+                        requestedValue: formatNum(Math.round(current * (1 - pct / 100) * 100) / 100, 2),
+                        direction: 'lower',
+                      })
+                    }
+                    className="rounded-md border border-slate-200 px-1.5 py-0.5 text-[11px] font-medium text-slate-600 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700"
+                  >
+                    −{pct} %
+                  </button>
+                ))}
               </div>
             )}
 
