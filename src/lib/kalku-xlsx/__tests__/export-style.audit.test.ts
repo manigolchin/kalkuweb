@@ -88,6 +88,52 @@ dd('export style + formula audit (real project round-trip)', () => {
     console.log(`[export-style] row ${dataRowNum}: E=${ws.getCell('E' + dataRowNum).formula} → ${epCell.result}, F → ${fpCell.result}`);
   });
 
+  // Round-2 fidelity pass: the gaps found auditing the export cell-for-cell
+  // against the real source Vorlage — the Faktoren-Bibliothek block, the merged
+  // header cells, the Mitarbeiter-Einsatz multiplier, the kWp row, the non-
+  // breaking space in "EP | EK", and the 0%/0.00% number formats.
+  test('round-2 Vorlage gaps: Bibliothek, merges, L12, kWp, formats', async () => {
+    const parsed = await parseKalkulationWorkbook(new Uint8Array(readFileSync(SRC)));
+    const project = parsed.project!;
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load((await exportToKalkulationVorlage(project)) as unknown as ArrayBuffer);
+    const ws = wb.getWorksheet('Kalkulation')!;
+    const txt = (a: string) => ws.getCell(a).text;
+
+    // 1) Faktoren-Bibliothek (cols N–W rows 2–12) is written back from the
+    //    captured grid — every captured cell lands at its source address.
+    expect(project.faktoren && project.faktoren.length).toBeGreaterThan(0);
+    let written = 0;
+    for (const f of project.faktoren!) {
+      for (const [col, v] of Object.entries(f.raw)) {
+        if (v == null || v === '' || !/^[N-W]$/.test(col)) continue;
+        const cell = ws.getCell(`${col}${f.sourceRow}`).value;
+        if (cell != null && String(cell) === String(v)) written++;
+      }
+    }
+    expect(written).toBeGreaterThan(5); // the example-1 Elektro library has dozens
+
+    // 2) Header cells are merged like the source (master spans the range).
+    const merged = (a: string) => ws.getCell(a).isMerged;
+    for (const a of ['B2', 'B6', 'B8', 'I3', 'J12']) expect(merged(a), a).toBe(true);
+
+    // 3) L12 is the Mitarbeiter-Einsatz multiplier (headerExtras), not staff count.
+    expect(Number(txt('L12'))).toBe(project.headerExtras?.mitarbeiterFlag ?? 1);
+
+    // 4) kWp row present.
+    expect(txt('J10')).toBe('kWp:');
+
+    // 5) "EP | EK" carries the source's non-breaking space (char 160).
+    expect(txt('I13')).toBe('EP |' + String.fromCharCode(160) + 'EK');
+
+    // 6) MwSt. is 0% (no decimals) like the source; Lohn-ZSCHLG keeps 4 decimals.
+    expect(ws.getCell('D9').numFmt).toBe('0%');
+    const k7 = ws.getCell('K7').value as { result: number };
+    // 1.2633…, not the old 1.26 — at least 3 significant decimals retained.
+    expect(k7.result).toBeGreaterThan(0);
+    expect(Math.abs(k7.result - Math.round(k7.result * 100) / 100)).toBeGreaterThan(0);
+  });
+
   // Header totals (Netto/Brutto, the matrix VERKAUF sums, Ges.Std, Lohn-EINKAUF,
   // Überschuss) must match the SOURCE LV across ALL 10 Vorlagen — the Vorlage
   // derives Ges.Std = Lohn-VK ÷ Verrechnungslohn (L7/M2), Lohn-EINKAUF =

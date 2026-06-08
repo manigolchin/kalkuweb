@@ -129,7 +129,11 @@ export async function exportToKalkulationVorlage(data: ProjectData): Promise<Uin
   set('A6', 'BV:', { font: FONT_B }); set('B6', data.name || '');
   set('I7', 'Lohn:', { fill: C.body, align: 'right' });
   set('J7', F('K2*L8', lohnEk), { fill: C.body, numFmt: NF.eur, align: 'right' });
-  set('K7', F('M2/K2-1', r2(cp.mittellohn > 0 ? cp.verrechnungslohn / cp.mittellohn - 1 : 0)), { fill: C.body, numFmt: NF.pct, align: 'center' });
+  // Lohn-ZSCHLG: the Vorlage caches this to 4 decimals (e.g. 1.2633) — rounding
+  // to 2 here (1.26) was the visible gap. Format is 0.00% like K4–K6 (Excel shows
+  // 126.33%); the formula recomputes full precision on recalc.
+  const lohnZ = cp.mittellohn > 0 ? Math.round((cp.verrechnungslohn / cp.mittellohn - 1) * 10000) / 10000 : 0;
+  set('K7', F('M2/K2-1', lohnZ), { fill: C.body, numFmt: NF.pct, align: 'center' });
   set('L7', F(`SUM(AE14:AE${lastRow})`, t.totalLohn), { fill: C.body, numFmt: NF.eur, align: 'right' });
   set('M7', F('L7-J7', r2(t.totalLohn - lohnEk)), { fill: C.body, numFmt: NF.eur, align: 'right' });
 
@@ -142,17 +146,25 @@ export async function exportToKalkulationVorlage(data: ProjectData): Promise<Uin
   set('L8', F('L7/M2', r2(gesStunden)), { fill: C.body, numFmt: NF.minfmt, align: 'left' });
   set('M8', 'Überschuss:', { fill: C.matrix, font: WHITE_B, align: 'center' });
 
-  set('C9', 'MwSt.:', { align: 'left' }); set('D9', cp.mwst, { numFmt: NF.pct, align: 'center' });
+  set('C9', 'MwSt.:', { align: 'left' }); set('D9', cp.mwst, { numFmt: '0%', align: 'center' });
   set('F9', F('F8*D9', r2(t.totalMwst)), { numFmt: NF.eur, align: 'right' });
   set('I9', 'Arbeitstage:', { fill: C.body, align: 'right' });
   const tage = cp.personaleinsatz > 0 && cp.tagesstunden > 0 ? r2(t.totalHours / (cp.personaleinsatz * cp.tagesstunden)) : 0;
   set('J9', F(`SUM(AM14:AM${lastRow})`, tage), { fill: C.body, numFmt: NF.minfmt, align: 'left' });
   set('K9', 'Monate:', { fill: C.body, align: 'right' });
   set('L9', F('J9/21.5', r2(tage / 21.5)), { fill: C.body, numFmt: NF.minfmt, align: 'left' });
+  // Überschuss stays a LIVE computation so it's internally consistent with this
+  // sheet's own Netto − ΣEINKAUF (using headerExtras here would import the
+  // source's profit, which diverges from our totals on Bedarfspositionen-LVs).
   set('M9', F('SUM(M4:M7)', r2(t.totalNetto - matrixEk(t, cp))), { fill: C.matrix, font: WHITE_B, numFmt: NF.eur, align: 'center' });
 
   set('C10', 'Brutto Angebotssumme', { font: FONT_B, align: 'left' });
   set('F10', F('F8+F9', r2(t.totalBrutto)), { font: FONT_B, numFmt: NF.eur, align: 'right' });
+  // kWp row (Photovoltaik) — present in the Vorlage; "-" until a kWp value is
+  // entered in I10, matching the source's IFERROR guards.
+  set('J10', 'kWp:', { fill: C.body, align: 'right' });
+  set('K10', F('IFERROR(F8/I10,"-")', '-'), { fill: C.body, align: 'center' });
+  set('M10', F('IFERROR(K10-L10,"-")', '-'), { fill: C.body, align: 'center' });
 
   set('I11', 'Zeitwert:', { align: 'right' });
   set('J11', F('AP5/100', r2(cp.zeitabzug / 100)), { numFmt: NF.pct, align: 'left' });
@@ -161,7 +173,10 @@ export async function exportToKalkulationVorlage(data: ProjectData): Promise<Uin
 
   set('I12', 'Stoffe', { fill: C.green, align: 'center' });
   set('J12', 'Bei Mitarbeiter-Einsatz:', { fill: C.blau, font: FONT_B, align: 'right' });
-  set('L12', cp.personaleinsatz, { font: FONT_B, numFmt: NF.int, align: 'center' });
+  // L12 is the Mitarbeiter-Einsatz multiplier (Vorlage default 1), NOT the
+  // Personaleinsatz staff count — those are different cells (J8 = staff). Source
+  // L12 carries no fill.
+  set('L12', data.headerExtras?.mitarbeiterFlag ?? 1, { font: FONT_B, numFmt: NF.int, align: 'center' });
   set('M12', 'NU', { fill: C.nu, align: 'center' });
 
   // Far-right Stellschrauben block (matches the Vorlage).
@@ -169,18 +184,35 @@ export async function exportToKalkulationVorlage(data: ProjectData): Promise<Uin
   set('AP4', 'Zeitwert %:', { align: 'right' }); set('AP5', cp.zeitabzug, { font: FONT_B, numFmt: NF.num2, align: 'center' });
   set('AP6', 'Std. / Tag:', { align: 'right' }); set('AP7', cp.tagesstunden, { font: FONT_B, numFmt: NF.int, align: 'center' });
 
+  // ── Faktoren-Bibliothek (cols N–W, rows 2–12) ───────────────────────────────
+  // Replay the captured factor grid so the export carries the calculator's
+  // reference library exactly like the Vorlage. We write the cached VALUES: the
+  // source cells are formulas over named ranges (e.g. `schlitz+Q2*querschnitt`)
+  // that exist only inside the working template and would resolve to #NAME? in a
+  // standalone file — the values display identically and never error.
+  if (data.faktoren?.length) {
+    for (const f of data.faktoren) {
+      if (!f.raw || f.sourceRow < 2 || f.sourceRow > 12) continue;
+      for (const [col, val] of Object.entries(f.raw)) {
+        if (val == null || val === '' || !HELP[col]) continue;
+        set(`${col}${f.sourceRow}`, val, { align: typeof val === 'number' ? 'right' : 'left' });
+      }
+    }
+  }
+
   // ── Column headers (rows 11–13) ────────────────────────────────────────────
   const med: Partial<Borders> = { top: { style: 'medium' }, bottom: { style: 'medium' } };
+  const EP_EK = 'EP |' + String.fromCharCode(160) + 'EK'; // Vorlage uses a non-breaking space before "EK"
   set('A13', 'Pos.', { font: FONT_B, align: 'center', border: med });
   set('B13', 'Bezeichnung', { font: FONT_B, align: 'center', border: med });
   set('C13', 'Menge', { font: FONT_B, align: 'center', border: med });
   set('E13', 'EP', { font: FONT_B, align: 'center', border: med });
   set('F13', 'GP', { font: FONT_B, align: 'center', border: { ...med, right: { style: 'medium' } } });
-  set('I13', 'EP | EK', { fill: C.green, align: 'center', border: { bottom: { style: 'medium' }, left: { style: 'medium' } } });
+  set('I13', EP_EK, { fill: C.green, align: 'center', border: { bottom: { style: 'medium' }, left: { style: 'medium' } } });
   set('J13', 'Min/Einheit', { fill: C.blau, align: 'center', border: { bottom: { style: 'medium' } } });
   set('K13', 'Lstg./Std.', { fill: C.blau, font: FONT_B, align: 'center', border: { bottom: { style: 'medium' } } });
   set('L13', 'Lstg./Std.', { fill: C.blau, font: FONT_B, align: 'center', border: { bottom: { style: 'medium' } } });
-  set('M13', 'EP | EK', { fill: C.nu, align: 'center', border: { bottom: { style: 'medium' }, left: { style: 'medium' }, right: { style: 'medium' } } });
+  set('M13', EP_EK, { fill: C.nu, align: 'center', border: { bottom: { style: 'medium' }, left: { style: 'medium' }, right: { style: 'medium' } } });
   // The labelled helper columns (N..AP) — two/three-row headers + tints.
   for (const [col, [h11, h12, h13, hf]] of Object.entries(HELP)) {
     if (h11) set(`${col}11`, h11, { fill: hf, font: FONT_B, align: 'center' });
@@ -258,6 +290,14 @@ export async function exportToKalkulationVorlage(data: ProjectData): Promise<Uin
     AJ: 9, AK: 8.5, AL: 1, AM: 8.5, AN: 8.5, AO: 1, AP: 9,
   };
   for (const [col, w] of Object.entries(W)) ws.getColumn(col).width = w;
+
+  // ── Header-cell merges (match the Vorlage's visual layout) ──────────────────
+  // Client/Leistung/BV span multiple columns; Abgabedatum/Vergabenummer labels
+  // and values each span two; Bieter spans three rows. Mirrors the source file.
+  for (const m of ['B2:C3', 'D2:E2', 'F2:G2', 'B4:C5', 'D4:E4', 'F4:G4', 'B6:G7', 'B8:B10',
+    'I2:J2', 'I3:J3', 'J12:K12']) {
+    try { ws.mergeCells(m); } catch { /* ignore if a range overlaps */ }
+  }
 
   return new Uint8Array(await wb.xlsx.writeBuffer());
 }
