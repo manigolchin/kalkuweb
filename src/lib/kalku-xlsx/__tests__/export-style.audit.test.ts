@@ -87,4 +87,67 @@ dd('export style + formula audit (real project round-trip)', () => {
 
     console.log(`[export-style] row ${dataRowNum}: E=${ws.getCell('E' + dataRowNum).formula} → ${epCell.result}, F → ${fpCell.result}`);
   });
+
+  // Header totals (Netto/Brutto, the matrix VERKAUF sums, Ges.Std, Lohn-EINKAUF,
+  // Überschuss) must match the SOURCE LV across ALL 10 Vorlagen — the Vorlage
+  // derives Ges.Std = Lohn-VK ÷ Verrechnungslohn (L7/M2), Lohn-EINKAUF =
+  // Mittellohn × Ges.Std (NOT Σ raw hours), so this catches that 474-€ drift.
+  const EXAMPLES = [
+    'Desktop/Claude/example 1/LV3_BH_mit_Preisen.xlsx',
+    'Desktop/Claude/example 2/LV3.xlsx',
+    'Desktop/Claude/example 3/LV3.xlsx',
+    'Desktop/Claude/example 4/LV3_FW_mit_Preisen.xlsx',
+    'Desktop/claude1/example 5/LV3_.xlsx',
+    'Desktop/claude1/example 6/LV3.xlsx',
+    'Desktop/claude1/example 7/LV3.xlsx',
+    'Desktop/claude1/example 8/LV3.xlsx',
+    'Desktop/claude1/example 9/LV3.xlsx',
+    'Desktop/claude1/example 10/LV3.xlsx',
+  ];
+  const num = (ws: ExcelJS.Worksheet, addr: string): number => {
+    const v = ws.getCell(addr).value;
+    if (v && typeof v === 'object') {
+      if ('result' in v && typeof v.result === 'number') return v.result;
+      // exceljs omits a cached result of 0 → a formula cell with no result
+      // computes to 0 (e.g. a Nachunternehmer-Σ on an LV with no NU).
+      if ('formula' in v) return 0;
+    }
+    return typeof v === 'number' ? v : NaN;
+  };
+
+  // Example 1 (no Bedarfspositionen): the export's header reproduces the SOURCE
+  // LV's numbers within a euro — proves the Ges.Std/Lohn-EINKAUF/Überschuss
+  // derivation matches a real file end-to-end.
+  test('header totals match the source LV exactly (example 1, clean)', async () => {
+    const srcWb = new ExcelJS.Workbook();
+    await srcWb.xlsx.readFile(SRC);
+    const src = srcWb.getWorksheet('Kalkulation')!;
+    const parsed = await parseKalkulationWorkbook(new Uint8Array(readFileSync(SRC)));
+    const expWb = new ExcelJS.Workbook();
+    await expWb.xlsx.load((await exportToKalkulationVorlage(parsed.project!)) as unknown as ArrayBuffer);
+    const exp = expWb.getWorksheet('Kalkulation')!;
+    for (const cell of ['F8', 'F10', 'L4', 'L7', 'L8', 'J7', 'M9']) {
+      expect(Math.abs(num(exp, cell) - num(src, cell)), `${cell}`).toBeLessThanOrEqual(1.0);
+    }
+  });
+
+  // Across ALL 10 Vorlagen: the header's internal derivation is correct —
+  // Ges.Std = Lohn-VK ÷ Verrechnungslohn, Lohn-EINKAUF = Mittellohn × Ges.Std,
+  // Überschuss = Netto − Σ EINKAUF. (Absolute Netto can differ for LVs with
+  // Bedarfspositionen / "nur EP" rows — a separate model gap, not this bug.)
+  for (const rel of EXAMPLES) {
+    const path = join(HOME, rel);
+    const tt = existsSync(path) ? test : test.skip;
+    tt(`header derivation is internally correct — ${rel.split('/')[2]}`, async () => {
+      const parsed = await parseKalkulationWorkbook(new Uint8Array(readFileSync(path)));
+      const expWb = new ExcelJS.Workbook();
+      await expWb.xlsx.load((await exportToKalkulationVorlage(parsed.project!)) as unknown as ArrayBuffer);
+      const exp = expWb.getWorksheet('Kalkulation')!;
+      const [M2, K2, L7, L8, J7, M9, F8] = ['M2', 'K2', 'L7', 'L8', 'J7', 'M9', 'F8'].map((a) => num(exp, a));
+      const ekTotal = num(exp, 'J4') + num(exp, 'J5') + num(exp, 'J6') + J7;
+      if (M2 > 0) expect(Math.abs(L8 - L7 / M2), 'Ges.Std=L7/M2').toBeLessThanOrEqual(0.5);
+      expect(Math.abs(J7 - K2 * L8), 'Lohn-EK=K2×L8').toBeLessThanOrEqual(0.5);
+      expect(Math.abs(M9 - (F8 - ekTotal)), 'Überschuss=Netto−ΣEK').toBeLessThanOrEqual(1.0);
+    });
+  }
 });

@@ -73,6 +73,9 @@ const HELP: Record<string, [string, string, string, string, string]> = {
 export async function exportToKalkulationVorlage(data: ProjectData): Promise<Uint8Array> {
   const ExcelJS = (await import('exceljs')).default;
   const wb = new ExcelJS.Workbook();
+  // Force Excel to recompute every formula on open — guarantees correct numbers
+  // even where exceljs omitted a cached `0` result.
+  wb.calcProperties.fullCalcOnLoad = true;
   const ws = wb.addWorksheet('Kalkulation');
   const cp = data.calcParams;
   const t = calcTotals(data.positions, cp);
@@ -116,7 +119,13 @@ export async function exportToKalkulationVorlage(data: ProjectData): Promise<Uin
   matRow(4, 'Stoffe', 'AF', t.totalMaterial, cp.materialZuschlag);
   matRow(5, 'Nachuntern.', 'AH', t.totalNu, cp.nuZuschlag);
   matRow(6, 'Gerätekosten', 'AG', t.totalGeraet, cp.geraeteZuschlagPct);
-  const lohnEk = r2(cp.mittellohn * t.totalHours);
+  // Ges. Std = Lohn-VERKAUF ÷ Verrechnungslohn (the Vorlage's `L7/M2`), NOT the
+  // raw Σ hours — they differ by the per-component rounding. Lohn-EINKAUF then =
+  // Mittellohn × Ges.Std, so Lohn-DIFFERNZ + Überschuss match the Vorlage exactly.
+  const gesStunden = cp.verrechnungslohn > 0 ? t.totalLohn / cp.verrechnungslohn : 0;
+  // Lohn-EINKAUF = K2 × L8, where L8 (Ges.Std) is the rounded cell value — so the
+  // cached result equals what `=K2*L8` recomputes (and matches the source file).
+  const lohnEk = r2(cp.mittellohn * r2(gesStunden));
   set('A6', 'BV:', { font: FONT_B }); set('B6', data.name || '');
   set('I7', 'Lohn:', { fill: C.body, align: 'right' });
   set('J7', F('K2*L8', lohnEk), { fill: C.body, numFmt: NF.eur, align: 'right' });
@@ -130,7 +139,7 @@ export async function exportToKalkulationVorlage(data: ProjectData): Promise<Uin
   set('I8', 'Mitarbeiter:', { fill: C.body, align: 'right' });
   set('J8', cp.personaleinsatz, { font: FONT_B, numFmt: NF.int, align: 'center' });
   set('K8', 'Ges. Std.:', { fill: C.body, align: 'right' });
-  set('L8', F(`SUM(AN14:AN${lastRow})`, r2(t.totalHours)), { fill: C.body, numFmt: NF.minfmt, align: 'left' });
+  set('L8', F('L7/M2', r2(gesStunden)), { fill: C.body, numFmt: NF.minfmt, align: 'left' });
   set('M8', 'Überschuss:', { fill: C.matrix, font: WHITE_B, align: 'center' });
 
   set('C9', 'MwSt.:', { align: 'left' }); set('D9', cp.mwst, { numFmt: NF.pct, align: 'center' });
@@ -263,7 +272,10 @@ function r2hours(hours: number, personal: number): number {
   return personal > 0 ? Math.round((hours / 8 / personal) * 10000) / 10000 : 0;
 }
 function matrixEk(t: ReturnType<typeof calcTotals>, cp: ProjectData['calcParams']): number {
-  return r2(t.totalMaterial / (1 + cp.materialZuschlag) + t.totalNu / (1 + cp.nuZuschlag) + t.totalGeraet / (1 + cp.geraeteZuschlagPct) + cp.mittellohn * t.totalHours);
+  // Lohn EINKAUF = Mittellohn × (Lohn-VK / Verrechnungslohn) — matches the Vorlage's
+  // Ges.Std derivation, not Σ raw hours.
+  const lohnEk = cp.verrechnungslohn > 0 ? r2(cp.mittellohn * r2(t.totalLohn / cp.verrechnungslohn)) : 0;
+  return r2(t.totalMaterial / (1 + cp.materialZuschlag) + t.totalNu / (1 + cp.nuZuschlag) + t.totalGeraet / (1 + cp.geraeteZuschlagPct) + lohnEk);
 }
 function sumF(ws: Worksheet, start: number, end: number): number {
   let s = 0;
