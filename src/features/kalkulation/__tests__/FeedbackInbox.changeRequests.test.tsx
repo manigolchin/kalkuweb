@@ -174,4 +174,21 @@ describe('FeedbackInbox — Änderungswünsche', () => {
     expect(resolveMock).toHaveBeenCalledWith('b', true);
     await waitFor(() => expect(screen.getByTestId('cr-summary').textContent).toContain('alle erledigt'));
   });
+
+  test('summary banner shows the negotiation roll-up (Endbetrag + Positionswünsche)', async () => {
+    listMock.mockResolvedValueOnce(
+      listPayload([
+        buildEntry([
+          buildCr({ id: 'g', scope: 'global', positionOz: null, shortText: null, field: 'endbetrag', currentValue: 800, requestedValue: 750 }),
+          buildCr({ id: 'p', scope: 'position', positionOz: '1.1', field: 'gesamtpreis', currentValue: 1000, requestedValue: 900 }),
+        ]),
+      ]),
+    );
+    await openThread();
+    const rollup = await screen.findByTestId('cr-rollup');
+    expect(rollup.textContent).toContain('Endbetrag-Wunsch');
+    expect(rollup.textContent).toContain('750,00');
+    expect(rollup.textContent).toContain('Positionswünsche');
+    expect(rollup.textContent).toContain('Richtwert');
+  });
 });

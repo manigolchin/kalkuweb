@@ -13,6 +13,7 @@ import type {
   ChangeRequestScope,
   ChangeRequestUnit,
   CustomerViewPayload,
+  InboxChangeRequest,
   ShareCalcSummary,
   ShareSettings,
 } from './types';
@@ -166,6 +167,73 @@ export function positionCurrentValue(
     default:
       return null; // zeit (minutes not shown) / sonstiges
   }
+}
+
+/**
+ * Owner-side negotiation roll-up over an offer's change requests. Gives the
+ * Inhaber an at-a-glance "what does the customer want financially":
+ *
+ *  - `endbetragDelta` / `endbetragRequested` — the global Endbetrag wish, if any.
+ *  - `positionsDelta` — the NET €-change of all per-position wishes, deduped per
+ *    position so a line is never double-counted: a `gesamtpreis` wish (the line
+ *    total) WINS over the cost-type sub-components (Material/Gerät/Lohn) of the
+ *    same position; otherwise the cost-type deltas are summed. A Richtwert.
+ *
+ * Only EUR wishes with BOTH a current and a requested value contribute — a
+ * direction-only "günstiger" or a Menge/Zeit wish carries no € figure and is
+ * left out of the sums (still counted in `count`/`open`).
+ */
+export type ChangeRequestRollup = {
+  count: number;
+  open: number;
+  endbetragDelta: number | null;
+  endbetragRequested: number | null;
+  positionsDelta: number | null;
+};
+
+export function rollupChangeRequests(crs: InboxChangeRequest[]): ChangeRequestRollup {
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const count = crs.length;
+  const open = crs.filter((c) => !c.resolvedAt).length;
+
+  const endbetrag = crs.find(
+    (c) => c.scope === 'global' && c.field === 'endbetrag' && c.requestedValue != null && c.currentValue != null,
+  );
+  const endbetragDelta = endbetrag ? round2(endbetrag.requestedValue! - endbetrag.currentValue!) : null;
+  const endbetragRequested = endbetrag ? endbetrag.requestedValue! : null;
+
+  // Per-position EUR deltas. gesamtpreis (line total) overrides the cost-type
+  // parts of the same position to avoid double counting.
+  const byPos = new Map<string, { gesamt: number | null; parts: number; hasParts: boolean }>();
+  for (const c of crs) {
+    if (c.scope !== 'position' || c.unit !== 'eur') continue;
+    if (c.requestedValue == null || c.currentValue == null) continue;
+    const key = c.positionOz ?? '';
+    const entry = byPos.get(key) ?? { gesamt: null, parts: 0, hasParts: false };
+    const delta = c.requestedValue - c.currentValue;
+    if (c.field === 'gesamtpreis') entry.gesamt = delta;
+    else if (c.field === 'material' || c.field === 'geraete' || c.field === 'lohn') {
+      entry.parts += delta;
+      entry.hasParts = true;
+    }
+    byPos.set(key, entry);
+  }
+  let positionsDelta: number | null = null;
+  let any = false;
+  let sum = 0;
+  for (const v of byPos.values()) {
+    if (v.gesamt != null) { sum += v.gesamt; any = true; }
+    else if (v.hasParts) { sum += v.parts; any = true; }
+  }
+  if (any) positionsDelta = round2(sum);
+
+  return { count, open, endbetragDelta, endbetragRequested, positionsDelta };
+}
+
+/** Signed EUR for a delta display: "−50,00 €" / "+120,00 €". */
+export function formatSignedEUR(delta: number): string {
+  const sign = delta < 0 ? '−' : '+';
+  return `${sign}${formatEUR(Math.abs(delta))}`;
 }
 
 /**

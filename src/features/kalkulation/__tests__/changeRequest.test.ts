@@ -8,8 +8,18 @@ import {
   positionCurrentValue,
   availableFields,
   assembleChangeRequests,
+  rollupChangeRequests,
+  formatSignedEUR,
 } from '../changeRequest';
-import type { ShareCalcSummary, CustomerViewPayload } from '../types';
+import type { ShareCalcSummary, CustomerViewPayload, InboxChangeRequest } from '../types';
+
+function cr(over: Partial<InboxChangeRequest>): InboxChangeRequest {
+  return {
+    id: 'x', scope: 'position', positionOz: '1.1', shortText: 'X', field: 'gesamtpreis',
+    unit: 'eur', currentValue: null, requestedValue: null, direction: 'unspecified',
+    note: '', authorName: null, createdAt: '2026-05-20T00:00:00Z', resolvedAt: null, ...over,
+  };
+}
 
 const summary: ShareCalcSummary = {
   netto: 800, mwst: 152, brutto: 952, totalHours: 2.4, ekTotal: 600, ueberschuss: 200,
@@ -115,5 +125,58 @@ describe('changeRequest — assembleChangeRequests', () => {
     expect(items).toEqual([
       { scope: 'global', positionOz: undefined, field: 'endbetrag', requestedValue: 750, direction: undefined, note: undefined },
     ]);
+  });
+});
+
+describe('changeRequest — rollupChangeRequests (negotiation summary)', () => {
+  test('global Endbetrag delta', () => {
+    const r = rollupChangeRequests([
+      cr({ scope: 'global', positionOz: null, field: 'endbetrag', currentValue: 800, requestedValue: 750 }),
+    ]);
+    expect(r.endbetragRequested).toBe(750);
+    expect(r.endbetragDelta).toBe(-50);
+    expect(r.positionsDelta).toBeNull();
+    expect(r.count).toBe(1);
+    expect(r.open).toBe(1);
+  });
+
+  test('positions delta sums distinct positions', () => {
+    const r = rollupChangeRequests([
+      cr({ id: 'a', positionOz: '1.1', field: 'gesamtpreis', currentValue: 800, requestedValue: 700 }),
+      cr({ id: 'b', positionOz: '1.2', field: 'material', currentValue: 500, requestedValue: 400 }),
+    ]);
+    expect(r.positionsDelta).toBe(-200);
+  });
+
+  test('gesamtpreis overrides cost-type of the same position (no double count)', () => {
+    const r = rollupChangeRequests([
+      cr({ id: 'a', positionOz: '1.1', field: 'gesamtpreis', currentValue: 800, requestedValue: 700 }),
+      cr({ id: 'b', positionOz: '1.1', field: 'material', currentValue: 500, requestedValue: 400 }),
+    ]);
+    expect(r.positionsDelta).toBe(-100); // only the gesamtpreis line delta
+  });
+
+  test('direction-only wishes carry no € but still count', () => {
+    const r = rollupChangeRequests([
+      cr({ id: 'a', positionOz: '1.1', field: 'lohn', currentValue: null, requestedValue: null, direction: 'lower' }),
+    ]);
+    expect(r.positionsDelta).toBeNull();
+    expect(r.endbetragDelta).toBeNull();
+    expect(r.count).toBe(1);
+  });
+
+  test('open excludes resolved', () => {
+    const r = rollupChangeRequests([
+      cr({ id: 'a', resolvedAt: '2026-05-21T00:00:00Z' }),
+      cr({ id: 'b' }),
+    ]);
+    expect(r.count).toBe(2);
+    expect(r.open).toBe(1);
+  });
+
+  test('formatSignedEUR shows the sign', () => {
+    expect(formatSignedEUR(-50)).toContain('−');
+    expect(formatSignedEUR(-50)).toContain('50,00');
+    expect(formatSignedEUR(120)).toContain('+');
   });
 });

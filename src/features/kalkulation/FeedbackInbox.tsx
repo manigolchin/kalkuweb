@@ -46,7 +46,8 @@ import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { api } from '@/lib/api';
 import type { InboxEntry, InboxComment, InboxChangeRequest, ShareResponse } from './types';
-import { FIELD_LABEL, DIRECTION_LABEL, formatChangeValue } from './changeRequest';
+import { FIELD_LABEL, DIRECTION_LABEL, formatChangeValue, rollupChangeRequests, formatSignedEUR } from './changeRequest';
+import { formatEUR } from './calc';
 import { Skeleton, Breadcrumb } from '@/pages/panel/ui';
 
 type FilterId = 'all' | 'wuensche' | 'changes' | 'comments' | 'approved' | 'rejected' | 'viewed';
@@ -731,6 +732,7 @@ function ThreadDetail({
   const feed = useMemo(() => buildFeed(entry), [entry]);
   const changeReqs = entry.changeRequests ?? [];
   const openCrIds = changeReqs.filter((cr) => !cr.resolvedAt).map((cr) => cr.id);
+  const rollup = rollupChangeRequests(changeReqs);
   const shareUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/share/${entry.share.token}`;
 
   return (
@@ -812,6 +814,31 @@ function ThreadDetail({
             >
               <CheckCircle2 className="h-3.5 w-3.5" /> Alle erledigt
             </button>
+          )}
+
+          {/* Negotiation roll-up — what the customer wants financially. */}
+          {(rollup.endbetragDelta != null || rollup.positionsDelta != null) && (
+            <div
+              data-testid="cr-rollup"
+              className="mt-1 flex w-full flex-wrap items-center gap-x-5 gap-y-1 border-t border-primary-200/70 pt-1.5 text-xs dark:border-primary-500/20"
+            >
+              {rollup.endbetragDelta != null && (
+                <span className="text-primary-900 dark:text-primary-100">
+                  Endbetrag-Wunsch:{' '}
+                  <span className="tabular-nums font-semibold">{formatEUR(rollup.endbetragRequested!)}</span>{' '}
+                  <span className="tabular-nums font-medium text-slate-500 dark:text-slate-400">
+                    ({formatSignedEUR(rollup.endbetragDelta)})
+                  </span>
+                </span>
+              )}
+              {rollup.positionsDelta != null && (
+                <span className="text-primary-900 dark:text-primary-100">
+                  Positionswünsche:{' '}
+                  <span className="tabular-nums font-semibold">{formatSignedEUR(rollup.positionsDelta)}</span>
+                  <span className="text-slate-400 dark:text-slate-500"> (Richtwert)</span>
+                </span>
+              )}
+            </div>
           )}
         </div>
       )}
