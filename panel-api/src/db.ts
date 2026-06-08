@@ -260,5 +260,28 @@ export function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_local_aus_owner ON local_auschreibungen(owner_id);
     CREATE INDEX IF NOT EXISTS idx_local_aus_firma ON local_auschreibungen(firma_kind, firma_id);
     CREATE INDEX IF NOT EXISTS idx_local_aus_archived ON local_auschreibungen(archived_at);
+
+    -- Round 12 — structured customer change requests ("Änderungswünsche").
+    -- Per-position OR global price/quantity wishes with current→requested values.
+    CREATE TABLE IF NOT EXISTS change_requests (
+      id TEXT PRIMARY KEY,
+      share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
+      scope TEXT NOT NULL CHECK (scope IN ('global','position')),
+      position_oz TEXT,
+      field TEXT NOT NULL,
+      unit TEXT NOT NULL DEFAULT 'eur',
+      current_value REAL,
+      requested_value REAL,
+      direction TEXT NOT NULL DEFAULT 'unspecified' CHECK (direction IN ('lower','higher','exact','unspecified')),
+      note TEXT NOT NULL DEFAULT '',
+      author_name TEXT,
+      author_email TEXT,
+      ip TEXT,
+      user_agent TEXT,
+      created_at INTEGER NOT NULL,
+      resolved_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_change_requests_share ON change_requests(share_id);
+    CREATE INDEX IF NOT EXISTS idx_change_requests_share_oz ON change_requests(share_id, position_oz);
   `);
 }

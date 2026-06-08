@@ -26,12 +26,26 @@ import {
   Layers,
   ArrowDownWideNarrow,
   X,
+  SlidersHorizontal,
+  User,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api, ApiError } from '@/lib/api';
-import type { CustomerViewPayload, ShareCalcSummary } from '@/features/kalkulation/types';
+import type {
+  ChangeRequestInput,
+  CustomerViewPayload,
+  ShareCalcSummary,
+  ShareSettings,
+} from '@/features/kalkulation/types';
 import { formatEUR } from '@/features/kalkulation/calc';
+import {
+  assembleChangeRequests,
+  availableFields,
+  globalCurrentValue,
+  type ChangeRequestDraftMap,
+} from '@/features/kalkulation/changeRequest';
 import PositionCommentPanel from '@/pages/share/PositionCommentPanel';
+import ChangeRequestFields from '@/pages/share/ChangeRequestFields';
 
 type ChangeDraft = { positionId: string; type: 'modify' | 'remove' | 'comment'; text: string };
 type SharePosition = CustomerViewPayload['positions'][number];
@@ -221,6 +235,24 @@ export default function ShareView() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  /** Round 12: POST a batch of structured price/quantity wishes. Shared by the
+   *  per-position panel and the global "Gesamtangebot anpassen" panel. Throws
+   *  on failure so the caller keeps its draft open for a retry. */
+  async function submitChangeRequestItems(items: ChangeRequestInput[]) {
+    if (items.length === 0) return;
+    let storedPwd: string | undefined;
+    try { storedPwd = window.sessionStorage.getItem(sessionKey) ?? undefined; } catch { /* ignore */ }
+    await api.public.submitChangeRequests(
+      token,
+      {
+        customerName: customerName.trim() || undefined,
+        customerEmail: customerEmail.trim() || undefined,
+        items,
+      },
+      storedPwd,
+    );
   }
 
   if (state.kind === 'loading') {
@@ -450,6 +482,28 @@ export default function ShareView() {
             showBreakdown={showBreakdown}
             showCalculation={showCalculation}
             isNachtrag={isNachtrag}
+          />
+        )}
+
+        {/* Round 12: global "Gesamtangebot anpassen" — request a change to the
+            Endbetrag or an overall cost type, with current→Wunsch values. */}
+        {!submitted && settings.allowChangeRequests && (
+          <GlobalChangeRequestPanel
+            summary={summary}
+            settings={settings}
+            customerName={customerName}
+            customerEmail={customerEmail}
+            onSetCustomerName={setCustomerName}
+            onSetCustomerEmail={setCustomerEmail}
+            onSubmit={async (items) => {
+              try {
+                await submitChangeRequestItems(items);
+                toast.success('Ihr Änderungswunsch wurde gesendet.');
+              } catch (e) {
+                toast.error('Änderungswunsch konnte nicht gesendet werden. Bitte später erneut versuchen.');
+                throw e;
+              }
+            }}
           />
         )}
 
@@ -688,6 +742,16 @@ export default function ShareView() {
         onClear={() => panelPositionId && removeChange(panelPositionId)}
         onSetCustomerName={setCustomerName}
         onSetCustomerEmail={setCustomerEmail}
+        showCostBreakdown={showBreakdown}
+        onSubmitChangeRequests={async (items) => {
+          try {
+            await submitChangeRequestItems(items);
+            toast.success('Änderungswunsch gesendet.');
+          } catch (e) {
+            toast.error('Änderungswunsch konnte nicht gesendet werden.');
+            throw e;
+          }
+        }}
         onSubmitToServer={async (input) => {
           // Map the legacy panel intent enum (modify | remove | comment)
           // to the richer PART K enum. 'modify' is the most common case
@@ -736,6 +800,138 @@ function formatPct(n: number, digits = 1): string {
       minimumFractionDigits: digits,
       maximumFractionDigits: digits,
     }).format(n * 100) + ' %'
+  );
+}
+
+/**
+ * Round 12: the global "Gesamtangebot anpassen" panel. Lets the customer
+ * request a change to the Endbetrag or an overall cost type (Lohn / Material /
+ * Gerät / Arbeitszeit), each as a current→Wunsch value. Self-contained state;
+ * submits the batch via `onSubmit` and flips to a thank-you on success.
+ */
+function GlobalChangeRequestPanel({
+  summary,
+  settings,
+  customerName,
+  customerEmail,
+  onSetCustomerName,
+  onSetCustomerEmail,
+  onSubmit,
+}: {
+  summary: ShareCalcSummary | null;
+  settings: ShareSettings;
+  customerName: string;
+  customerEmail: string;
+  onSetCustomerName: (v: string) => void;
+  onSetCustomerEmail: (v: string) => void;
+  onSubmit: (items: ChangeRequestInput[]) => Promise<void>;
+}) {
+  const [drafts, setDrafts] = useState<ChangeRequestDraftMap>({});
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+  const fields = useMemo(() => availableFields('global', settings), [settings]);
+  const items = useMemo(() => assembleChangeRequests('global', undefined, drafts), [drafts]);
+  const hasContact = customerName.trim().length > 0;
+
+  if (fields.length === 0) return null;
+
+  if (sent) {
+    return (
+      <section className="bg-emerald-50 border border-emerald-200 rounded-2xl px-6 py-5">
+        <div className="flex items-start gap-3">
+          <div className="inline-flex p-2 rounded-full bg-emerald-100 text-emerald-700">
+            <Check className="w-4 h-4" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-emerald-900">
+              Vielen Dank — Ihr Änderungswunsch ist eingegangen.
+            </h3>
+            <p className="text-sm text-emerald-800/80 mt-0.5">
+              Der Anbieter meldet sich bei Ihnen. Einzelne Positionen können Sie zusätzlich
+              direkt an der jeweiligen Zeile anpassen.
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="bg-white border border-slate-200/80 rounded-2xl overflow-hidden" data-testid="global-change-request">
+      <header className="px-6 py-4 border-b border-slate-100">
+        <h3 className="font-semibold text-slate-900 flex items-center gap-2">
+          <SlidersHorizontal className="w-4 h-4 text-primary-600" />
+          Gesamtes Angebot anpassen
+        </h3>
+        <p className="text-xs text-slate-500 mt-0.5">
+          Sie möchten beim Endbetrag oder einer Kostenart etwas ändern? Wählen Sie aus, was
+          angepasst werden soll, und nennen Sie Ihren Wunschwert.
+        </p>
+      </header>
+      <div className="px-6 py-4 space-y-3">
+        <ChangeRequestFields
+          scope="global"
+          fields={fields}
+          currentValueFor={(f) => globalCurrentValue(f, summary)}
+          drafts={drafts}
+          onChange={setDrafts}
+        />
+        {items.length > 0 && !hasContact && (
+          <div className="grid sm:grid-cols-2 gap-2 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+            <label className="block">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-900 mb-1 flex items-center gap-1">
+                <User className="w-3 h-3" /> Ihr Name
+              </span>
+              <input
+                value={customerName}
+                onChange={(e) => onSetCustomerName(e.target.value)}
+                placeholder="Vor- und Nachname"
+                className="w-full text-sm bg-white border border-amber-300 rounded-lg px-3 py-1.5 outline-none focus:border-amber-500"
+              />
+            </label>
+            <label className="block">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-900 mb-1 flex items-center gap-1">
+                <Mail className="w-3 h-3" /> E-Mail (optional)
+              </span>
+              <input
+                type="email"
+                value={customerEmail}
+                onChange={(e) => onSetCustomerEmail(e.target.value)}
+                placeholder="ihre@firma.de"
+                className="w-full text-sm bg-white border border-amber-300 rounded-lg px-3 py-1.5 outline-none focus:border-amber-500"
+              />
+            </label>
+          </div>
+        )}
+        <div className="flex items-center justify-end gap-3">
+          {items.length > 0 && (
+            <span className="text-[11px] text-slate-400">
+              {items.length} {items.length === 1 ? 'Wunsch' : 'Wünsche'} ausgewählt
+            </span>
+          )}
+          <button
+            type="button"
+            data-testid="global-cr-submit"
+            disabled={busy || items.length === 0 || (!hasContact && items.length > 0)}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await onSubmit(items);
+                setSent(true);
+              } catch {
+                /* toast surfaced by the caller; keep the draft for a retry */
+              } finally {
+                setBusy(false);
+              }
+            }}
+            className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg bg-primary-600 text-white text-sm font-semibold hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            title={!hasContact && items.length > 0 ? 'Bitte Namen eintragen' : undefined}
+          >
+            {busy ? 'Senden…' : 'Wunsch senden'}
+          </button>
+        </div>
+      </div>
+    </section>
   );
 }
 

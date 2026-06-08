@@ -529,6 +529,56 @@ export type ViewPreset = {
   createdAt: string;
 };
 
+/** Round 12 — structured customer change requests ("Änderungswünsche").
+ *  Mirror of the panel-api schema unions. */
+export const CHANGE_REQUEST_FIELDS = [
+  'endbetrag',
+  'gesamtpreis',
+  'menge',
+  'material',
+  'geraete',
+  'zeit',
+  'lohn',
+  'sonstiges',
+] as const;
+export type ChangeRequestField = (typeof CHANGE_REQUEST_FIELDS)[number];
+export type ChangeRequestScope = 'global' | 'position';
+export type ChangeRequestDirection = 'lower' | 'higher' | 'exact' | 'unspecified';
+export type ChangeRequestUnit = 'eur' | 'min' | 'std' | 'qty' | 'pct';
+
+/** One change request the customer composes on the share (client → server).
+ *  `currentValue`/`unit` are NOT sent — the server lifts them from the frozen
+ *  snapshot so the "Ist" side of the diff can't be spoofed. */
+export type ChangeRequestInput = {
+  scope: ChangeRequestScope;
+  positionOz?: string;
+  field: ChangeRequestField;
+  requestedValue?: number | null;
+  direction?: ChangeRequestDirection;
+  note?: string;
+};
+
+/** One change request as the owner's Kunden-Feedback inbox sees it
+ *  (server → panel), with the position Kurztext resolved from the snapshot. */
+export type InboxChangeRequest = {
+  id: string;
+  scope: ChangeRequestScope;
+  positionOz: string | null;
+  /** Resolved from the frozen snapshot; null for global-scope wishes. */
+  shortText: string | null;
+  field: ChangeRequestField;
+  unit: ChangeRequestUnit;
+  /** What the customer was shown (server-lifted). Null when not in the snapshot. */
+  currentValue: number | null;
+  /** What the customer wants. Null when they only gave a direction + note. */
+  requestedValue: number | null;
+  direction: ChangeRequestDirection;
+  note: string;
+  authorName: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+};
+
 /** One per-position comment (positionComments table), resolved with the
  *  position's short text from the frozen share snapshot. Surfaced in the
  *  Kunden-Feedback tab so the calculator sees WHICH part was commented on. */
@@ -567,4 +617,7 @@ export type InboxEntry = {
   };
   responses: ShareResponse[];
   comments: InboxComment[];
+  /** Round 12 — structured Änderungswünsche (current→requested value diffs).
+   *  Optional for back-compat with payloads/fixtures created before the field. */
+  changeRequests?: InboxChangeRequest[];
 };

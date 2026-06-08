@@ -1,6 +1,7 @@
 import type {
   AdminUser,
   AuthUser,
+  ChangeRequestInput,
   CustomerViewPayload,
   InboxEntry,
   PanelPermissionKey,
@@ -247,6 +248,12 @@ export const api = {
     list: () =>
       request<{ entries: InboxEntry[]; generatedAt: string; viewerLastSeenAt: string | null }>(
         `/inbox`,
+      ),
+    /** Round 12: mark a structured change request resolved (or re-open it). */
+    resolveChangeRequest: (id: string, resolved = true) =>
+      request<{ ok: true; id: string; resolvedAt: string | null }>(
+        `/inbox/change-requests/${id}/resolve`,
+        { method: 'POST', body: JSON.stringify({ resolved }) },
       ),
   },
   notifications: {
@@ -616,6 +623,23 @@ export const api = {
     ) =>
       request<{ ok: true; id: string; createdAt: string; positionOz: string; intent: string }>(
         `/share/${token}/comments`,
+        {
+          method: 'POST',
+          body: JSON.stringify(input),
+          headers: password ? { 'X-Share-Password': password } : undefined,
+        },
+      ),
+    /** Round 12: structured Änderungswünsche — batch of per-position / global
+     *  price-quantity wishes. The server lifts the "Ist" value from the frozen
+     *  snapshot; the client only sends the field, the wished value/direction
+     *  and a note. Honors the share password gate. */
+    submitChangeRequests: (
+      token: string,
+      input: { customerName?: string; customerEmail?: string; items: ChangeRequestInput[] },
+      password?: string,
+    ) =>
+      request<{ ok: true; count: number; createdAt: string }>(
+        `/share/${token}/change-requests`,
         {
           method: 'POST',
           body: JSON.stringify(input),

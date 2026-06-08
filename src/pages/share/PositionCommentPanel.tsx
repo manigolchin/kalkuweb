@@ -17,11 +17,18 @@
  * fields are not in the type — they cannot be rendered even by accident.
  */
 
-import { useEffect, useRef, useState } from 'react';
-import { X, MessageSquare, Trash2, HelpCircle, Pencil, Mail, User } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { X, MessageSquare, Trash2, HelpCircle, Pencil, Mail, User, SlidersHorizontal } from 'lucide-react';
 import clsx from 'clsx';
-import type { CustomerViewPayload } from '@/features/kalkulation/types';
+import type { ChangeRequestInput, CustomerViewPayload } from '@/features/kalkulation/types';
 import { formatEUR } from '@/features/kalkulation/calc';
+import {
+  assembleChangeRequests,
+  availableFields,
+  positionCurrentValue,
+  type ChangeRequestDraftMap,
+} from '@/features/kalkulation/changeRequest';
+import ChangeRequestFields from './ChangeRequestFields';
 
 export type CommentDraft = {
   positionId: string;
@@ -54,6 +61,14 @@ type Props = {
     authorName?: string;
     authorEmail?: string;
   }) => Promise<void>;
+  /** Round 12: whether the share reveals the per-position cost split. Gates
+   *  the Material/Gerät/Lohn change targets (only offer figures the customer
+   *  was actually shown). Menge + Gesamtpreis are always offered. */
+  showCostBreakdown?: boolean;
+  /** Round 12: persist structured price/quantity wishes. When provided, the
+   *  "Preis oder Menge anpassen" composer is shown; on send the assembled
+   *  items are POSTed alongside any free-text comment. */
+  onSubmitChangeRequests?: (items: ChangeRequestInput[]) => Promise<void>;
 };
 
 const INTENTS: Array<{ key: CommentDraft['type']; label: string; hint: string; icon: typeof Pencil }> = [
@@ -74,9 +89,26 @@ export default function PositionCommentPanel({
   onSetCustomerName,
   onSetCustomerEmail,
   onSubmitToServer,
+  showCostBreakdown = true,
+  onSubmitChangeRequests,
 }: Props) {
   const [submitting, setSubmitting] = useState(false);
+  const [crDrafts, setCrDrafts] = useState<ChangeRequestDraftMap>({});
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Reset the structured drafts whenever a different position is opened.
+  useEffect(() => {
+    setCrDrafts({});
+  }, [position?.id]);
+
+  const crFields = useMemo(
+    () => availableFields('position', { showCostBreakdown, showCalculation: true, showTotals: true }),
+    [showCostBreakdown],
+  );
+  const crItems = useMemo(
+    () => assembleChangeRequests('position', (position?.oz || '').trim(), crDrafts),
+    [crDrafts, position?.oz],
+  );
 
   // Focus the textarea when the panel opens so the customer can start
   // typing immediately. Skip the auto-focus on touch devices where it
@@ -103,6 +135,8 @@ export default function PositionCommentPanel({
 
   const activeIntent: CommentDraft['type'] = draft?.type ?? 'modify';
   const hasContact = customerName.trim().length > 0;
+  const hasText = (draft?.text.trim().length ?? 0) > 0;
+  const hasContent = hasText || crItems.length > 0;
 
   return (
     <div
@@ -157,6 +191,23 @@ export default function PositionCommentPanel({
         </section>
 
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+          {/* Round 12: structured price/quantity change request */}
+          {onSubmitChangeRequests && (
+            <fieldset>
+              <legend className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1.5">
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                Preis oder Menge anpassen
+              </legend>
+              <ChangeRequestFields
+                scope="position"
+                fields={crFields}
+                currentValueFor={(f) => positionCurrentValue(f, position)}
+                drafts={crDrafts}
+                onChange={setCrDrafts}
+              />
+            </fieldset>
+          )}
+
           {/* Intent picker */}
           <fieldset>
             <legend className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">
@@ -256,11 +307,12 @@ export default function PositionCommentPanel({
 
         {/* Footer actions */}
         <footer className="flex items-center justify-between gap-3 px-4 h-14 border-t border-slate-200 bg-slate-50/40 flex-shrink-0">
-          {draft && draft.text.trim().length > 0 ? (
+          {hasContent ? (
             <button
               type="button"
               onClick={() => {
                 onClear();
+                setCrDrafts({});
                 onClose();
               }}
               className="text-xs text-slate-500 hover:text-rose-600 inline-flex items-center gap-1"
@@ -269,45 +321,53 @@ export default function PositionCommentPanel({
             </button>
           ) : (
             <span className="text-[11px] text-slate-400">
-              Wird mit anderen Anmerkungen am Ende gesendet.
+              {onSubmitChangeRequests ? 'Wunsch + Anmerkung werden direkt gesendet.' : 'Wird mit anderen Anmerkungen am Ende gesendet.'}
             </span>
           )}
           <button
             type="button"
             onClick={async () => {
-              // If there's a non-empty draft AND a server handler, POST it
-              // before closing. Falls back to local-state-only behaviour
-              // when onSubmitToServer is omitted (preserves the legacy
-              // batched flow for callers that haven't opted in).
+              if (!position) {
+                onClose();
+                return;
+              }
               const text = (draft?.text ?? '').trim();
-              if (text.length > 0 && onSubmitToServer && position) {
-                setSubmitting(true);
-                try {
+              const oz = (position.oz || '').trim();
+              if (!hasContent) {
+                onClose();
+                return;
+              }
+              setSubmitting(true);
+              try {
+                // Submit the structured price/quantity wishes first…
+                if (crItems.length > 0 && onSubmitChangeRequests) {
+                  await onSubmitChangeRequests(crItems);
+                }
+                // …then any free-text comment (question / Streichen / remark).
+                if (text.length > 0 && onSubmitToServer) {
                   await onSubmitToServer({
-                    positionOz: (position.oz || '').trim(),
+                    positionOz: oz,
                     intent: draft?.type ?? 'comment',
                     text,
                     authorName: customerName.trim() || undefined,
                     authorEmail: customerEmail.trim() || undefined,
                   });
-                } catch {
-                  // Don't close on error — let the user retry.
-                  setSubmitting(false);
-                  return;
                 }
+              } catch {
+                // Don't close on error — let the user retry.
                 setSubmitting(false);
+                return;
               }
+              setSubmitting(false);
+              setCrDrafts({});
               onClose();
             }}
-            disabled={
-              submitting ||
-              (!hasContact && (draft?.text.trim().length ?? 0) > 0)
-            }
+            disabled={submitting || (!hasContact && hasContent)}
             data-testid="position-comment-submit"
             className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg bg-primary-600 text-white text-sm font-semibold hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            title={!hasContact && (draft?.text.trim().length ?? 0) > 0 ? 'Bitte Namen eintragen' : undefined}
+            title={!hasContact && hasContent ? 'Bitte Namen eintragen' : undefined}
           >
-            {submitting ? 'Senden…' : 'Anmerkung senden'}
+            {submitting ? 'Senden…' : 'Senden'}
           </button>
         </footer>
       </aside>

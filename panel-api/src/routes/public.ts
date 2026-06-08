@@ -13,6 +13,12 @@ import {
   auditEvents,
   shareAccessLog,
   positionComments,
+  changeRequests,
+  CHANGE_REQUEST_FIELDS,
+  type ChangeRequestField,
+  type ChangeRequestScope,
+  type ChangeRequestUnit,
+  type ShareSnapshot,
 } from '../schema.js';
 import { clientIp, clientFingerprint } from '../lib/middleware.js';
 import { buildLegacySnapshot, snapshotHash } from '../lib/snapshot.js';
@@ -162,6 +168,64 @@ const changesSchema = z.object({
     .min(1)
     .max(100),
 });
+
+const changeRequestsSchema = z.object({
+  customerName: z.string().trim().min(1).max(200).optional(),
+  customerEmail: z.string().email().max(200).optional(),
+  items: z
+    .array(
+      z.object({
+        scope: z.enum(['global', 'position']),
+        positionOz: z.string().trim().max(200).optional(),
+        field: z.enum(CHANGE_REQUEST_FIELDS),
+        /** The value the customer wants. Null/omitted = only a direction + note. */
+        requestedValue: z.number().finite().min(-1e12).max(1e12).nullable().optional(),
+        direction: z.enum(['lower', 'higher', 'exact', 'unspecified']).optional(),
+        note: z.string().trim().max(2000).optional(),
+      }),
+    )
+    .min(1)
+    .max(200),
+});
+
+/** Which (scope, field) combinations are valid, and how each maps onto the
+ *  frozen snapshot. Returns the display unit + the value the customer was
+ *  shown (lifted server-side so a malicious client can't fake the "Ist"
+ *  side of the diff). `currentValue` is null when the snapshot doesn't carry
+ *  that number (legacy snapshot, or a field the share didn't display — e.g.
+ *  per-position Arbeitszeit). Returns null when the combo is not allowed. */
+function changeRequestContext(
+  snapshot: ShareSnapshot | null,
+  scope: ChangeRequestScope,
+  positionOz: string | undefined,
+  field: ChangeRequestField,
+): { unit: ChangeRequestUnit; currentValue: number | null } | null {
+  const summary = snapshot?.summary ?? null;
+  if (scope === 'global') {
+    switch (field) {
+      case 'endbetrag': return { unit: 'eur', currentValue: summary?.netto ?? null };
+      case 'lohn': return { unit: 'eur', currentValue: summary?.costTypes.lohn.vk ?? null };
+      case 'material': return { unit: 'eur', currentValue: summary?.costTypes.material.vk ?? null };
+      case 'geraete': return { unit: 'eur', currentValue: summary?.costTypes.geraete.vk ?? null };
+      case 'zeit': return { unit: 'std', currentValue: summary?.totalHours ?? null };
+      case 'sonstiges': return { unit: 'eur', currentValue: null };
+      default: return null; // gesamtpreis / menge are position-only
+    }
+  }
+  // scope === 'position' — locate the snapshot line by its OZ.
+  const pos = (snapshot?.positions ?? []).find((p) => p.oz === positionOz);
+  if (!pos) return null;
+  switch (field) {
+    case 'menge': return { unit: 'qty', currentValue: pos.quantity ?? null };
+    case 'gesamtpreis': return { unit: 'eur', currentValue: pos.gp ?? null };
+    case 'material': return { unit: 'eur', currentValue: pos.gpMaterial ?? null };
+    case 'geraete': return { unit: 'eur', currentValue: pos.gpGeraet ?? null };
+    case 'lohn': return { unit: 'eur', currentValue: pos.gpLohn ?? null };
+    case 'zeit': return { unit: 'min', currentValue: null }; // minutes not in the customer snapshot
+    case 'sonstiges': return { unit: 'eur', currentValue: null };
+    default: return null; // endbetrag is global-only
+  }
+}
 
 export const publicRoute = new Hono()
   .get('/share/:token', async (c) => {
@@ -646,4 +710,98 @@ export const publicRoute = new Hono()
       positionOz: parsed.data.positionOz,
       intent: parsed.data.intent,
     });
+  })
+
+  /**
+   * Round 12: structured change requests ("Änderungswünsche"). Batch POST of
+   * price/quantity wishes — per-position OR global (Endbetrag / Lohn-Σ / …).
+   * Honors the password gate + allowChangeRequests. The "Ist" value of each
+   * wish is lifted SERVER-SIDE from the frozen snapshot (never trusted from the
+   * client), so the owner's inbox diff is authentic.
+   */
+  .post('/share/:token/change-requests', async (c) => {
+    const token = c.req.param('token');
+    const gate = await gateShare(c, token);
+    if ('response' in gate) return gate.response;
+    const share = gate.share;
+    if (!share.settings.allowChangeRequests) return c.json({ error: 'not_allowed' }, 403);
+
+    const body = await c.req.json().catch(() => null);
+    const parsed = changeRequestsSchema.safeParse(body);
+    if (!parsed.success) return c.json({ error: 'invalid_input', detail: parsed.error.issues }, 400);
+
+    const snapshot = (share.snapshotData ?? null) as ShareSnapshot | null;
+    const now = new Date();
+    const ip = clientIp(c) ?? null;
+    const ua = (c.req.header('user-agent') || '').slice(0, 500);
+
+    const rows: Array<typeof changeRequests.$inferInsert> = [];
+    for (const item of parsed.data.items) {
+      const ctx = changeRequestContext(snapshot, item.scope, item.positionOz, item.field);
+      // Reject the whole batch on a structurally-invalid item (bad scope/field
+      // combo, or a position OZ that isn't in this share's snapshot) so the
+      // customer gets a clear error rather than silently-dropped wishes.
+      if (!ctx) {
+        return c.json(
+          { error: 'invalid_change_request', scope: item.scope, field: item.field, positionOz: item.positionOz ?? null },
+          400,
+        );
+      }
+      const requested = item.requestedValue ?? null;
+      let direction = item.direction ?? 'unspecified';
+      // Infer the direction from an exact target vs. the shown value.
+      if (requested != null && direction === 'unspecified') {
+        direction =
+          ctx.currentValue == null
+            ? 'exact'
+            : requested < ctx.currentValue
+              ? 'lower'
+              : requested > ctx.currentValue
+                ? 'higher'
+                : 'exact';
+      }
+      const note = (item.note ?? '').trim();
+      // Drop entirely-empty wishes (no value, no direction, no note).
+      if (requested == null && direction === 'unspecified' && note.length === 0) continue;
+      rows.push({
+        id: nanoid(16),
+        shareId: share.id,
+        scope: item.scope,
+        positionOz: item.scope === 'position' ? (item.positionOz ?? null) : null,
+        field: item.field,
+        unit: ctx.unit,
+        currentValue: ctx.currentValue,
+        requestedValue: requested,
+        direction,
+        note,
+        authorName: parsed.data.customerName ?? null,
+        authorEmail: parsed.data.customerEmail ?? null,
+        ip,
+        userAgent: ua,
+        createdAt: now,
+      });
+    }
+    if (rows.length === 0) return c.json({ error: 'empty', message: 'no_actionable_items' }, 400);
+
+    await db.insert(changeRequests).values(rows);
+
+    await recordAuditEvent({
+      shareId: share.id,
+      projectId: share.projectId,
+      eventType: 'response.submitted',
+      actorKind: 'customer',
+      actorRef: parsed.data.customerEmail ?? parsed.data.customerName ?? null,
+      ip: clientIp(c),
+      userAgent: ua,
+      payload: {
+        kind: 'change_requests',
+        count: rows.length,
+        fields: rows.map((r) => `${r.scope}:${r.field}`),
+        snapshotHash: share.snapshotHash,
+        customerName: parsed.data.customerName,
+        browserFingerprint: clientFingerprint(c),
+      },
+    });
+
+    return c.json({ ok: true, count: rows.length, createdAt: now.toISOString() });
   });

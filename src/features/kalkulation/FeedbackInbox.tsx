@@ -39,11 +39,14 @@ import {
   Clock,
   ChevronRight,
   ChevronDown,
+  SlidersHorizontal,
+  RotateCcw,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { api } from '@/lib/api';
-import type { InboxEntry, InboxComment, ShareResponse } from './types';
+import type { InboxEntry, InboxComment, InboxChangeRequest, ShareResponse } from './types';
+import { FIELD_LABEL, DIRECTION_LABEL, formatChangeValue } from './changeRequest';
 import { Skeleton, Breadcrumb } from '@/pages/panel/ui';
 
 type FilterId = 'all' | 'changes' | 'comments' | 'approved' | 'rejected' | 'viewed';
@@ -154,6 +157,9 @@ type ThreadMeta = {
   commentCount: number;
   status: 'approved' | 'rejected' | 'changes' | 'open';
   hasUnread: boolean;
+  /** Round 12 — structured Änderungswünsche (total + still-open). */
+  changeRequestCount: number;
+  openChangeRequests: number;
 };
 
 function threadMeta(entry: InboxEntry, lastSeen: number): ThreadMeta {
@@ -179,14 +185,33 @@ function threadMeta(entry: InboxEntry, lastSeen: number): ThreadMeta {
     const ts = Date.parse(cm.createdAt);
     if (ts > lastTs) lastTs = ts;
   }
+  let changeRequestCount = 0;
+  let openChangeRequests = 0;
+  for (const cr of entry.changeRequests ?? []) {
+    const ts = Date.parse(cr.createdAt);
+    if (ts > lastTs) lastTs = ts;
+    changeRequestCount += 1;
+    if (!cr.resolvedAt) openChangeRequests += 1;
+  }
+  // A pending Änderungswunsch puts an otherwise-quiet thread into "Änderungen".
+  if (changeRequestCount > 0 && status === 'open') status = 'changes';
   const hasUnread = lastTs > lastSeen;
-  return { lastTs, changeCount, commentCount: entry.comments.length, status, hasUnread };
+  return {
+    lastTs,
+    changeCount,
+    commentCount: entry.comments.length,
+    status,
+    hasUnread,
+    changeRequestCount,
+    openChangeRequests,
+  };
 }
 
 /* ── Unified activity feed for the detail pane ─────────────────────── */
 type FeedEvent =
   | { kind: 'response'; ts: number; response: ShareResponse }
   | { kind: 'comment'; ts: number; comment: InboxComment }
+  | { kind: 'changeRequest'; ts: number; cr: InboxChangeRequest }
   | { kind: 'viewed'; ts: number }
   | { kind: 'created'; ts: number };
 
@@ -194,6 +219,8 @@ function buildFeed(entry: InboxEntry): FeedEvent[] {
   const events: FeedEvent[] = [];
   for (const r of entry.responses) events.push({ kind: 'response', ts: Date.parse(r.respondedAt), response: r });
   for (const cm of entry.comments) events.push({ kind: 'comment', ts: Date.parse(cm.createdAt), comment: cm });
+  for (const cr of entry.changeRequests ?? [])
+    events.push({ kind: 'changeRequest', ts: Date.parse(cr.createdAt), cr });
   if (entry.share.lastViewedAt) events.push({ kind: 'viewed', ts: Date.parse(entry.share.lastViewedAt) });
   events.push({ kind: 'created', ts: Date.parse(entry.share.createdAt) });
   return events.sort((a, b) => b.ts - a.ts);
@@ -229,6 +256,29 @@ export default function FeedbackInbox() {
     }
   }
 
+  // Round 12: mark a change request erledigt / re-open it. Optimistic; reverts
+  // by reloading on failure.
+  async function resolveChangeRequest(id: string, resolved: boolean) {
+    setEntries((prev) =>
+      prev
+        ? prev.map((e) => ({
+            ...e,
+            changeRequests: (e.changeRequests ?? []).map((cr) =>
+              cr.id === id
+                ? { ...cr, resolvedAt: resolved ? new Date().toISOString() : null }
+                : cr,
+            ),
+          }))
+        : prev,
+    );
+    try {
+      await api.inbox.resolveChangeRequest(id, resolved);
+    } catch {
+      toast.error('Konnte nicht gespeichert werden.');
+      load();
+    }
+  }
+
   useEffect(() => {
     load();
   }, []);
@@ -245,6 +295,7 @@ export default function FeedbackInbox() {
     const hit = entries.find(
       (e) =>
         e.comments.some((c) => c.positionOz === ozParam) ||
+        (e.changeRequests ?? []).some((cr) => cr.positionOz === ozParam) ||
         e.responses.some((r) => r.payload.changes?.some((ch) => ch.oz === ozParam)),
     );
     if (hit) setSelectedId(hit.share.id);
@@ -452,6 +503,7 @@ export default function FeedbackInbox() {
                 entry={selected}
                 highlightOz={ozParam}
                 lastSeen={lastSeen}
+                onResolveChangeRequest={resolveChangeRequest}
                 onBack={() => {
                   setSelectedId(null);
                   if (ozParam) {
@@ -602,6 +654,11 @@ function ThreadListItem({
               {meta.commentCount > 0 && (
                 <Chip icon={<MessageSquareText className="h-3 w-3" />}>{meta.commentCount} Kommentar{meta.commentCount === 1 ? '' : 'e'}</Chip>
               )}
+              {meta.changeRequestCount > 0 && (
+                <Chip icon={<SlidersHorizontal className="h-3 w-3" />}>
+                  {meta.changeRequestCount} {meta.changeRequestCount === 1 ? 'Wunsch' : 'Wünsche'}
+                </Chip>
+              )}
             </div>
             {summary && <p className="mt-1.5 line-clamp-1 text-xs italic text-slate-400 dark:text-slate-500">{summary}</p>}
           </div>
@@ -625,11 +682,13 @@ function ThreadDetail({
   entry,
   highlightOz,
   lastSeen,
+  onResolveChangeRequest,
   onBack,
 }: {
   entry: InboxEntry;
   highlightOz: string | null;
   lastSeen: number;
+  onResolveChangeRequest: (id: string, resolved: boolean) => void;
   onBack: () => void;
 }) {
   const company = companyOf(entry);
@@ -693,14 +752,40 @@ function ThreadDetail({
       {/* Activity feed */}
       <div className="space-y-3">
         {feed.map((ev, i) => (
-          <FeedCard key={i} ev={ev} highlightOz={highlightOz} isNew={ev.ts > lastSeen} />
+          <FeedCard
+            key={i}
+            ev={ev}
+            highlightOz={highlightOz}
+            isNew={ev.ts > lastSeen}
+            onResolveChangeRequest={onResolveChangeRequest}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-function FeedCard({ ev, highlightOz, isNew }: { ev: FeedEvent; highlightOz: string | null; isNew: boolean }) {
+function FeedCard({
+  ev,
+  highlightOz,
+  isNew,
+  onResolveChangeRequest,
+}: {
+  ev: FeedEvent;
+  highlightOz: string | null;
+  isNew: boolean;
+  onResolveChangeRequest: (id: string, resolved: boolean) => void;
+}) {
+  if (ev.kind === 'changeRequest') {
+    return (
+      <ChangeRequestCard
+        cr={ev.cr}
+        isNew={isNew}
+        highlightOz={highlightOz}
+        onResolve={onResolveChangeRequest}
+      />
+    );
+  }
   if (ev.kind === 'created') {
     return (
       <Meta>
@@ -801,6 +886,114 @@ function FeedCard({ ev, highlightOz, isNew }: { ev: FeedEvent; highlightOz: stri
         </div>
       )}
     </article>
+  );
+}
+
+/** Round 12: one structured Änderungswunsch — WHERE (position or Gesamtangebot),
+ *  WHAT (field), the Ist → Wunsch diff, the note, and an "erledigt" toggle. */
+function ChangeRequestCard({
+  cr,
+  isNew,
+  highlightOz,
+  onResolve,
+}: {
+  cr: InboxChangeRequest;
+  isNew: boolean;
+  highlightOz: string | null;
+  onResolve: (id: string, resolved: boolean) => void;
+}) {
+  const resolved = !!cr.resolvedAt;
+  const isGlobal = cr.scope === 'global';
+  const highlighted = !isGlobal && !!highlightOz && cr.positionOz === highlightOz;
+  return (
+    <article
+      data-testid="change-request-card"
+      className={clsx(
+        'rounded-xl border bg-white p-4 dark:bg-slate-900',
+        highlighted
+          ? 'border-primary-300 ring-1 ring-primary-300 dark:border-primary-500/50'
+          : 'border-slate-200 dark:border-slate-800',
+        resolved && 'opacity-70',
+      )}
+    >
+      <div className="flex items-center justify-between gap-2">
+        {isGlobal ? (
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 dark:text-slate-200">
+            <SlidersHorizontal className="h-3.5 w-3.5 text-primary-500" /> Gesamtangebot
+          </span>
+        ) : (
+          <PositionRef oz={cr.positionOz} shortText={cr.shortText} />
+        )}
+        <div className="flex items-center gap-1.5">
+          {isNew && !resolved && <NewDot />}
+          <time className="text-[11px] text-slate-400 dark:text-slate-500">{fmtRelative(cr.createdAt)}</time>
+        </div>
+      </div>
+
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <span className="inline-flex items-center rounded-md bg-primary-50 px-1.5 py-0.5 text-[11px] font-semibold text-primary-700 ring-1 ring-inset ring-primary-200 dark:bg-primary-500/15 dark:text-primary-300 dark:ring-primary-500/30">
+          {FIELD_LABEL[cr.field]}
+        </span>
+        <WunschDiff cr={cr} />
+        {cr.authorName && <span className="text-xs text-slate-500 dark:text-slate-400">{cr.authorName}</span>}
+      </div>
+
+      {cr.note && (
+        <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-200">{cr.note}</p>
+      )}
+
+      <div className="mt-3 flex items-center justify-end">
+        {resolved ? (
+          <button
+            type="button"
+            onClick={() => onResolve(cr.id, false)}
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+          >
+            <RotateCcw className="h-3 w-3" /> Wieder öffnen
+          </button>
+        ) : (
+          <button
+            type="button"
+            data-testid="cr-resolve"
+            onClick={() => onResolve(cr.id, true)}
+            className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300"
+          >
+            <CheckCircle2 className="h-3 w-3" /> Als erledigt markieren
+          </button>
+        )}
+      </div>
+    </article>
+  );
+}
+
+/** "Ist 1.071,54 € → Wunsch 950,00 €" — or just a direction when no value. */
+function WunschDiff({ cr }: { cr: InboxChangeRequest }) {
+  const dirColor =
+    cr.direction === 'lower'
+      ? 'text-emerald-700 dark:text-emerald-300'
+      : cr.direction === 'higher'
+        ? 'text-amber-700 dark:text-amber-300'
+        : 'text-slate-700 dark:text-slate-200';
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5 text-xs">
+      {cr.currentValue != null && (
+        <>
+          <span className="text-slate-400 dark:text-slate-500">Ist</span>
+          <span className="tabular-nums font-medium text-slate-500 dark:text-slate-400">
+            {formatChangeValue(cr.currentValue, cr.unit)}
+          </span>
+        </>
+      )}
+      <ArrowRight className="h-3 w-3 text-slate-400" />
+      <span className="text-slate-400 dark:text-slate-500">Wunsch</span>
+      {cr.requestedValue != null ? (
+        <span className={clsx('tabular-nums font-bold', dirColor)}>
+          {formatChangeValue(cr.requestedValue, cr.unit)}
+        </span>
+      ) : (
+        <span className={clsx('font-semibold', dirColor)}>{DIRECTION_LABEL[cr.direction]}</span>
+      )}
+    </span>
   );
 }
 

@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core';
 
 /**
  * Panel feature-permission keys. Each maps to a gateable area of the panel
@@ -347,6 +347,66 @@ export const positionComments = sqliteTable('position_comments', {
    *  surfacing in the unread badge. Nullable; default null = open. */
   resolvedAt: integer('resolved_at', { mode: 'timestamp_ms' }),
 });
+
+/**
+ * Round 12 — structured customer change requests ("Änderungswünsche").
+ *
+ * Distinct from `positionComments` (free-text per-position Anmerkungen) and
+ * `shareResponses` (the legal approve/changes/reject envelope). A change
+ * request is a STRUCTURED price/quantity wish the customer expresses on the
+ * share: "Material auf 950 € statt 1.071,54 €", "Endbetrag 5 % günstiger",
+ * "Menge 8 statt 10". It carries the field, the value the customer saw
+ * (`currentValue`, lifted from the frozen snapshot so it cannot be spoofed),
+ * the value they want (`requestedValue`, optional), a direction, and a note.
+ *
+ * `scope='global'` → the whole offer (Endbetrag / Lohn-Σ / Material-Σ / …),
+ * `positionOz` null. `scope='position'` → one LV position, `positionOz` set
+ * (stable cross-snapshot key, like positionComments). The owner resolves each
+ * via `resolvedAt`, mirroring the comment workflow.
+ */
+export const CHANGE_REQUEST_FIELDS = [
+  'endbetrag',   // global only — the offer net total
+  'gesamtpreis', // position — the line GP
+  'menge',       // position — quantity
+  'material',    // Materialkosten
+  'geraete',     // Geräte / Maschinenkosten
+  'zeit',        // Arbeitszeit
+  'lohn',        // Lohnkosten
+  'sonstiges',   // free-form / catch-all
+] as const;
+export type ChangeRequestField = (typeof CHANGE_REQUEST_FIELDS)[number];
+export type ChangeRequestScope = 'global' | 'position';
+export type ChangeRequestDirection = 'lower' | 'higher' | 'exact' | 'unspecified';
+/** How `currentValue`/`requestedValue` should be formatted by the UI. */
+export type ChangeRequestUnit = 'eur' | 'min' | 'std' | 'qty' | 'pct';
+
+export const changeRequests = sqliteTable('change_requests', {
+  id: text('id').primaryKey(),
+  shareId: text('share_id').notNull().references(() => shares.id, { onDelete: 'cascade' }),
+  scope: text('scope', { enum: ['global', 'position'] }).notNull(),
+  /** Stable cross-snapshot key; null for scope='global'. */
+  positionOz: text('position_oz'),
+  field: text('field', { enum: CHANGE_REQUEST_FIELDS }).notNull(),
+  unit: text('unit', { enum: ['eur', 'min', 'std', 'qty', 'pct'] }).notNull().default('eur'),
+  /** The value the customer was shown (server-lifted from the snapshot). Nullable
+   *  for fields the share didn't display (then only the wish/note is captured). */
+  currentValue: real('current_value'),
+  /** The value the customer wants. Null when they only gave a direction + note. */
+  requestedValue: real('requested_value'),
+  direction: text('direction', {
+    enum: ['lower', 'higher', 'exact', 'unspecified'],
+  }).notNull().default('unspecified'),
+  note: text('note').notNull().default(''),
+  authorName: text('author_name'),
+  authorEmail: text('author_email'),
+  ip: text('ip'),
+  userAgent: text('user_agent'),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  /** Owner-side workflow: marks the wish as addressed so it drops out of the
+   *  unread badge. Null = open. */
+  resolvedAt: integer('resolved_at', { mode: 'timestamp_ms' }),
+});
+export type ChangeRequest = typeof changeRequests.$inferSelect;
 
 export type PositionType = 'standard' | 'wagnis' | 'reserve' | 'nu_marge' | 'lohn_puffer';
 
