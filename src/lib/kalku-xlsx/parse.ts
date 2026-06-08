@@ -289,6 +289,10 @@ export async function parseKalkulationWorkbook(
   const faktorenLookup: FaktorRow[] = [];
   const faktoren: FaktorEntry[] = [];
   const factorCols = ['N','O','P','Q','R','S','T','U','V','W'];
+  // Round 5: the X–AP Vorrechnung helper columns (rows 2–12) that the exporter
+  // also reproduces — captured into each FaktorEntry.raw for full Vorlage
+  // fidelity. (AD/AI/AL/AO are 1-px spacer columns; harmless to read.)
+  const EXTRA_FACTOR_COLS = ['X','Y','Z','AA','AB','AC','AE','AF','AG','AH','AJ','AK','AM','AN','AP'];
   for (let r = 2; r <= 12; r++) {
     const rowFactor: FaktorRow = {
       factorName: `Row${r}`,
@@ -340,6 +344,24 @@ export async function parseKalkulationWorkbook(
             if (!einheit && /^[a-zA-Z%/.°²³µm]{1,8}$/.test(v.trim())) einheit = v.trim();
           }
         }
+        // Round 5: enrich `raw` with the X–AP Vorrechnung helper cells (same
+        // rows 2–12) so the exporter can reproduce the full Vorlage block, not
+        // just the N–W factor library. These columns double as per-position
+        // helpers from row 14 on, but here we only read the header band. We skip
+        // internal template instructions (the "INTERN: …diese 4 Zellen löschen!"
+        // notes) — they're scaffolding, not data, and don't belong in an export.
+        const enrichedRaw: Record<string, number | string | null> = { ...rowFactor.cells };
+        for (const c of EXTRA_FACTOR_COLS) {
+          const cell = ws[c + r];
+          if (!cell || cell.v == null || isErrorCell(cell)) continue;
+          const val = typeof cell.v === 'number' ? cell.v : String(cell.v);
+          if (typeof val === 'string' && (val === '' || /INTERN/i.test(val))) continue;
+          // A Vorrechnung FORMULA that evaluates to 0 displays blank in the
+          // source (e.g. `AP8/1.19` with AP8=0) — don't emit a stray "0". A
+          // literal 0 (no formula) IS shown, so keep it.
+          if (val === 0 && cell.f) continue;
+          enrichedRaw[c] = val;
+        }
         faktoren.push({
           name: typeof firstVal === 'string' ? firstVal : String(firstVal),
           einheit,
@@ -347,7 +369,7 @@ export async function parseKalkulationWorkbook(
           minEinheit: numerics[1],
           sourceCol: firstNonEmpty,
           sourceRow: r,
-          raw: rowFactor.cells,
+          raw: enrichedRaw,
         });
       }
     }

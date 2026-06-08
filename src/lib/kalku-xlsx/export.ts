@@ -179,17 +179,14 @@ export async function exportToKalkulationVorlage(data: ProjectData): Promise<Uin
   set('L12', data.headerExtras?.mitarbeiterFlag ?? 1, { font: FONT_B, numFmt: NF.int, align: 'center' });
   set('M12', 'NU', { fill: C.nu, align: 'center' });
 
-  // Far-right Stellschrauben block (matches the Vorlage).
-  set('AP2', 'Geräte-Z.:', { align: 'right' }); set('AP3', cp.geraeteStundensatz, { font: FONT_B, numFmt: NF.num2, align: 'center' });
-  set('AP4', 'Zeitwert %:', { align: 'right' }); set('AP5', cp.zeitabzug, { font: FONT_B, numFmt: NF.num2, align: 'center' });
-  set('AP6', 'Std. / Tag:', { align: 'right' }); set('AP7', cp.tagesstunden, { font: FONT_B, numFmt: NF.int, align: 'center' });
-
-  // ── Faktoren-Bibliothek (cols N–W, rows 2–12) ───────────────────────────────
-  // Replay the captured factor grid so the export carries the calculator's
-  // reference library exactly like the Vorlage. We write the cached VALUES: the
-  // source cells are formulas over named ranges (e.g. `schlitz+Q2*querschnitt`)
-  // that exist only inside the working template and would resolve to #NAME? in a
-  // standalone file — the values display identically and never error.
+  // ── Faktoren-Bibliothek + Vorrechnung (cols N–AP, rows 2–12) ────────────────
+  // Replay the captured reference grid so the export carries the calculator's
+  // factor library AND the X–AP Vorrechnung helpers exactly like the Vorlage. We
+  // write the cached VALUES: the source cells are formulas over named ranges
+  // (e.g. `schlitz+Q2*querschnitt`) that exist only inside the working template
+  // and would resolve to #NAME? standalone — the values display identically.
+  // Runs BEFORE the Stellschrauben + column-header writes so those canonical,
+  // formatted cells win wherever they overlap this band (e.g. AP2–AP7, row 11–13).
   if (data.faktoren?.length) {
     for (const f of data.faktoren) {
       if (!f.raw || f.sourceRow < 2 || f.sourceRow > 12) continue;
@@ -199,6 +196,11 @@ export async function exportToKalkulationVorlage(data: ProjectData): Promise<Uin
       }
     }
   }
+
+  // Far-right Stellschrauben block (matches the Vorlage).
+  set('AP2', 'Geräte-Z.:', { align: 'right' }); set('AP3', cp.geraeteStundensatz, { font: FONT_B, numFmt: NF.num2, align: 'center' });
+  set('AP4', 'Zeitwert %:', { align: 'right' }); set('AP5', cp.zeitabzug, { font: FONT_B, numFmt: NF.num2, align: 'center' });
+  set('AP6', 'Std. / Tag:', { align: 'right' }); set('AP7', cp.tagesstunden, { font: FONT_B, numFmt: NF.int, align: 'center' });
 
   // ── Column headers (rows 11–13) ────────────────────────────────────────────
   const med: Partial<Borders> = { top: { style: 'medium' }, bottom: { style: 'medium' } };
