@@ -148,6 +148,9 @@ describe('PART N — Kalkulation-Vorlage exporter', () => {
     const result = await parseKalkulationWorkbook(bytes);
     // No formula errors expected — exporter writes plain numeric values,
     // not formulas. So the import gate should allow it.
+    // The exporter writes LIVE formulas with cached results; the importer reads
+    // the cached `.v` and the formula error-gate only trips on actual error
+    // cells (t==='e'), which valid formulas never produce.
     const formulaErrors = result.issues.filter((i) => i.code === 'formula_error');
     expect(formulaErrors.length).toBe(0);
     expect(result.ok).toBe(true);
