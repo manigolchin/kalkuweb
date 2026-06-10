@@ -351,7 +351,10 @@ describe('lib/snapshot.ts edges', () => {
       nuCost: 12.34,        // internal
       classification: 'wagnis', // internal
       internalNote: 'Marge 30%, vorsichtig kalkulieren', // internal
-      positionType: 'wagnis', // internal
+      // This test verifies internal FIELDS never leak; it uses a 'standard' type
+      // so the row is included. Internal position TYPES (wagnis/reserve/…) are
+      // now excluded from the snapshot entirely — see leak-gate-hardening.test.ts.
+      positionType: 'standard',
       visibleToCustomer: true,
       sectionPath: 'a/b/c', // internal
     });

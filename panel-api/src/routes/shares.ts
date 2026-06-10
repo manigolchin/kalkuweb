@@ -115,9 +115,13 @@ export const sharesRoute = new Hono<{ Variables: AuthVariables }>()
     }
     if (settingsToStore.expiresAt) {
       const t = new Date(settingsToStore.expiresAt);
-      if (Number.isFinite(t.getTime()) && t.getTime() > now.getTime()) {
-        expiresAtDate = t;
+      // Reject a past/invalid expiry instead of silently storing null — otherwise
+      // the customer would see an expiry date while the gate never fires (a
+      // never-expiring link). The contract is "future only".
+      if (!Number.isFinite(t.getTime()) || t.getTime() <= now.getTime()) {
+        return c.json({ error: 'invalid_input', detail: 'expiresAt must be in the future' }, 400);
       }
+      expiresAtDate = t;
       // Leave settings.expiresAt in the JSON for client display; the column
       // is the load-bearing copy.
     }

@@ -217,8 +217,15 @@ export function buildShareSnapshot(
   projectVersionNumber: number,
 ): ShareSnapshot {
   const ids = new Set(visibleIds);
+  // Internal cost-padding position types (Wagnis / Reserve / NU-Marge / Lohn-
+  // Puffer) must NEVER reach the customer, even if their id is mistakenly in
+  // visibleIds (a crafted request or a stale preset). Hard server-side exclusion
+  // — defense-in-depth on top of the UI's visibleToCustomer flag.
+  const INTERNAL_TYPES = new Set(['wagnis', 'reserve', 'nu_marge', 'lohn_puffer']);
   const recomputed = recomputePositions(positions, project.calcParams);
-  const visibleFull = recomputed.filter((p) => ids.has(p.id));
+  const visibleFull = recomputed.filter(
+    (p) => ids.has(p.id) && !INTERNAL_TYPES.has(p.positionType ?? 'standard'),
+  );
   const visible = visibleFull.map((p) => {
     const split = positionCostSplit(p, project.calcParams);
     return {

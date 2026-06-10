@@ -347,8 +347,13 @@ export const publicRoute = new Hono()
       outSummary = null; // no totals at all → no aggregate block
     } else if (outSummary && st.showCalculation === false) {
       // Redact EINKAUF / Zuschlag / Überschuss / KPIs (the cost+margin detail).
-      // Keep price-only fields: netto/mwst/brutto + the VERKAUF composition.
-      const redact = (ct: { ek: number; vk: number; zuschlagPct: number; differnz: number }) => ({ ek: 0, vk: ct.vk, zuschlagPct: 0, differnz: 0 });
+      // Keep the VERKAUF composition (vk) for the Kostenzusammensetzung bar —
+      // UNLESS the cost breakdown is ALSO hidden, in which case neither the
+      // composition bar nor the Kalkulation table renders vk, so it must not ship
+      // at all (a customer could otherwise read the per-cost-type VERKAUF split
+      // from the raw JSON). netto/mwst/brutto stay (gated only by showTotals).
+      const hideVk = st.showCostBreakdown === false;
+      const redact = (ct: { ek: number; vk: number; zuschlagPct: number; differnz: number }) => ({ ek: 0, vk: hideVk ? 0 : ct.vk, zuschlagPct: 0, differnz: 0 });
       outSummary = {
         ...outSummary,
         ekTotal: 0,
@@ -420,6 +425,7 @@ export const publicRoute = new Hono()
     const share = await db.query.shares.findFirst({ where: eq(shares.token, token) });
     if (!share) return c.json({ error: 'not_found' }, 404);
     if (share.revokedAt) return c.json({ error: 'revoked' }, 410);
+    if (share.expiresAt && share.expiresAt.getTime() < Date.now()) return c.json({ error: 'expired', reason: 'expired' }, 410);
 
     const project = await db.query.projects.findFirst({ where: eq(projects.id, share.projectId) });
     if (!project) return c.json({ error: 'not_found' }, 404);
@@ -474,6 +480,7 @@ export const publicRoute = new Hono()
     const share = await db.query.shares.findFirst({ where: eq(shares.token, token) });
     if (!share) return c.json({ error: 'not_found' }, 404);
     if (share.revokedAt) return c.json({ error: 'revoked' }, 410);
+    if (share.expiresAt && share.expiresAt.getTime() < Date.now()) return c.json({ error: 'expired', reason: 'expired' }, 410);
     if (!share.settings.allowApproval) return c.json({ error: 'not_allowed' }, 403);
 
     const now = new Date();
@@ -629,6 +636,7 @@ export const publicRoute = new Hono()
     const share = await db.query.shares.findFirst({ where: eq(shares.token, token) });
     if (!share) return c.json({ error: 'not_found' }, 404);
     if (share.revokedAt) return c.json({ error: 'revoked' }, 410);
+    if (share.expiresAt && share.expiresAt.getTime() < Date.now()) return c.json({ error: 'expired', reason: 'expired' }, 410);
     if (!share.settings.allowChangeRequests) return c.json({ error: 'not_allowed' }, 403);
 
     const now = new Date();
