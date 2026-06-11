@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-06-11 12:14 — Panel logins for Sacha + Vanessa
+- Source: user "make - [ ] Sacha login and vanessa login for panel"
+- Branch: claude-auto/v2-gaps-closeout (continued)
+- Result: committed — `panel-api/src/seed.ts` + `index.ts`
+- Notes: Added idempotent `ensureTeamUsers()` to the panel seed (runs on every boot + `npm run seed`), provisioning `sacha@kalku.de` and `vanessa@kalku.de` as role `user` with all 5 feature permissions (kalkulation/firmen/vorlagen/feedback/submissionskarte), `mustChangePassword=true`. Initial passwords are generated and printed to the boot log; overridable via `SACHA_PASSWORD`/`VANESSA_PASSWORD` (and `SACHA_EMAIL`/`VANESSA_EMAIL`). Verified: panel-api tsc clean, seed creates both + re-run skips them, and a known password authenticates via `verifyPassword` (wrong password rejected). Takes effect on next deploy — not yet pushed/deployed (needs user OK). Defaults chosen: non-admin + full feature access; flip role or narrow access in the Benutzer tab.
+
 ## 2026-05-23 15:05 — Post-v4 audit: 8 bug fixes + Werkzeuge dropdown + Vorlagen-Bibliothek
 - Source: user "Be expert and analyse my panel and do research add more feutures if it is good for us and push to main and debug. Do your best you can use subagents"
 - Branch: claude-auto/2026-05-23-panel-bugfixes-and-vorlagen-drift → fast-forward into main → pushed → deployed

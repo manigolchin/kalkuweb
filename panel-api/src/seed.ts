@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { db } from './db.js';
-import { users } from './schema.js';
+import { users, PANEL_PERMISSION_KEYS, type PanelPermissions } from './schema.js';
 import { hashPassword } from './lib/auth.js';
 
 const SEED_EMAIL = (process.env.SEED_EMAIL || 'mani_golchin@kalku.de').toLowerCase();
@@ -39,6 +39,61 @@ export async function ensureSeedUser(): Promise<void> {
   console.log('━'.repeat(60));
 }
 
+/** Internal team members provisioned alongside the bootstrap admin. Each is a
+ *  regular `user` (not admin) granted every panel feature; an admin can narrow
+ *  access or promote them in the Benutzer tab. Email/password are overridable
+ *  via env so a known initial password can be handed out instead of reading it
+ *  from the boot log. */
+const TEAM_MEMBERS: ReadonlyArray<{ email: string; name: string; passwordEnv: string }> = [
+  { email: (process.env.SACHA_EMAIL || 'sacha@kalku.de').toLowerCase(), name: 'Sacha', passwordEnv: 'SACHA_PASSWORD' },
+  {
+    email: (process.env.VANESSA_EMAIL || 'vanessa@kalku.de').toLowerCase(),
+    name: 'Vanessa',
+    passwordEnv: 'VANESSA_PASSWORD',
+  },
+];
+
+const FULL_PANEL_ACCESS: PanelPermissions = PANEL_PERMISSION_KEYS.reduce<PanelPermissions>(
+  (acc, key) => ({ ...acc, [key]: true }),
+  {},
+);
+
+export async function ensureTeamUsers(): Promise<void> {
+  for (const member of TEAM_MEMBERS) {
+    const existing = await db.query.users.findFirst({ where: eq(users.email, member.email) });
+    if (existing) {
+      console.log(`[seed] team user ${member.email} already exists`);
+      continue;
+    }
+    const envPassword = process.env[member.passwordEnv];
+    const password = envPassword || 'kalku-' + nanoid(12);
+    const now = new Date();
+    await db.insert(users).values({
+      id: nanoid(16),
+      email: member.email,
+      passwordHash: await hashPassword(password),
+      name: member.name,
+      role: 'user',
+      isActive: true,
+      permissions: FULL_PANEL_ACCESS,
+      companyName: process.env.SEED_COMPANY || '',
+      companyLogoUrl: '',
+      // Always force a change on first login — the same gate admin-created
+      // accounts hit (see routes/admin.ts).
+      mustChangePassword: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+    console.log('━'.repeat(60));
+    console.log(`[seed] Team user created: ${member.name}`);
+    console.log(`  email:    ${member.email}`);
+    console.log(`  password: ${password}`);
+    console.log('  ⚠ Must be changed on first login.');
+    if (!envPassword) console.log(`  (generated — set ${member.passwordEnv} to choose one)`);
+    console.log('━'.repeat(60));
+  }
+}
+
 if (import.meta.url === `file://${process.argv[1]}`) {
   (async () => {
     // Ensure the schema exists before inserting the seed user. Idempotent —
@@ -48,6 +103,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     const { runMigrations } = await import('./db.js');
     runMigrations();
     await ensureSeedUser();
+    await ensureTeamUsers();
   })().catch((e) => {
     console.error(e);
     process.exit(1);

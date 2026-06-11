@@ -5,7 +5,7 @@ import { logger } from 'hono/logger';
 import { compress } from 'hono/compress';
 import { bodyLimit } from 'hono/body-limit';
 import { runMigrations, pingDb, closeDb } from './db.js';
-import { ensureSeedUser } from './seed.js';
+import { ensureSeedUser, ensureTeamUsers } from './seed.js';
 import { authRoute } from './routes/auth.js';
 import { projectsRoute } from './routes/projects.js';
 import { sharesRoute } from './routes/shares.js';
@@ -24,6 +24,7 @@ import { isPreisanfrageEnabled, isPreisanfrageMock } from './lib/preisanfrage.js
 
 runMigrations();
 await ensureSeedUser();
+await ensureTeamUsers();
 
 const app = new Hono();
 
