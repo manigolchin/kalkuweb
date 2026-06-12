@@ -250,6 +250,36 @@ test('preisanfrage: network errors surface as 502 upstream_unreachable', async (
   );
 });
 
+test('preisanfrage: 200 OK with a non-JSON body degrades to 502 (not a raw 500)', async () => {
+  const { listCompanies, _clearPreisanfrageCache, PreisanfrageError } = await import('../src/lib/preisanfrage.js');
+  _clearPreisanfrageCache();
+  // A CDN/proxy interstitial or truncated stream: HTTP 200 but not JSON.
+  mockFetch(async () => new Response('<html>502 Bad Gateway</html>', { status: 200, headers: { 'content-type': 'text/html' } }));
+  await assert.rejects(
+    () => listCompanies(),
+    (e: unknown) =>
+      e instanceof PreisanfrageError && e.status === 502 &&
+      (e.body as { error?: string }).error === 'upstream_bad_body',
+  );
+});
+
+test('preisanfrage: an upstream timeout degrades to 502 (request cannot hang)', async () => {
+  const { listCompanies, _clearPreisanfrageCache, PreisanfrageError } = await import('../src/lib/preisanfrage.js');
+  _clearPreisanfrageCache();
+  // Simulate AbortSignal.timeout firing — fetch rejects with a TimeoutError.
+  mockFetch(async () => {
+    const err = new Error('The operation timed out.');
+    err.name = 'TimeoutError';
+    throw err;
+  });
+  await assert.rejects(
+    () => listCompanies(),
+    (e: unknown) =>
+      e instanceof PreisanfrageError && e.status === 502 &&
+      (e.body as { error?: string }).error === 'upstream_timeout',
+  );
+});
+
 test('preisanfrage: response is cached within TTL window', async () => {
   const { listCompanies, _clearPreisanfrageCache } = await import('../src/lib/preisanfrage.js');
   _clearPreisanfrageCache();
