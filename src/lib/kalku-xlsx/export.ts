@@ -19,6 +19,7 @@
 
 import type { ProjectData } from '@/features/kalkulation/types';
 import { calcTotals, calculatePosition } from '@/features/kalkulation/calc';
+import { guardSpreadsheetFormula } from '@/lib/spreadsheetSafe';
 import type { Borders, Fill, Worksheet } from 'exceljs';
 
 // ── Vorlage palette (ARGB, read from example 1) ──────────────────────────────
@@ -83,7 +84,10 @@ export async function exportToKalkulationVorlage(data: ProjectData): Promise<Uin
   type Style = { fill?: string; font?: typeof FONT | typeof FONT_B | typeof WHITE_B; numFmt?: string; align?: 'left' | 'center' | 'right'; border?: Partial<Borders> };
   const set = (ref: string, value: unknown, s: Style = {}) => {
     const cell = ws.getCell(ref);
-    cell.value = value as never;
+    // Guard user/LV-sourced text against spreadsheet formula injection. Real
+    // formula cells are passed as { formula, result } objects (via F()), and
+    // numbers stay numeric — only plain strings are neutralized.
+    cell.value = (typeof value === 'string' ? guardSpreadsheetFormula(value) : value) as never;
     cell.font = s.font ?? FONT;
     if (s.fill) cell.fill = solid(s.fill);
     if (s.numFmt) cell.numFmt = s.numFmt;

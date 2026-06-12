@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { canonical } from '@/lib/seo';
 import { cn } from '@/lib/utils';
+import { guardCell } from '@/lib/spreadsheetSafe';
 import { softwareApplicationSchema } from '@/lib/toolSchema';
 import AndereTools from '@/components/sections/AndereTools';
 
@@ -313,7 +314,9 @@ export default function Mittellohn() {
         ['Zulagen €/h', zulagen, '', ''],
         ['Mittellohn ASL €/h', Number(totals.mittellohnASL.toFixed(2)), '', ''],
       ];
-      const ws = XLSX.utils.aoa_to_sheet(data);
+      // Neutralize spreadsheet formula injection in the user-typed Rolle cells;
+      // numeric cells pass through untouched.
+      const ws = XLSX.utils.aoa_to_sheet(data.map((row) => row.map(guardCell)));
       ws['!cols'] = [{ wch: 30 }, { wch: 18 }, { wch: 10 }, { wch: 18 }];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Mittellohn');

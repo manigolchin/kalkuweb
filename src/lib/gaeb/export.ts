@@ -1,4 +1,5 @@
 import type { ParsedGaeb, Position } from './types';
+import { guardSpreadsheetFormula, guardCell } from '../spreadsheetSafe';
 
 export type TextMode = 'kurz' | 'lang' | 'both';
 export type Columns = {
@@ -110,7 +111,9 @@ export async function exportExcel(
     rows.push(sumRow);
   }
 
-  const ws = XLSX.utils.aoa_to_sheet(rows);
+  // Neutralize formula injection in every string cell (OZ, Kurz-/Langtext,
+  // Bieter, Auftraggeber, …); numbers pass through untouched.
+  const ws = XLSX.utils.aoa_to_sheet(rows.map((r) => r.map(guardCell)));
   const widthMap: Record<string, number> = {
     'OZ': 14,
     'Kurztext': 50,
@@ -130,10 +133,14 @@ export async function exportExcel(
 }
 
 // ── CSV ──────────────────────────────────────────────────────────────────────
-export function exportCsv(
+/**
+ * Build the GAEB-LV CSV body (CRLF-joined, no BOM). Pure + exported so the
+ * formula-injection guard is regression-testable without a browser download.
+ */
+export function buildGaebCsv(
   parsed: ParsedGaeb,
   opts: { textMode: TextMode; columns: Columns },
-): void {
+): string {
   const cols = effectiveCols(opts.columns, opts.textMode);
   const headers: string[] = [];
   if (cols.oz) headers.push('OZ');
@@ -144,17 +151,19 @@ export function exportCsv(
   if (cols.ep) headers.push('EP');
   if (cols.gp) headers.push('GP');
 
-  // RFC 4180 CSV: literal newlines are allowed inside quoted fields.
-  // Keep them so multi-paragraph Langtext survives the export.
-  const esc = (s: string) => `"${s.replace(/"/g, '""')}"`;
+  // RFC 4180 CSV: literal newlines are allowed inside quoted fields (keeps
+  // multi-paragraph Langtext intact). guardSpreadsheetFormula() neutralizes a
+  // value that would otherwise open as a live formula in Excel/LibreOffice; OZ
+  // and Einheit are now quoted+guarded too (they were emitted raw before).
+  const esc = (s: string) => `"${guardSpreadsheetFormula(s).replace(/"/g, '""')}"`;
   const out: string[] = [headers.join(';')];
 
   for (const p of parsed.positions) {
     const row: string[] = [];
-    if (cols.oz) row.push(p.oz);
+    if (cols.oz) row.push(esc(p.oz));
     if (cols.kurztext) row.push(esc(p.kurztext));
     if (cols.langtext) row.push(esc(p.langtext));
-    if (cols.einheit) row.push(p.einheit);
+    if (cols.einheit) row.push(esc(p.einheit));
     if (cols.menge) row.push(p.menge != null ? fmtNum(p.menge) : '');
     if (cols.ep) row.push(p.ep != null ? fmtNum(p.ep) : '');
     if (cols.gp) row.push(p.gp != null ? fmtNum(p.gp) : '');
@@ -165,9 +174,15 @@ export function exportCsv(
     out.push('');
     out.push(`SUMME netto;${fmtNum(parsed.estimatedValue)}`);
   }
+  return out.join('\r\n');
+}
 
+export function exportCsv(
+  parsed: ParsedGaeb,
+  opts: { textMode: TextMode; columns: Columns },
+): void {
   // BOM so Excel opens UTF-8 cleanly. CRLF for Excel-on-Windows compatibility.
-  const blob = new Blob(['﻿' + out.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const blob = new Blob(['﻿' + buildGaebCsv(parsed, opts)], { type: 'text/csv;charset=utf-8' });
   downloadBlob(blob, `${safeFilename(parsed.projectName ?? 'gaeb')}-LV.csv`);
 }
 
