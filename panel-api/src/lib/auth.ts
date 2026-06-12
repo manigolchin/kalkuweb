@@ -51,3 +51,28 @@ export async function verifyToken(token: string): Promise<{ sub: string; email: 
     return null;
   }
 }
+
+// ── SSO handoff to preisanfrage ────────────────────────────────────────────
+// A dedicated shared secret (NOT JWT_SECRET) signs a short-lived, single-use
+// ticket the preisanfrage app exchanges for its own session. Keeping it separate
+// means a leak here can only forge handoff tickets for explicitly-linked
+// accounts, never a panel session. Empty/short secret = SSO disabled.
+const SSO_HANDOFF_SECRET = process.env.SSO_HANDOFF_SECRET || '';
+
+export function ssoEnabled(): boolean {
+  return SSO_HANDOFF_SECRET.length >= 32;
+}
+
+/** Mint a 60-second, single-use handoff ticket carrying the user's panel email.
+ *  preisanfrage matches it against users.sso_email. */
+export async function signSsoTicket(email: string): Promise<string> {
+  const secret = new TextEncoder().encode(SSO_HANDOFF_SECRET);
+  return new SignJWT({ email })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuer('kalku-panel')
+    .setAudience('preisanfrage')
+    .setJti(nanoid())
+    .setIssuedAt()
+    .setExpirationTime('60s')
+    .sign(secret);
+}

@@ -53,14 +53,16 @@ const NAV: NavItem[] = [
   { to: '/panel', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/panel/firmen', label: 'Firmen', icon: Building2, permission: 'firmen' },
   {
-    to: 'https://preisanfrage.kalkus.de/submissionskarte',
+    // Routed through the panel SSO handoff so a logged-in user lands in
+    // preisanfrage already authenticated (falls back to manual login).
+    to: '/api/panel/sso/preisanfrage?next=/submissionskarte',
     label: 'Submissionskarte',
     icon: MapPin,
     external: true,
     permission: 'submissionskarte',
   },
   {
-    to: 'https://preisanfrage.kalkus.de/statistik',
+    to: '/api/panel/sso/preisanfrage?next=/statistik',
     label: 'Statistik',
     icon: TrendingUp,
     external: true,

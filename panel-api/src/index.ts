@@ -16,6 +16,7 @@ import { presetsRoute } from './routes/presets.js';
 import { templatesRoute } from './routes/templates.js';
 import { firmenRoute } from './routes/firmen.js';
 import { adminRoute } from './routes/admin.js';
+import { ssoRoute } from './routes/sso.js';
 import { rateLimit } from './lib/ratelimit.js';
 import { securityHeaders } from './lib/securityHeaders.js';
 import { requestId } from './lib/requestId.js';
@@ -114,6 +115,7 @@ app.use('/api/panel/share/*', publicBodyLimit);
 app.use('/api/panel/admin/*', ownerBodyLimit);
 
 app.route('/api/panel/auth', authRoute);
+app.route('/api/panel/sso', ssoRoute);
 app.route('/api/panel/projects', projectsRoute);
 app.route('/api/panel', sharesRoute);
 app.route('/api/panel', publicRoute);
