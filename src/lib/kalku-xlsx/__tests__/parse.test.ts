@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { readFileSync, existsSync } from 'node:fs';
 import XLSX from 'xlsx';
 import { ozKey, ozLevel, classifyRow, isErrorCell } from '@/features/kalkulation/ozParser.mjs';
-import { parseKalkulationWorkbook } from '../parse';
+import { parseKalkulationWorkbook, echteZeitToRawMinutes } from '../parse';
 
 const HOME = process.env.HOME ?? '';
 const EXAMPLES = [
@@ -196,4 +196,44 @@ if (!FIXTURES_AVAILABLE) {
       }
     });
   }
+});
+
+describe('echteZeitToRawMinutes — target-price-mode time recovery', () => {
+  // Regression for the Gesellchen "Besucherplattform" LV: the Vorlage was filled
+  // in target-price mode, so col AC (Echte Zeit) was back-solved and diverged
+  // from col Y. Pricing off Y imported Geräte −42 %, Lohn +6 %, Stunden 218 vs
+  // 520 — Netto 136.346,45 € instead of 139.968,05 €.
+
+  test('normal mode (AC = Y·(1+Zeitwert)) → returns the raw Y unchanged', () => {
+    // Y=1800, Zeitwert=10% → AC=1980. No-op so normal files import identically.
+    expect(echteZeitToRawMinutes(1980, 1800, 10)).toBe(1800);
+    expect(echteZeitToRawMinutes(7.7, 7, 10)).toBe(7);
+  });
+
+  test('target mode (AC back-solved, diverges) → recovers AC/(1+Zeitwert)', () => {
+    // r16: Y=1800, AC=2008.20, Zeitwert=10% → raw·1.1 must re-derive AC exactly.
+    const raw = echteZeitToRawMinutes(2008.2, 1800, 10);
+    expect(raw).not.toBe(1800);
+    expect(raw * 1.1).toBeCloseTo(2008.2, 6);
+  });
+
+  test('Zeitwert 0 → divergent AC is used directly', () => {
+    expect(echteZeitToRawMinutes(88.53, 30, 0)).toBe(88.53);
+  });
+
+  test('negative Echte Zeit (Nachlass row) → recovers the negative time', () => {
+    // Y blank/0 on a discount row; AC is the real (negative) echte Zeit.
+    const raw = echteZeitToRawMinutes(-18204, 0, 10);
+    expect(raw).toBeCloseTo(-18204 / 1.1, 6);
+  });
+
+  test('no AC present → falls back to the Y-derived time', () => {
+    expect(echteZeitToRawMinutes(undefined, 30, 10)).toBe(30);
+    expect(echteZeitToRawMinutes(null, 42, 0)).toBe(42);
+  });
+
+  test('AC within FP noise of Y-derived time → keeps Y (does not flip to AC)', () => {
+    // 7·1.1 = 7.700000001 vs AC 7.7 — below the 0.01 gate, so Y is kept.
+    expect(echteZeitToRawMinutes(7.700000001, 7, 10)).toBe(7);
+  });
 });

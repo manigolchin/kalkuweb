@@ -452,20 +452,28 @@ export async function parseKalkulationWorkbook(
           message: `Zeile ${r} hat keine OZ-Nummer — wird als anonyme Position importiert.`,
         });
       }
-      // Time-per-unit: the real Vorlage carries the raw "Zeit in min" in col Y
+      // Time-per-unit. The real Vorlage carries the raw "Zeit in min" in col Y
       // — stable across BOTH template variants (J="Min/Einheit" where J also
       // equals the time, AND J="Arbeitstage" where J is person-days, NOT the
-      // time). Our own export writes the time to J with Y empty. So prefer Y
-      // when it holds a positive number; otherwise fall back to J. calc.ts
-      // applies zeitabzug, so the RAW Y is the correct source (J in the
-      // Min/Einheit variant is the already-zeitabzug-adjusted AC).
+      // time). Our own export writes the time to J with Y empty.
       const rawY = ws['Y' + r]?.v;
-      const timeMinutes =
+      const yTime =
         typeof rawY === 'number' && rawY > 0
           ? rawY
           : typeof cells.J === 'number'
             ? cells.J
             : 0;
+      // The prices are built from "Echte Zeit" (col AC), which in TARGET-PRICE
+      // mode is back-solved from the target EP and no longer equals Y·(1+Zeitwert).
+      // echteZeitToRawMinutes recovers the raw minutes so calc re-derives exactly
+      // AC (a no-op on normal files where AC ≈ Y·(1+Zeitwert)). Verified on the
+      // Gesellchen "Besucherplattform" LV (Geräte −42 %, Lohn +6 %, Stunden 218
+      // vs 520 before this).
+      const timeMinutes = echteZeitToRawMinutes(
+        ws['AC' + r]?.v,
+        yTime,
+        derivedCalcParams.zeitabzug ?? 0,
+      );
       // Per-position Geräte. The Vorlage has TWO ways to price equipment:
       //   1) Rate-based (the common case, 274/279 rows in the MPB Biergasse
       //      LV): "EP Geräte" (col AA) is a FORMULA = (Echte-Zeit/60) × "Zulage
@@ -620,6 +628,26 @@ function parseDeNumber(raw: unknown): number {
   const s = String(raw).replace(/\./g, '').replace(',', '.').trim();
   const n = parseFloat(s);
   return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Per-unit minutes for calc, given the Vorlage's "Echte Zeit" (col AC, `rawAC`),
+ * the raw "Zeit in min" (col Y, `yTime`), and the Zeitwert percent.
+ *
+ * Equipment + labor prices are built from AC (AA = AC/60·Z, AB = AC/60·VL).
+ * Normally AC = Y·(1+Zeitwert/100), so returning Y lets calc re-apply the
+ * Zeitwert back to exactly AC. But when the Vorlage is filled in TARGET-PRICE
+ * mode, AC is back-solved from the target EP and no longer equals Y·(1+Zeitwert)
+ * — Y is then stale. So when AC materially diverges from the Y-derived time we
+ * recover the raw minutes from AC (raw = AC/(1+Zeitwert)); calc then re-derives
+ * exactly AC. A no-op on normal files (AC ≈ Y·(1+Zeitwert) → returns Y).
+ */
+export function echteZeitToRawMinutes(rawAC: unknown, yTime: number, zeitabzugPct: number): number {
+  const zf = 1 + (zeitabzugPct ?? 0) / 100;
+  if (typeof rawAC === 'number' && zf > 0 && Math.abs(rawAC - yTime * zf) > 0.01) {
+    return rawAC / zf;
+  }
+  return yTime;
 }
 
 function emptyResult(issues: ImportIssue[]): ParseResult {
