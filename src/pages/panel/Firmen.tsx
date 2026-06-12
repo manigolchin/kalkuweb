@@ -28,10 +28,12 @@ import {
   ShieldCheck,
   Inbox,
   ExternalLink,
+  TrendingUp,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { api, ApiError } from '@/lib/api';
+import { preisanfrageSsoHref } from '@/lib/panelSso';
 import { formatEUR } from '@/features/kalkulation/calc';
 import { Skeleton } from '@/components/panel/Skeleton';
 
@@ -709,9 +711,10 @@ function FirmaRowEl({
   const isUnadopted = isExternal && !row.adoptedCompanyId;
   const meta = tradeMeta(row.tradeType);
   const href = `/panel/firmen/${row.kind}/${row.id}`;
-  // Posteingang exists only for a managing preisanfrage company: managed firms
-  // (id == companies.id) and adopted external firms (adoptedCompanyId).
-  const posteingangCompanyId: number | null =
+  // Per-company preisanfrage links (Posteingang + Statistik) exist only for a
+  // managing preisanfrage company: managed firms (id == companies.id) and
+  // adopted external firms (adoptedCompanyId). Both deep-link via ?company=<id>.
+  const preisanfrageCompanyId: number | null =
     row.kind === 'managed' && typeof row.id === 'number'
       ? row.id
       : row.kind === 'external'
@@ -824,19 +827,33 @@ function FirmaRowEl({
               {archiving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
             </button>
           )}
-          {posteingangCompanyId != null && (
-            <a
-              href={`https://preisanfrage.kalkus.de/posteingang?company=${posteingangCompanyId}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-primary-600 dark:text-slate-400 dark:hover:text-primary-300"
-              title={`Posteingang von ${row.displayName} in preisanfrage öffnen`}
-            >
-              <Inbox className="h-3.5 w-3.5" />
-              <span className="hidden lg:inline">Posteingang</span>
-              <ExternalLink className="h-3 w-3 opacity-70" aria-hidden />
-            </a>
+          {preisanfrageCompanyId != null && (
+            <>
+              <a
+                href={preisanfrageSsoHref(`/statistik?company=${preisanfrageCompanyId}`)}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-primary-600 dark:text-slate-400 dark:hover:text-primary-300"
+                title={`Statistik (Gewonnen/Verloren) von ${row.displayName} in preisanfrage öffnen`}
+              >
+                <TrendingUp className="h-3.5 w-3.5" />
+                <span className="hidden lg:inline">Statistik</span>
+                <ExternalLink className="h-3 w-3 opacity-70" aria-hidden />
+              </a>
+              <a
+                href={preisanfrageSsoHref(`/posteingang?company=${preisanfrageCompanyId}`)}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-primary-600 dark:text-slate-400 dark:hover:text-primary-300"
+                title={`Posteingang von ${row.displayName} in preisanfrage öffnen`}
+              >
+                <Inbox className="h-3.5 w-3.5" />
+                <span className="hidden lg:inline">Posteingang</span>
+                <ExternalLink className="h-3 w-3 opacity-70" aria-hidden />
+              </a>
+            </>
           )}
           <Link
             to={href}
