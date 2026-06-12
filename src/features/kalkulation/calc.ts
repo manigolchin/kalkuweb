@@ -18,14 +18,18 @@ export const DEFAULT_CALC_PARAMS: CalcParams = {
 // A plain Math.round(n * 100) is wrong at the X.XX5 boundary: the Vorlage's
 // chained arithmetic (Y → AC → AA/AB) leaves an exact half a few ULP low in
 // binary FP (e.g. 1.275 → 1.27499…), so Math.round drops it DOWN while Excel
-// rounds it UP (1.275 → 1.28). Nudge toward away-from-zero before rounding; the
-// nudge is ≤1e-9 relative — far below the 2-dp grid, so it only ever rescues a
-// true half and never disturbs a genuine non-boundary value.
+// rounds it UP (1.275 → 1.28). We nudge toward away-from-zero before rounding.
+// The nudge is a FIXED absolute epsilon in cent-space (1e-6 ≪ the 0.5 grid),
+// NOT magnitude-relative: a relative `x · 1e-9` reaches half a cent once
+// x = n·100 ≥ 5e8, so it silently pushed every value ≥ 5,000,000 € up a cent
+// (49.999.999,99 € → 50.000.000,04 €). 1e-6 still dwarfs the few-ULP FP
+// undershoot for any realistic bid, so it rescues a true half without ever
+// disturbing a genuine non-boundary value. Keep in sync with panel-api snapshot.ts.
 const round = (n: number, d = 2): number => {
   if (!Number.isFinite(n)) return n;
   const f = 10 ** d;
   const x = n * f;
-  return Math.round(x + Math.sign(x) * Math.abs(x) * 1e-9) / f;
+  return Math.round(x + Math.sign(x) * 1e-6) / f;
 };
 
 export type PositionCalcResult = {

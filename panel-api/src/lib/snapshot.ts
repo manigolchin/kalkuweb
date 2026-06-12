@@ -11,13 +11,15 @@ import type {
 // + the client calc.ts. Plain Math.round(n * 100) rounds the wrong way at the
 // X.XX5 boundary (binary FP leaves an exact half a few ULP low, e.g. 1.275 →
 // 1.27499…), so the customer share would drift a cent from the calculator.
-// Nudge toward away-from-zero before rounding; ≤1e-9 relative only rescues true
-// halves and never disturbs a genuine non-boundary value.
+// The nudge is a FIXED absolute epsilon in cent-space (1e-6 ≪ the 0.5 grid),
+// NOT magnitude-relative: a relative `x · 1e-9` reaches half a cent once
+// x = n·100 ≥ 5e8, so it silently pushed every total ≥ 5,000,000 € up a cent
+// (49.999.999,99 € → 50.000.000,04 €). Keep in sync with src calc.ts.
 const round = (n: number, d = 2): number => {
   if (!Number.isFinite(n)) return n;
   const f = 10 ** d;
   const x = n * f;
-  return Math.round(x + Math.sign(x) * Math.abs(x) * 1e-9) / f;
+  return Math.round(x + Math.sign(x) * 1e-6) / f;
 };
 
 /** German Arbeitstage-pro-Monat divisor (≈ 261 Werktage / 12). Matches the
@@ -131,7 +133,14 @@ export function computeShareSummary(positions: Position[], params: CalcParams): 
   // cost vs. margin, so it surfaces in the Geräte-Zuschlag-% and the Überschuss,
   // never in the customer price (which stays Σ Min/60 × Geräte-Satz).
   const gPct = params.geraeteZuschlagPct ?? 0;
-  const ek = [round(ekLohn), round(ekMaterial), round(ekGeraet / (1 + gPct)), round(ekNu)];
+  // Guard the divisor: a malformed import (col K6) can yield a Geräte-Zuschlag of
+  // -100 % or worse, making (1 + gPct) ≤ 0 → Infinity → a broken customer share
+  // (Überschuss = -Infinity, JSON-serialised as null). When the split is
+  // undefined, fall back to EK = VK Geräte (no margin) — the same degrade the
+  // Lohn ratio uses above.
+  const gFactor = 1 + gPct;
+  const ekGeraetSplit = gFactor > 0 ? ekGeraet / gFactor : ekGeraet;
+  const ek = [round(ekLohn), round(ekMaterial), round(ekGeraetSplit), round(ekNu)];
   const costType = (ekv: number, vkv: number) => ({
     ek: ekv,
     vk: vkv,

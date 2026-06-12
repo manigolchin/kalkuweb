@@ -5,6 +5,7 @@ import {
   buildShareSnapshot,
   snapshotHash,
   diffSnapshots,
+  computeShareSummary,
 } from '../src/lib/snapshot.js';
 import type { CalcParams, Position, ShareSnapshot } from '../src/schema.js';
 
@@ -251,4 +252,36 @@ test('diffSnapshots — identical inputs report no changes', () => {
   assert.equal(d.changed.length, 0);
   assert.equal(d.unchanged.length, 1);
   assert.equal(d.delta, 0);
+});
+
+// ── Regression: computeShareSummary must never emit a non-finite number ──
+// A malformed import can set geraeteZuschlagPct to -100 % (or worse), making the
+// Geräte EINKAUF divisor (1 + gPct) ≤ 0. That divided by zero → Infinity → the
+// customer share's Überschuss serialised to null (Infinity is invalid JSON).
+test('computeShareSummary: geraeteZuschlagPct = -1 (-100%) stays finite (no /0 Infinity)', () => {
+  const positions: Position[] = [pos({ id: 'g1', quantity: 2, geraeteEp: 50, gp: 100 })];
+  const summary = computeShareSummary(positions, { ...DEFAULT_PARAMS, geraeteZuschlagPct: -1 });
+  const bad: string[] = [];
+  const walk = (v: unknown, path: string): void => {
+    if (typeof v === 'number') {
+      if (!Number.isFinite(v)) bad.push(`${path}=${v}`);
+    } else if (v && typeof v === 'object') {
+      for (const [k, val] of Object.entries(v)) walk(val, path ? `${path}.${k}` : k);
+    }
+  };
+  walk(summary, '');
+  assert.deepEqual(bad, [], `non-finite summary fields: ${bad.join(', ')}`);
+  // Degraded contract: invalid divisor → Geräte EINKAUF falls back to VERKAUF (no margin).
+  assert.ok(Number.isFinite(summary.ueberschuss));
+  assert.ok(Number.isFinite(summary.costTypes.geraete.ek));
+});
+
+test('computeShareSummary: normal geraeteZuschlagPct splits Geräte EINKAUF below VERKAUF', () => {
+  const positions: Position[] = [pos({ id: 'g1', quantity: 1, geraeteEp: 110, gp: 110 })];
+  const summary = computeShareSummary(positions, {
+    ...DEFAULT_PARAMS, geraeteZuschlagPct: 0.1, materialZuschlag: 0, nuZuschlag: 0,
+  });
+  // EINKAUF Geräte = VERKAUF / 1.1 → 110 / 1.1 = 100.
+  assert.ok(summary.costTypes.geraete.ek < summary.costTypes.geraete.vk);
+  assert.ok(Math.abs(summary.costTypes.geraete.ek - 100) < 0.01);
 });

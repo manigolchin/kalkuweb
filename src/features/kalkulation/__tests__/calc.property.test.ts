@@ -335,3 +335,36 @@ describe('calc.ts — zeitabzug adjustment', () => {
     expect(Math.abs(adjR.epLohn - baseR.epLohn * 1.1)).toBeLessThanOrEqual(0.05);
   });
 });
+
+describe('calc.ts — rounding stays exact at large magnitudes (regression)', () => {
+  // The cent-rounding nudge must be a FIXED epsilon, not magnitude-relative.
+  // The previous `x · 1e-9` reached half a cent once x = n·100 ≥ 5e8, so it
+  // silently inflated every value ≥ 5,000,000 € by a cent or more
+  // (49.999.999,99 € → 50.000.000,04 €). These pin the contract.
+  const onlyMaterial = {
+    ...DEFAULT_CALC_PARAMS,
+    materialZuschlag: 0, nuZuschlag: 0, verrechnungslohn: 0,
+    geraeteStundensatz: 0, zeitabzug: 0, zielAufschlag: 0, mwst: 0,
+  };
+
+  for (const v of [5_000_000.0, 8_234_567.89, 49_999_999.99, 100_000_000.01, 1_234_567.89]) {
+    test(`a ${v} € line totals to exactly ${v} (no cent inflation)`, () => {
+      const totals = calcTotals([pos({ materialCost: v, quantity: 1 })], onlyMaterial);
+      expect(totals.totalNetto).toBe(v);
+      expect(totals.totalBrutto).toBe(v); // mwst = 0
+    });
+  }
+
+  test('50 large lines sum without per-line cent drift', () => {
+    const lines = Array.from({ length: 50 }, () => pos({ materialCost: 999_999.99, quantity: 1 }));
+    expect(calcTotals(lines, onlyMaterial).totalNetto).toBe(49_999_999.5);
+  });
+
+  test('half-cent boundary STILL rounds away from zero (nudge not lost)', () => {
+    const base = { ...DEFAULT_CALC_PARAMS, nuZuschlag: 0, verrechnungslohn: 0, geraeteStundensatz: 0, zielAufschlag: 0 };
+    // 1 × (1 + 0.275) = 1.275 → 1.28 (binary FP undershoots to 1.27499…)
+    expect(calculatePosition(pos({ materialCost: 1, quantity: 1 }), { ...base, materialZuschlag: 0.275 }).epMaterial).toBe(1.28);
+    // 1 × (1 + 1.675) = 2.675 → 2.68
+    expect(calculatePosition(pos({ materialCost: 1, quantity: 1 }), { ...base, materialZuschlag: 1.675 }).epMaterial).toBe(2.68);
+  });
+});
