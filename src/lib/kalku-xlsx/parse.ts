@@ -487,50 +487,41 @@ export async function parseKalkulationWorkbook(
       //      per-unit geraeteEp. Without this the Geräte total imports ~4–5 %
       //      low (the "GERAETE_GAP" class in the 100-LV fidelity test).
       const rawZ = ws['Z' + r]?.v;
-      const aaCell = ws['AA' + r];
-      const rawAA = aaCell?.v;
-      // A lump-sum override is ONLY a HARD-CODED literal in col AA (no formula).
-      // When AA carries a formula it is the Vorlage's own (Echte-Zeit/60)×Z
-      // computation, which the rate model below reproduces — overriding it with
-      // the cached value would fight tiny formula/rounding differences and
-      // DEGRADE other templates (verified against the 100-LV corpus: literal-
-      // only is a no-op on formula files, lump-sum-exact on the override rows).
-      const aaIsLiteral = aaCell != null && aaCell.f == null;
+      const rawAA = ws['AA' + r]?.v;
       // Excel evaluates an EMPTY col-Z as 0 inside `AA = AC/60 * Z`: Stundenlohn/
       // Regie rows leave Z blank, so the Vorlage prices ZERO Geräte on them. An
       // absent Z therefore means rate 0 for THIS row — NOT the global Geräte-Satz.
-      // Only a present `=gzuschlag` (cached = the global default) keeps the row
-      // live on the global rate. Falling back to the global on a blank Z was
-      // inventing a phantom Geräte cost on every Stundenlohn position.
+      // Falling back to the global on a blank Z invents a phantom Geräte cost.
       const effectiveZ = typeof rawZ === 'number' && rawZ >= 0 ? rawZ : 0;
       const adjForGeraete =
         timeMinutes + (timeMinutes / 100) * derivedCalcParams.zeitabzug;
       const formulaGeraete = (adjForGeraete / 60) * effectiveZ;
       let geraeteSatzPatch: { geraeteEp?: number; geraeteSatz?: number } = {};
-      if (aaIsLiteral && typeof rawAA === 'number' && rawAA >= 0 && Math.abs(rawAA - formulaGeraete) > 0.01) {
-        // Hard-coded EP-Geräte lump sum → pin flat (does not re-scale with time).
+      // "EP Geräte" (col AA) is the per-unit VERKAUF Geräte that sums into the
+      // Vorlage total (Σ Menge×AA), and the calculator can hand-edit it: a
+      // lump-sum literal (crane/lift, zero-time row), a custom formula, or a
+      // discount. So whenever AA DEVIATES from the rate model we PIN it flat as
+      // the source of truth; a row that still matches AC/60×Z stays on the live
+      // rate (geraeteSatz=Z) so the Stellschrauben can re-price it. Pinning
+      // formula cells is safe now that the time basis is Echte Zeit (AC): a
+      // standard `AA=AC/60×Z` row reproduces formulaGeraete to the cent and does
+      // NOT trip the gate — only genuine overrides (incl. negatives) do.
+      if (typeof rawAA === 'number' && Math.abs(rawAA - formulaGeraete) > 0.01) {
         geraeteSatzPatch = { geraeteEp: rawAA };
       } else if (Math.abs(effectiveZ - derivedCalcParams.geraeteStundensatz) > 1e-9) {
-        // Per-position rate override (blank Z → 0; crane/lift literal 5–50 €/h)
-        // → re-prices with time off the pinned rate.
         geraeteSatzPatch = { geraeteSatz: effectiveZ };
       }
-      // Per-position EP Löhne. Default = (Echte-Zeit/60) × Verrechnungslohn.
-      // Capture the Vorlage's col-AB value as a flat per-unit lohnEp whenever it
-      // DEVIATES from that default — which covers both
-      //   • a HARD-CODED literal (specialist rate 84,50/76,50/54,60 €/h, or a
-      //     flat labor cost on a zero-time row), and
-      //   • a FORMULA carrying the per-position Lohn factor "W"
-      //     (AC/60 × verrechnungslohn × W) — the W rows the examples use.
-      // The plain no-W formula equals the default to full precision, so it is
-      // NOT captured (lohnEp stays unset → the rate model re-prices). Unlike
-      // col AA (Geräte), col AB has no per-position rate fallback (Verrechnungs-
-      // lohn is global), so the no-W match is exact and formula-capture is safe.
-      const abCell = ws['AB' + r];
-      const rawAB = abCell?.v;
+      // "EP Löhne" (col AB) — same source-of-truth treatment as AA. Default =
+      // (Echte-Zeit/60) × Verrechnungslohn; pin the cached AB as a flat per-unit
+      // lohnEp whenever it DEVIATES, which covers a hard-coded specialist rate
+      // (84,50/76,50/54,60 €/h), a W-factor formula (AC/60 × VL × W), AND a
+      // negative Nachlass/discount row (the old `>= 0` guard wrongly skipped
+      // those → the discount imported at the wrong Lohn). A plain no-W row equals
+      // the default to full precision, so it stays unset and the rate re-prices.
+      const rawAB = ws['AB' + r]?.v;
       const formulaLohn = (adjForGeraete / 60) * derivedCalcParams.verrechnungslohn;
       const lohnPatch =
-        typeof rawAB === 'number' && rawAB >= 0 && Math.abs(rawAB - formulaLohn) > 0.01
+        typeof rawAB === 'number' && Math.abs(rawAB - formulaLohn) > 0.01
           ? { lohnEp: rawAB }
           : {};
       positions.push({
