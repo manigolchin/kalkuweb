@@ -336,6 +336,29 @@ describe('calc.ts — zeitabzug adjustment', () => {
   });
 });
 
+describe('calc.ts — Lohn-Faktor W re-prices with Verrechnungslohn', () => {
+  // W (Vorlage col AB = Zeit/60 × Verrechnungslohn × W) keeps imported labor
+  // LIVE: changing the global Verrechnungslohn re-prices it like Excel, instead
+  // of freezing it to the imported amount.
+  const base = { ...DEFAULT_CALC_PARAMS, verrechnungslohn: 50, materialZuschlag: 0, nuZuschlag: 0, geraeteStundensatz: 0, zeitabzug: 0, zielAufschlag: 0 };
+
+  test('a row with lohnFaktor scales its Lohn when Verrechnungslohn changes', () => {
+    const p = pos({ timeMinutes: 60, materialCost: 0, nuCost: 0, quantity: 1, lohnFaktor: 1.5 });
+    expect(calculatePosition(p, base).epLohn).toBe(75);                       // 60/60 × 50 × 1.5
+    expect(calculatePosition(p, { ...base, verrechnungslohn: 100 }).epLohn).toBe(150); // doubles, W kept
+  });
+
+  test('lohnFaktor defaults to 1 (plain Zeit × Verrechnungslohn)', () => {
+    expect(calculatePosition(pos({ timeMinutes: 60 }), base).epLohn).toBe(50);
+  });
+
+  test('a flat lohnEp override stays fixed when Verrechnungslohn changes', () => {
+    const p = pos({ timeMinutes: 60, lohnEp: 84.5 });
+    expect(calculatePosition(p, base).epLohn).toBe(84.5);
+    expect(calculatePosition(p, { ...base, verrechnungslohn: 100 }).epLohn).toBe(84.5);
+  });
+});
+
 describe('calc.ts — rounding stays exact at large magnitudes (regression)', () => {
   // The cent-rounding nudge must be a FIXED epsilon, not magnitude-relative.
   // The previous `x · 1e-9` reached half a cent once x = n·100 ≥ 5e8, so it

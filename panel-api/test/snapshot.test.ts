@@ -276,6 +276,18 @@ test('computeShareSummary: geraeteZuschlagPct = -1 (-100%) stays finite (no /0 I
   assert.ok(Number.isFinite(summary.costTypes.geraete.ek));
 });
 
+test('computeShareSummary: lohnFaktor W scales VERKAUF and EINKAUF Lohn together', () => {
+  // 60 min × lohnFaktor 2: VK = 60/60 × VL(50) × 2 = 100; EK = 60/60 × ML(30) × 2 = 60.
+  // gp must equal the VK so the netto-reconciliation is a no-op.
+  const positions: Position[] = [pos({ id: 'l1', quantity: 1, timeMinutes: 60, lohnFaktor: 2, gp: 100 })];
+  const summary = computeShareSummary(positions, {
+    ...DEFAULT_PARAMS, verrechnungslohn: 50, mittellohn: 30,
+    materialZuschlag: 0, nuZuschlag: 0, geraeteStundensatz: 0, zeitabzug: 0,
+  });
+  assert.equal(summary.costTypes.lohn.vk, 100);
+  assert.equal(summary.costTypes.lohn.ek, 60);
+});
+
 test('computeShareSummary: normal geraeteZuschlagPct splits Geräte EINKAUF below VERKAUF', () => {
   const positions: Position[] = [pos({ id: 'g1', quantity: 1, geraeteEp: 110, gp: 110 })];
   const summary = computeShareSummary(positions, {

@@ -64,6 +64,9 @@ const positionSchema = z.object({
   // Per-position EP Löhne override ("EP Löhne", col AB) + its formula.
   lohnEp: fnum().optional(),
   lohnEpFormula: z.string().max(2000).optional(),
+  // Per-position Lohn-Faktor "W" — labor multiplier on the Verrechnungslohn so
+  // the row re-prices when VL changes (col AB = Zeit/60 × Verrechnungslohn × W).
+  lohnFaktor: fnum().optional(),
   isHeader: z.boolean().default(false),
   sortOrder: z.number().int().nonnegative().max(1e8).default(0),
   sectionPath: z.string().max(256).default(''),

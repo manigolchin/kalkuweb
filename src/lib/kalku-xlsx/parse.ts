@@ -28,7 +28,7 @@
  */
 
 import { ozKey, ozLevel, classifyRow, isErrorCell, ERROR_LITERALS } from '@/features/kalkulation/ozParser.mjs';
-import { makeBlankPosition, DEFAULT_CALC_PARAMS } from '@/features/kalkulation/calc';
+import { makeBlankPosition, DEFAULT_CALC_PARAMS, round } from '@/features/kalkulation/calc';
 import type {
   CalcParams,
   FaktorEntry,
@@ -511,19 +511,23 @@ export async function parseKalkulationWorkbook(
       } else if (Math.abs(effectiveZ - derivedCalcParams.geraeteStundensatz) > 1e-9) {
         geraeteSatzPatch = { geraeteSatz: effectiveZ };
       }
-      // "EP Löhne" (col AB) — same source-of-truth treatment as AA. Default =
-      // (Echte-Zeit/60) × Verrechnungslohn; pin the cached AB as a flat per-unit
-      // lohnEp whenever it DEVIATES, which covers a hard-coded specialist rate
-      // (84,50/76,50/54,60 €/h), a W-factor formula (AC/60 × VL × W), AND a
-      // negative Nachlass/discount row (the old `>= 0` guard wrongly skipped
-      // those → the discount imported at the wrong Lohn). A plain no-W row equals
-      // the default to full precision, so it stays unset and the rate re-prices.
+      // "EP Löhne" (col AB) = Zeit/60 × Verrechnungslohn × W. Capture the per-row
+      // factor W (= AB ÷ the plain Zeit×Verrechnungslohn) as `lohnFaktor` so the
+      // Lohn RE-PRICES when the global Verrechnungslohn (or this row's Zeit)
+      // changes — a hard-coded specialist rate (84,50 €/h) or a Nachlass/discount
+      // folds into W too, so it still scales with VL. Use the SAME rounded time
+      // calc uses, so calc's `(round(Zeit)/60)·VL·W` reproduces AB to the cent
+      // (the base cancels). A plain no-W row gives W≈1 → left unset → re-prices on
+      // the rate. Only a zero-time flat Lohn (no time basis to scale) is pinned
+      // as a fixed lohnEp.
       const rawAB = ws['AB' + r]?.v;
-      const formulaLohn = (adjForGeraete / 60) * derivedCalcParams.verrechnungslohn;
-      const lohnPatch =
-        typeof rawAB === 'number' && Math.abs(rawAB - formulaLohn) > 0.01
-          ? { lohnEp: rawAB }
-          : {};
+      const lohnBaseUnit = (round(adjForGeraete) / 60) * derivedCalcParams.verrechnungslohn;
+      let lohnPatch: { lohnEp?: number; lohnFaktor?: number } = {};
+      if (typeof rawAB === 'number' && Math.abs(rawAB - lohnBaseUnit) > 0.01) {
+        lohnPatch = Math.abs(lohnBaseUnit) > 1e-9
+          ? { lohnFaktor: rawAB / lohnBaseUnit }
+          : { lohnEp: rawAB };
+      }
       positions.push({
         ...base,
         oz,

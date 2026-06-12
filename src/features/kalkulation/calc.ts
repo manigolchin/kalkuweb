@@ -25,7 +25,7 @@ export const DEFAULT_CALC_PARAMS: CalcParams = {
 // (49.999.999,99 € → 50.000.000,04 €). 1e-6 still dwarfs the few-ULP FP
 // undershoot for any realistic bid, so it rescues a true half without ever
 // disturbing a genuine non-boundary value. Keep in sync with panel-api snapshot.ts.
-const round = (n: number, d = 2): number => {
+export const round = (n: number, d = 2): number => {
   if (!Number.isFinite(n)) return n;
   const f = 10 ** d;
   const x = n * f;
@@ -47,7 +47,7 @@ export type PositionCalcResult = {
 };
 
 export function calculatePosition(
-  pos: Pick<Position, 'quantity' | 'materialCost' | 'timeMinutes' | 'nuCost' | 'isHeader' | 'geraeteSatz' | 'geraeteEp' | 'lohnEp'>,
+  pos: Pick<Position, 'quantity' | 'materialCost' | 'timeMinutes' | 'nuCost' | 'isHeader' | 'geraeteSatz' | 'geraeteEp' | 'lohnEp' | 'lohnFaktor'>,
   params: CalcParams,
 ): PositionCalcResult {
   if (pos.isHeader) {
@@ -79,10 +79,13 @@ export function calculatePosition(
   );
   // Per-position EP Löhne (Vorlage "EP Löhne" col AB) wins flat when set
   // (hard-coded specialist rate or custom formula); else time × Verrechnungslohn.
+  // Per-position Lohn-Faktor "W" (col AB = Zeit/60 × Verrechnungslohn × W) keeps
+  // the labor live: changing the global Verrechnungslohn (or this row's Zeit)
+  // re-prices it. Default 1. A flat lohnEp override still wins when set.
   const epLohn = round(
     pos.lohnEp != null
       ? pos.lohnEp * zielFactor
-      : (adjustedTime / 60) * params.verrechnungslohn * zielFactor,
+      : (adjustedTime / 60) * params.verrechnungslohn * (pos.lohnFaktor ?? 1) * zielFactor,
   );
   const epMaterial = round(pos.materialCost * (1 + params.materialZuschlag) * zielFactor);
   const epNu = round(pos.nuCost * (1 + params.nuZuschlag) * zielFactor);

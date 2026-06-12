@@ -58,14 +58,18 @@ export function positionCostSplit(p: Position, params: CalcParams): PositionCost
   // Stunden-je-Einheit. Lohn: a per-position override ("EP Löhne", col AB —
   // specialist rate / custom formula) wins flat; else Stunden × Verrechnungslohn.
   const geraeteVkUnit = round(p.geraeteEp != null ? p.geraeteEp * zf : hpu * geraeteSatz * zf);
-  const lohnVkUnit = round(p.lohnEp != null ? p.lohnEp * zf : hpu * params.verrechnungslohn * zf);
+  // Lohn-Faktor "W" (col AB = Zeit/60 × Verrechnungslohn × W) scales BOTH the
+  // VERKAUF (× Verrechnungslohn) and the EINKAUF (× Mittellohn) labor, so the
+  // EK/VK ratio — and the Lohn-Zuschlag — stay exactly as the Vorlage. Default 1.
+  const lohnFaktor = p.lohnFaktor ?? 1;
+  const lohnVkUnit = round(p.lohnEp != null ? p.lohnEp * zf : hpu * params.verrechnungslohn * lohnFaktor * zf);
   const materialVkUnit = round(p.materialCost * (1 + params.materialZuschlag) * zf);
   const nuVkUnit = round(p.nuCost * (1 + params.nuZuschlag) * zf);
   // EINKAUF (raw cost): Lohn at Mittellohn (keeps the EK/VK ratio), Material/NU
   // before Zuschlag, Geräte before Ziel-Aufschlag — so Geräte reconciles to 0 %
   // Zuschlag when there's no markup (no phantom rounding spread).
   const lohnRatio = params.verrechnungslohn > 0 ? params.mittellohn / params.verrechnungslohn : 1;
-  const lohnEkUnit = p.lohnEp != null ? p.lohnEp * lohnRatio : hpu * params.mittellohn;
+  const lohnEkUnit = p.lohnEp != null ? p.lohnEp * lohnRatio : hpu * params.mittellohn * lohnFaktor;
   const geraeteEkUnit = p.geraeteEp != null ? p.geraeteEp : hpu * geraeteSatz;
   return {
     gpLohn: round(p.quantity * lohnVkUnit),
@@ -193,7 +197,9 @@ function recomputePosition(p: Position, params: CalcParams): Position {
   );
   // Per-position EP Löhne override (col AB) wins flat; else time × Verrechnungslohn.
   const epLohn = round(
-    p.lohnEp != null ? p.lohnEp * zielFactor : (adj / 60) * params.verrechnungslohn * zielFactor,
+    p.lohnEp != null
+      ? p.lohnEp * zielFactor
+      : (adj / 60) * params.verrechnungslohn * (p.lohnFaktor ?? 1) * zielFactor,
   );
   const epMaterial = round(p.materialCost * (1 + params.materialZuschlag) * zielFactor);
   const epNu = round(p.nuCost * (1 + params.nuZuschlag) * zielFactor);

@@ -49,6 +49,13 @@ export type Position = {
   /** Custom formula for EP Löhne (col AB). Same stored-formula-with-cached-value
    *  pattern as materialFormula; lohnEp holds the evaluated result. Internal. */
   lohnEpFormula?: string;
+  /** Per-position Lohn-Faktor "W" — the Vorlage's per-row labor multiplier on the
+   *  Verrechnungslohn (col AB = Zeit/60 × Verrechnungslohn × W). Captured at import
+   *  so this row's Lohn RE-PRICES when the global Verrechnungslohn (or the row's
+   *  Zeit) changes — unlike a flat lohnEp. Default 1 (plain Zeit × VL); a literal
+   *  specialist rate is folded in here too (W = rate ÷ (Zeit/60 × VL)) so it still
+   *  scales with VL. Internal-only — never in the customer share snapshot. */
+  lohnFaktor?: number;
   isHeader: boolean;
   sortOrder: number;
   sectionPath: string;

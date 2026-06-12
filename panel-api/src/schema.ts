@@ -435,6 +435,10 @@ export type Position = {
   lohnEp?: number;
   /** Custom formula for EP Löhne (col AB) — cached result in lohnEp. Internal. */
   lohnEpFormula?: string;
+  /** Per-position Lohn-Faktor "W" — Vorlage per-row labor multiplier on the
+   *  Verrechnungslohn (col AB = Zeit/60 × Verrechnungslohn × W). When set, Lohn
+   *  re-prices with the global Verrechnungslohn instead of staying flat. Default 1. */
+  lohnFaktor?: number;
   isHeader: boolean;
   sortOrder: number;
   sectionPath: string;
