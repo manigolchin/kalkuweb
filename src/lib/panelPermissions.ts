@@ -11,6 +11,7 @@ export const PANEL_PERMISSION_KEYS: readonly PanelPermissionKey[] = [
   'vorlagen',
   'feedback',
   'submissionskarte',
+  'statistik',
 ];
 
 export const PANEL_PERMISSION_LABELS: Record<
@@ -36,6 +37,10 @@ export const PANEL_PERMISSION_LABELS: Record<
   submissionskarte: {
     label: 'Submissionskarte',
     description: 'Link zur Submissionskarte (preisanfrage)',
+  },
+  statistik: {
+    label: 'Statistik',
+    description: 'Link zur Submissions-Erfolgsstatistik (preisanfrage)',
   },
 };
 

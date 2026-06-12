@@ -13,6 +13,7 @@ export const PANEL_PERMISSION_KEYS = [
   'vorlagen',
   'feedback',
   'submissionskarte',
+  'statistik',
 ] as const;
 
 export type PanelPermissionKey = (typeof PANEL_PERMISSION_KEYS)[number];

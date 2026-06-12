@@ -476,7 +476,8 @@ export type PanelPermissionKey =
   | 'firmen'
   | 'vorlagen'
   | 'feedback'
-  | 'submissionskarte';
+  | 'submissionskarte'
+  | 'statistik';
 
 export type UserRole = 'admin' | 'user';
 

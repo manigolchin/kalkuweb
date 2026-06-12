@@ -20,6 +20,7 @@ import {
   Building2,
   Library,
   MapPin,
+  TrendingUp,
   ExternalLink,
   Users,
 } from 'lucide-react';
@@ -57,6 +58,13 @@ const NAV: NavItem[] = [
     icon: MapPin,
     external: true,
     permission: 'submissionskarte',
+  },
+  {
+    to: 'https://preisanfrage.kalkus.de/statistik',
+    label: 'Statistik',
+    icon: TrendingUp,
+    external: true,
+    permission: 'statistik',
   },
   { to: '/panel/kalkulation', label: 'Kalkulation', icon: Calculator, permission: 'kalkulation' },
   { to: '/panel/vorlagen', label: 'Vorlagen', icon: Library, permission: 'vorlagen' },
