@@ -813,6 +813,71 @@ describe('Round 9 — public.ts (customer-side)', () => {
     assert.equal(res.status, 403);
   });
 
+  // ── Regression (security): /pdf, /approve and /changes must honor the share
+  // password gate. They previously did their own inline token lookup and
+  // skipped the password check, so a password-protected share's PDF could be
+  // pulled — and a legally-binding approval / change-request submitted — with
+  // only the unguessable token. They now route through gateShare like the HTML
+  // view and /comments do.
+  test('GET /share/:token/pdf on a password-protected share WITHOUT password → 401', async () => {
+    const { token } = await seedFull({ password: 'pdfSecret1' });
+    const res = await publicApp.request(`/api/share/${token}/pdf`);
+    assert.equal(res.status, 401);
+    const body = await res.json() as { reason: string };
+    assert.equal(body.reason, 'password_required');
+  });
+
+  test('GET /share/:token/pdf on a password-protected share WITH correct password → 200 application/pdf', async () => {
+    const { token } = await seedFull({ password: 'pdfSecret1' });
+    const res = await publicApp.request(`/api/share/${token}/pdf`, { headers: { 'X-Share-Password': 'pdfSecret1' } });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'application/pdf');
+  });
+
+  test('POST /share/:token/approve on a password-protected share WITHOUT password → 401 + nothing recorded', async () => {
+    const { token, shareId } = await seedFull({ password: 'apprSecret1' });
+    const res = await publicApp.request(`/api/share/${token}/approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customerName: 'Kunde', customerEmail: 'k@example.de' }),
+    });
+    assert.equal(res.status, 401);
+    const responses = await db.select().from(schema.shareResponses).where(eq(schema.shareResponses.shareId, shareId));
+    assert.equal(responses.length, 0, 'approval must NOT be recorded when the password gate is not satisfied');
+  });
+
+  test('POST /share/:token/approve on a password-protected share WITH correct password → 200', async () => {
+    const { token } = await seedFull({ password: 'apprSecret1' });
+    const res = await publicApp.request(`/api/share/${token}/approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Share-Password': 'apprSecret1' },
+      body: JSON.stringify({ customerName: 'Kunde', customerEmail: 'k@example.de' }),
+    });
+    assert.equal(res.status, 200);
+  });
+
+  test('POST /share/:token/changes on a password-protected share WITHOUT password → 401 + nothing recorded', async () => {
+    const { token, shareId } = await seedFull({ password: 'chgSecret1' });
+    const res = await publicApp.request(`/api/share/${token}/changes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customerName: 'Kunde', changes: [{ positionId: 'pos1', type: 'modify', text: 'x' }] }),
+    });
+    assert.equal(res.status, 401);
+    const responses = await db.select().from(schema.shareResponses).where(eq(schema.shareResponses.shareId, shareId));
+    assert.equal(responses.length, 0, 'change-request must NOT be recorded when the password gate is not satisfied');
+  });
+
+  test('POST /share/:token/changes on a password-protected share WITH correct password → 200', async () => {
+    const { token } = await seedFull({ password: 'chgSecret1' });
+    const res = await publicApp.request(`/api/share/${token}/changes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Share-Password': 'chgSecret1' },
+      body: JSON.stringify({ customerName: 'Kunde', changes: [{ positionId: 'pos1', type: 'modify', text: 'x' }] }),
+    });
+    assert.equal(res.status, 200);
+  });
+
   test('Password is never echoed back in any customer-facing response body', async () => {
     const { token } = await seedFull({ password: 'TopSecretPwd99' });
     const res = await publicApp.request(`/api/share/${token}`, { headers: { 'X-Share-Password': 'TopSecretPwd99' } });

@@ -422,10 +422,12 @@ export const publicRoute = new Hono()
    *  the link can fetch the PDF (matches the existing GET /share/:token model). */
   .get('/share/:token/pdf', async (c) => {
     const token = c.req.param('token');
-    const share = await db.query.shares.findFirst({ where: eq(shares.token, token) });
-    if (!share) return c.json({ error: 'not_found' }, 404);
-    if (share.revokedAt) return c.json({ error: 'revoked' }, 410);
-    if (share.expiresAt && share.expiresAt.getTime() < Date.now()) return c.json({ error: 'expired', reason: 'expired' }, 410);
+    // Route through the same gate the HTML view uses so a password-protected
+    // share's PDF can't be pulled with only the token (revoked/expired/password
+    // /rate-limit/audit-log all handled centrally).
+    const gate = await gateShare(c, token);
+    if ('response' in gate) return gate.response;
+    const share = gate.share;
 
     const project = await db.query.projects.findFirst({ where: eq(projects.id, share.projectId) });
     if (!project) return c.json({ error: 'not_found' }, 404);
@@ -477,10 +479,9 @@ export const publicRoute = new Hono()
     const parsed = approveSchema.safeParse(body);
     if (!parsed.success) return c.json({ error: 'invalid_input', detail: parsed.error.issues }, 400);
 
-    const share = await db.query.shares.findFirst({ where: eq(shares.token, token) });
-    if (!share) return c.json({ error: 'not_found' }, 404);
-    if (share.revokedAt) return c.json({ error: 'revoked' }, 410);
-    if (share.expiresAt && share.expiresAt.getTime() < Date.now()) return c.json({ error: 'expired', reason: 'expired' }, 410);
+    const gate = await gateShare(c, token);
+    if ('response' in gate) return gate.response;
+    const share = gate.share;
     if (!share.settings.allowApproval) return c.json({ error: 'not_allowed' }, 403);
 
     const now = new Date();
@@ -633,10 +634,9 @@ export const publicRoute = new Hono()
     const parsed = changesSchema.safeParse(body);
     if (!parsed.success) return c.json({ error: 'invalid_input', detail: parsed.error.issues }, 400);
 
-    const share = await db.query.shares.findFirst({ where: eq(shares.token, token) });
-    if (!share) return c.json({ error: 'not_found' }, 404);
-    if (share.revokedAt) return c.json({ error: 'revoked' }, 410);
-    if (share.expiresAt && share.expiresAt.getTime() < Date.now()) return c.json({ error: 'expired', reason: 'expired' }, 410);
+    const gate = await gateShare(c, token);
+    if ('response' in gate) return gate.response;
+    const share = gate.share;
     if (!share.settings.allowChangeRequests) return c.json({ error: 'not_allowed' }, 403);
 
     const now = new Date();
