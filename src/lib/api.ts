@@ -139,6 +139,14 @@ export const api = {
       }),
     delete: (id: string) =>
       request<{ ok: true }>(`/projects/${id}`, { method: 'DELETE' }),
+    /** Auto-resolve the „04_Angebote" folder share link for this project's
+     *  Ausschreibung (via preisanfrage). Returns `{ angeboteFolderUrl: null }`
+     *  with a reason when nothing can be resolved — never throws on a missing
+     *  link. `refresh` forces a re-fetch even if the project already has one. */
+    angeboteLink: (id: string, opts: { refresh?: boolean } = {}) =>
+      request<{ angeboteFolderUrl: string | null; source?: string; reason?: string }>(
+        `/projects/${id}/angebote-link${opts.refresh ? '?refresh=1' : ''}`,
+      ),
   },
   shares: {
     listForProject: (projectId: string) =>

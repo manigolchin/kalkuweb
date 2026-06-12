@@ -437,6 +437,23 @@ export function getMockProjectPositions(projectId: number): PreisanfragePosition
   return structuredClone(MOCK_PROJECT_POSITIONS[projectId] ?? []);
 }
 
+/** Stand-in for the „anyone-with-link" 04_Angebote share URL that real
+ *  preisanfrage mints lazily on the detail fetch. In mock mode we derive it
+ *  from the project's OneDrive base so the share-time auto-find flow is
+ *  exercisable in dev/preview + tests. Null when the mock project has no
+ *  OneDrive base (mirrors the real "folder not resolvable → manual paste"
+ *  case). */
+export function getMockProjectAngeboteUrl(projectId: number): string | null {
+  warnOnce();
+  for (const list of Object.values(MOCK_MANAGED_PROJECTS)) {
+    const p = list.find((x) => x.id === projectId);
+    if (!p) continue;
+    const base = p.oneDriveShareUrl?.trim().replace(/\/+$/, '');
+    return base && /^https?:\/\//i.test(base) ? `${base}/04_Angebote` : null;
+  }
+  return null;
+}
+
 export function getMockCompanies(): PreisanfrageCompany[] {
   warnOnce();
   return MOCK_OVERVIEW.rows

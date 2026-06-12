@@ -470,6 +470,18 @@ export type CalcParams = {
   zielAufschlag: number;
 };
 
+/** Where a calculation was started from. Set once at "Kalkulation starten"
+ *  (Firma → Ausschreibung) so the panel can re-resolve upstream data later —
+ *  e.g. lazily mint the „04_Angebote" folder share link at share time instead
+ *  of only at project creation. `projectId` is preisanfrage's globally-unique
+ *  Ausschreibung id. */
+export type ProjectSourceRef = {
+  system: 'preisanfrage';
+  kind: 'managed' | 'external' | 'local' | 'directory';
+  firmaId: string | number;
+  projectId: number;
+};
+
 export type ProjectData = {
   name: string;
   client: string;
@@ -485,6 +497,10 @@ export type ProjectData = {
   /** SharePoint-Link zum „04_Angebote"-Ordner der Ausschreibung. Optional;
    *  round-trips via the projectData passthrough schema. */
   angeboteFolderUrl?: string;
+  /** Provenance of the calc — lets the share flow re-resolve the upstream
+   *  Ausschreibung (e.g. to auto-find the Angebote-folder link). Optional;
+   *  round-trips via the projectData passthrough schema. */
+  sourceRef?: ProjectSourceRef;
 };
 
 export type ShareSettings = {

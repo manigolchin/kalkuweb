@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  X, Eye, EyeOff, Link2, Copy, Check, Loader2, AlertTriangle, RefreshCw, ArrowRight, FilePlus, Bookmark, Save, Trash2,
+  X, Eye, EyeOff, Link2, Copy, Check, Loader2, AlertTriangle, RefreshCw, ArrowRight, FilePlus, Bookmark, Save, Trash2, FolderSearch,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -82,6 +82,10 @@ type Props = {
   onClose: () => void;
   onCreated: (share: ShareSummary) => void;
   onRequestNachtrag?: (parentShareId: string) => void;
+  /** Called when the dialog auto-resolves a fresh Angebote-folder link from
+   *  preisanfrage, so the parent can persist it onto the project (Stellschrauben
+   *  field + next share) through the normal save path. */
+  onAngeboteUrlResolved?: (url: string) => void;
 };
 
 export default function ShareDialog({
@@ -96,6 +100,7 @@ export default function ShareDialog({
   onClose,
   onCreated,
   onRequestNachtrag,
+  onAngeboteUrlResolved,
 }: Props) {
   const parentShare = parentShareId
     ? existingShares.find((s) => s.id === parentShareId)
@@ -161,6 +166,36 @@ export default function ShareDialog({
   const [presets, setPresets] = useState<ViewPreset[]>([]);
   const [savingPreset, setSavingPreset] = useState(false);
   const [presetNameDraft, setPresetNameDraft] = useState('');
+  // Auto-find of the „04_Angebote" folder link (preisanfrage). 'idle' until we
+  // know there's nothing on the project; then loading → found/none/error.
+  const [angeboteLookup, setAngeboteLookup] =
+    useState<'idle' | 'loading' | 'found' | 'none' | 'error'>('idle');
+
+  // Whether the dialog opened with a link already in hand (project field or, for
+  // a Nachtrag, the parent share). When it didn't, we auto-resolve one below.
+  const hasInitialAngeboteUrl = !!(parentShare?.settings.angeboteFolderUrl ?? angeboteFolderUrl);
+
+  async function findAngeboteLink(opts: { refresh?: boolean; silent?: boolean } = {}) {
+    setAngeboteLookup('loading');
+    try {
+      const r = await api.projects.angeboteLink(projectId, { refresh: opts.refresh });
+      if (r.angeboteFolderUrl) {
+        const url = r.angeboteFolderUrl;
+        setSettings((prev) => ({ ...prev, angeboteFolderUrl: url, showAngebote: true }));
+        setAngeboteLookup('found');
+        onAngeboteUrlResolved?.(url);
+        if (!opts.silent) toast.success('Angebote-Ordner-Link automatisch gefunden.');
+      } else {
+        setAngeboteLookup('none');
+        if (!opts.silent) {
+          toast('Kein automatischer Link gefunden — bitte den „Jeder mit Link"-Freigabelink einfügen.');
+        }
+      }
+    } catch {
+      setAngeboteLookup('error');
+      if (!opts.silent) toast.error('Angebote-Link konnte nicht abgerufen werden.');
+    }
+  }
 
   useEffect(() => {
     let alive = true;
@@ -174,6 +209,15 @@ export default function ShareDialog({
     })();
     return () => { alive = false; };
   }, [projectId]);
+
+  // Auto-resolve the „04_Angebote" link once on open when the project doesn't
+  // already carry one — so sharing a calc surfaces the eingegangenen Angebote
+  // without the calculator hunting down the SharePoint link. Passive: no toast.
+  useEffect(() => {
+    if (hasInitialAngeboteUrl) return;
+    void findAngeboteLink({ silent: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, hasInitialAngeboteUrl]);
 
   function applyPreset(p: ViewPreset) {
     setSelected(new Set(p.visiblePositionIds.filter((id) => positions.some((pos) => pos.id === id))));
@@ -570,11 +614,11 @@ export default function ShareDialog({
                     value={settings.message || ''}
                     onChange={(e) => setSettings({ ...settings, message: e.target.value })}
                   />
-                  {!angeboteFolderUrl && (
+                  {!settings.angeboteFolderUrl && (
                     <span className="text-[10px] text-slate-400 mt-1 block">
-                      Tipp: Hinterlege den Angebote-Ordner-Link in den Projekt-Stellschrauben — dann
-                      kannst du ihn dem Kunden weiter unten als Button „Eingegangene Angebote
-                      ansehen" zeigen.
+                      Tipp: Den „04_Angebote“-Link der Ausschreibung holt sich der „Angebote-Ordner
+                      zeigen“-Schalter weiter unten automatisch aus preisanfrage — du kannst ihn dort
+                      auch manuell einfügen.
                     </span>
                   )}
                 </div>
@@ -633,24 +677,54 @@ export default function ShareDialog({
                   />
                 </div>
                 {settings.showAngebote && (
-                  <label className="block mt-3">
-                    <span className="text-xs font-medium text-slate-600">
-                      Angebote-Ordner-Link (für den Button)
-                    </span>
-                    <input
-                      type="url"
-                      data-testid="share-angebote-url-input"
-                      className="mt-1 input text-sm font-mono"
-                      placeholder="https://…sharepoint.com/…/04_Angebote"
-                      value={settings.angeboteFolderUrl || ''}
-                      onChange={(e) => setSettings({ ...settings, angeboteFolderUrl: e.target.value })}
-                    />
+                  <div className="mt-3">
+                    <label className="block">
+                      <span className="text-xs font-medium text-slate-600">
+                        Angebote-Ordner-Link (für den Button)
+                      </span>
+                      <input
+                        type="url"
+                        data-testid="share-angebote-url-input"
+                        className="mt-1 input text-sm font-mono"
+                        placeholder="https://…sharepoint.com/…/04_Angebote"
+                        value={settings.angeboteFolderUrl || ''}
+                        onChange={(e) => setSettings({ ...settings, angeboteFolderUrl: e.target.value })}
+                      />
+                    </label>
+                    <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        data-testid="share-angebote-autofind"
+                        onClick={() => findAngeboteLink({ refresh: true })}
+                        disabled={angeboteLookup === 'loading'}
+                        className="inline-flex items-center gap-1.5 text-xs font-medium text-primary-600 hover:text-primary-700 disabled:opacity-50"
+                        title="Den 04_Angebote-Freigabelink dieser Ausschreibung automatisch aus preisanfrage holen"
+                      >
+                        {angeboteLookup === 'loading' ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <FolderSearch className="w-3.5 h-3.5" />
+                        )}
+                        Automatisch aus preisanfrage suchen
+                      </button>
+                      {angeboteLookup === 'found' && (
+                        <span className="text-xs text-emerald-600 inline-flex items-center gap-1">
+                          <Check className="w-3.5 h-3.5" /> automatisch gefunden
+                        </span>
+                      )}
+                      {angeboteLookup === 'none' && (
+                        <span className="text-xs text-slate-400">kein Link in preisanfrage hinterlegt</span>
+                      )}
+                      {angeboteLookup === 'error' && (
+                        <span className="text-xs text-amber-600">Abruf fehlgeschlagen</span>
+                      )}
+                    </div>
                     <span className="text-[10px] text-slate-400 mt-1 block">
                       Der Kunde sieht einen Button „Eingegangene Angebote ansehen“, der diesen Link in
                       einem neuen Tab öffnet. Es muss ein „Jeder mit dem Link“-Freigabelink sein —
                       ein interner SharePoint-Pfad zeigt dem Kunden nur eine Anmeldeseite.
                     </span>
-                  </label>
+                  </div>
                 )}
               </section>
 

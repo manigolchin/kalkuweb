@@ -193,6 +193,14 @@ export type FaktorEntry = {
   raw: Record<string, number | string | null>;
 };
 
+/** Mirror of panel-api's ProjectSourceRef — where a calc was started from. */
+export type ProjectSourceRef = {
+  system: 'preisanfrage';
+  kind: 'managed' | 'external' | 'local' | 'directory';
+  firmaId: string | number;
+  projectId: number;
+};
+
 export type ProjectData = {
   name: string;
   client: string;
@@ -210,6 +218,10 @@ export type ProjectData = {
    *  eingefügt; die Share-Vorlage übernimmt ihn in die Kunden-Begrüßung,
    *  damit der Kunde die Angebote einsehen kann. */
   angeboteFolderUrl?: string;
+  /** Provenance of the calc — set once at „Kalkulation starten" (Firma →
+   *  Ausschreibung). Lets the share flow re-resolve the upstream Ausschreibung,
+   *  e.g. to auto-find the Angebote-folder link. */
+  sourceRef?: ProjectSourceRef;
   /** Round 4 PART P — full-fidelity capture (all optional for back-compat
    *  with projects created pre-Round-4 that don't have these fields). */
   zuschlagOriginal?: ZuschlagMatrix;

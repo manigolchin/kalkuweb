@@ -7,6 +7,7 @@ import { projects, shares, type ProjectData } from '../schema.js';
 import { requireAuth, type AuthVariables } from '../lib/middleware.js';
 import { recomputePositions } from '../lib/snapshot.js';
 import { evaluateAufmass } from '../lib/aufmass.js';
+import { getProjectPositions, isPreisanfrageEnabled } from '../lib/preisanfrage.js';
 
 const DEFAULT_CALC_PARAMS = {
   mittellohn: 30.0,
@@ -165,6 +166,24 @@ const putBodySchema = z.object({
   expectedUpdatedAt: z.number().int().nonnegative().optional(),
 });
 
+/**
+ * Recover the upstream preisanfrage Ausschreibung a calc was started from by
+ * parsing the provenance tag that `Firma.startKalkulation` writes into `notes`
+ * (`… Ref: <kind>:<id>`). The structured `data.sourceRef` is preferred when
+ * present; this is the fallback for projects created before that field existed.
+ * Exported for direct unit testing.
+ */
+export function parsePreisanfrageRef(
+  notes: string | null | undefined,
+): { kind: string; projectId: number } | null {
+  if (!notes) return null;
+  const m = notes.match(/Ref:\s*(managed|external|local|directory):(\d+)/i);
+  if (!m) return null;
+  const projectId = Number(m[2]);
+  if (!Number.isInteger(projectId) || projectId <= 0) return null;
+  return { kind: m[1].toLowerCase(), projectId };
+}
+
 export const projectsRoute = new Hono<{ Variables: AuthVariables }>()
   .get('/', requireAuth, async (c) => {
     const userId = c.get('userId');
@@ -213,6 +232,7 @@ export const projectsRoute = new Hono<{ Variables: AuthVariables }>()
       positions: body.positions || [],
       notes: body.notes,
       angeboteFolderUrl: body.angeboteFolderUrl,
+      sourceRef: body.sourceRef,
     };
     await db.insert(projects).values({
       id,
@@ -264,6 +284,57 @@ export const projectsRoute = new Hono<{ Variables: AuthVariables }>()
         nachtragNumber: s.nachtragNumber,
       })),
     });
+  })
+
+  // Auto-find the „04_Angebote" folder share link for a calc's Ausschreibung.
+  // Resolves the upstream preisanfrage project (structured sourceRef, else the
+  // `Ref:` tag in notes) and asks preisanfrage for the link it mints lazily on
+  // the detail fetch. Read-only: it never writes — the caller persists the URL
+  // through the normal project-save path so optimistic-locking stays intact.
+  // This is an OPTIONAL enrichment, so an unresolved/down upstream returns a
+  // 200 with `angeboteFolderUrl: null` + a reason, never a 5xx that would break
+  // the share dialog.
+  .get('/:id/angebote-link', requireAuth, async (c) => {
+    const id = c.req.param('id');
+    const userId = c.get('userId');
+    const refresh = c.req.query('refresh') === '1';
+
+    const row = await db.query.projects.findFirst({
+      where: and(eq(projects.id, id), eq(projects.ownerId, userId)),
+    });
+    if (!row) return c.json({ error: 'not_found' }, 404);
+    const data = row.data;
+
+    // Already have a usable link on the project — return it as-is unless the
+    // caller forces a re-fetch.
+    const existing = typeof data.angeboteFolderUrl === 'string' ? data.angeboteFolderUrl.trim() : '';
+    if (!refresh && /^https?:\/\//i.test(existing)) {
+      return c.json({ angeboteFolderUrl: existing, source: 'project' as const });
+    }
+
+    const ref = data.sourceRef
+      ? { kind: String(data.sourceRef.kind), projectId: Number(data.sourceRef.projectId) }
+      : parsePreisanfrageRef(data.notes);
+    if (!ref || !Number.isInteger(ref.projectId) || ref.projectId <= 0) {
+      return c.json({ angeboteFolderUrl: null, reason: 'no_source_ref' as const });
+    }
+    // Only managed firmas carry an Ausschreibung folder in preisanfrage; external/
+    // local/directory have no positions and no Angebote folder to mint.
+    if (ref.kind !== 'managed') {
+      return c.json({ angeboteFolderUrl: null, reason: 'source_not_managed' as const });
+    }
+    if (!isPreisanfrageEnabled()) {
+      return c.json({ angeboteFolderUrl: null, reason: 'integration_disabled' as const });
+    }
+    try {
+      const { angeboteFolderShareUrl } = await getProjectPositions(ref.projectId);
+      if (angeboteFolderShareUrl && /^https?:\/\//i.test(angeboteFolderShareUrl)) {
+        return c.json({ angeboteFolderUrl: angeboteFolderShareUrl, source: 'preisanfrage' as const });
+      }
+      return c.json({ angeboteFolderUrl: null, reason: 'upstream_no_link' as const });
+    } catch {
+      return c.json({ angeboteFolderUrl: null, reason: 'upstream_error' as const });
+    }
   })
 
   .put('/:id', requireAuth, async (c) => {

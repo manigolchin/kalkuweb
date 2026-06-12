@@ -843,6 +843,15 @@ function ProjectsCard({
         // 04_Angebote folder; fall back to deriving an internal path from the
         // OneDrive URL (used in mock mode / before preisanfrage has the link).
         angeboteFolderUrl: angeboteFolderShareUrl ?? deriveAngeboteFolderUrl(p.oneDriveShareUrl),
+        // Provenance — lets the share dialog re-resolve this Ausschreibung's
+        // Angebote-folder link later, even if it wasn't mintable at this moment.
+        // `kind` mirrors the project source recorded in `notes` (Ref:) above.
+        sourceRef: {
+          system: 'preisanfrage',
+          kind: p.source,
+          firmaId,
+          projectId: typeof p.id === 'number' ? p.id : Number(p.id),
+        },
       });
       const seededN = seededPositions.length;
       toast.success(

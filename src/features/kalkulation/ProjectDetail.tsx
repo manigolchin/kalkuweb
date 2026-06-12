@@ -576,6 +576,7 @@ export default function ProjectDetail() {
           onClose={() => setShowShare(false)}
           onCreated={onShareCreated}
           onRequestNachtrag={(parentShareId) => setShowShare({ parentShareId })}
+          onAngeboteUrlResolved={(url) => updateMeta({ angeboteFolderUrl: url })}
         />
       )}
 
