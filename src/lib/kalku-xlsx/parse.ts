@@ -28,7 +28,7 @@
  */
 
 import { ozKey, ozLevel, classifyRow, isErrorCell, ERROR_LITERALS } from '@/features/kalkulation/ozParser.mjs';
-import { makeBlankPosition, DEFAULT_CALC_PARAMS, round, calcTotals } from '@/features/kalkulation/calc';
+import { makeBlankPosition, DEFAULT_CALC_PARAMS, round, calcTotals, calculatePosition } from '@/features/kalkulation/calc';
 import type {
   CalcParams,
   FaktorEntry,
@@ -543,13 +543,19 @@ export async function parseKalkulationWorkbook(
       const nuBase = (typeof cells.M === 'number' ? cells.M : 0) * (1 + derivedCalcParams.nuZuschlag);
       const rawAK = ws['AK' + r]?.v;
       const nuPatch = typeof rawAK === 'number' && Math.abs(rawAK - nuBase) > 0.01 ? { nuEp: rawAK } : {};
-      // Bedarfs-/Eventualposition: priced (EP filled) but the Vorlage leaves its
-      // GP (col F) blank, so Excel keeps it OUT of the Angebotssumme. Mark it so
-      // calc excludes it from the total (still shown + editable for folding in).
-      const epFilled = typeof cells.E === 'number' && cells.E > 0;
+      // Bedarfs-/Eventualposition: the Vorlage leaves its GP (col F) blank/0 so
+      // Excel keeps it OUT of the Angebotssumme — even though the row carries
+      // price inputs (a filled EP, a zeroed-out duplicate that still has its raw
+      // Stoffe/Zeit/NU, etc.). Mark it so calc excludes it from the total (still
+      // shown + editable for folding in). Honoring F=0 matches the Excel offer.
       const gpFilled = typeof cells.F === 'number' && Math.abs(cells.F) > 0.005;
-      const bedarfsPatch = epFilled && !gpFilled ? { bedarfsposition: true } : {};
-      positions.push({
+      const hasPricedInput =
+        (typeof cells.E === 'number' && cells.E > 0) ||
+        (typeof cells.I === 'number' && cells.I > 0) ||
+        timeMinutes > 0 ||
+        (typeof cells.M === 'number' && cells.M > 0);
+      const bedarfsPatch = !gpFilled && hasPricedInput ? { bedarfsposition: true } : {};
+      const newPos: Position = {
         ...base,
         oz,
         shortText: String(cells.B ?? '').trim(),
@@ -567,7 +573,29 @@ export async function parseKalkulationWorkbook(
         // Internal-only rows the user adds later default to true (mirroring v1).
         visibleToCustomer: true,
         sectionPath: key.split('.').slice(0, -1).join('.'),
-      });
+      };
+      // Trust the Vorlage's cached GESAMTPREIS (col F — the authoritative offer
+      // price) when our component rebuild deviates a LOT from it: a hand-typed EP
+      // markup, a %-Zuschlag row where F≠Menge×EP, or a stale EP. Pin GP=F
+      // ("insert the number"). We key on col F, NOT col E: on some files col E is
+      // stale/garbage while col F is correct, so trusting E mis-priced them. The
+      // 5%+€1 gate leaves normal rows (incl. sub-% rounding) on the live model,
+      // and Bedarfspositionen (F blank) are already excluded.
+      if (!newPos.bedarfsposition && typeof cells.F === 'number' && Math.abs(cells.F) > 0.01) {
+        const modelGp = calculatePosition(newPos, derivedCalcParams).gp;
+        const dev = Math.abs(modelGp - cells.F);
+        const hi = Math.max(Math.abs(cells.F), Math.abs(modelGp));
+        const lo = Math.max(Math.min(Math.abs(cells.F), Math.abs(modelGp)), 0.01);
+        // Pin only on a real but MODERATE deviation (>5% and >1 €). The hi≤lo×10
+        // ratio gate refuses to trust an implausibly far col F — a corrupt source
+        // (e.g. the C²-bug where F = Menge²×…, ratio ≈ Menge) would otherwise make
+        // us import junk; instead our sane model value stays and the file-level
+        // sanity guard warns.
+        if (dev > 1 && dev > Math.abs(cells.F) * 0.05 && hi <= lo * 10) {
+          newPos.gpOverride = cells.F;
+        }
+      }
+      positions.push(newPos);
     }
   }
 
@@ -627,6 +655,17 @@ export async function parseKalkulationWorkbook(
         location: `${sheetName}!F`,
         code: 'total_sanity',
         message: `Importierte Angebotssumme (${ourNetto.toFixed(2)} €) weicht extrem von der Excel-GP-Summe (Spalte F: ${offerSumF.toFixed(2)} €) ab — die Spaltenzuordnung passt vermutlich nicht zu dieser Vorlage. Bitte vor Verwendung prüfen.`,
+      });
+    } else if (Math.abs(offerSumF) > Math.abs(ourNetto) * 5) {
+      // Inverse: the Excel's GP total dwarfs ours — the source file likely has
+      // broken formulas (e.g. Menge folded into the EP, then ×Menge again, so
+      // GP = Menge²×… as on one real RV file). Flag the FILE as suspect rather
+      // than letting it look like the import silently lost money.
+      issues.push({
+        severity: 'warning',
+        location: `${sheetName}!F`,
+        code: 'total_sanity',
+        message: `Excel-GP-Summe (Spalte F: ${offerSumF.toFixed(2)} €) ist um ein Vielfaches größer als die importierte Summe (${ourNetto.toFixed(2)} €) — die Datei enthält vermutlich fehlerhafte Formeln (z.B. Menge doppelt im EP). Bitte die Quelldatei prüfen.`,
       });
     }
   }

@@ -336,6 +336,16 @@ describe('calc.ts — zeitabzug adjustment', () => {
   });
 });
 
+describe('calc.ts — gpOverride (col F) pins the GESAMTPREIS', () => {
+  test('GP = gpOverride; EP = GP/Menge; component rebuild bypassed', () => {
+    const params = { ...DEFAULT_CALC_PARAMS, materialZuschlag: 0, zeitabzug: 0 };
+    // components would give gp = 3×100 = 300; the pinned col-F GP (420) wins.
+    const r = calculatePosition(pos({ materialCost: 100, quantity: 3, gpOverride: 420 }), params);
+    expect(r.gp).toBe(420);
+    expect(r.ep).toBe(140);
+  });
+});
+
 describe('calc.ts — EP Stoffe/NU VK overrides (cols AJ/AK) win flat', () => {
   test('materialEp / nuEp override the Zuschlag model', () => {
     const params = { ...DEFAULT_CALC_PARAMS, materialZuschlag: 0.5, nuZuschlag: 0.5, verrechnungslohn: 0, geraeteStundensatz: 0, zeitabzug: 0 };

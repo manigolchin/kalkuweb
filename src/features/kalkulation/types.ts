@@ -63,6 +63,12 @@ export type Position = {
   /** Per-position EP Nachunternehmer VK override (€/unit) — Vorlage "EP Nachu."
    *  (col AK) when it deviates from NU × (1+Zuschlag). FLAT when set. Internal. */
   nuEp?: number;
+  /** Per-position GP override (€) — the Vorlage's cached GESAMTPREIS (col F) when
+   *  our component rebuild can't reproduce it AND deviates a lot (hand-typed EP
+   *  markup, %-Zuschlag rows where F≠Menge×EP, stale EP). col F is the authoritative
+   *  offer price, so we pin it ("insert the number") and derive EP = GP/Menge. The
+   *  cost-type split stays component-derived (reconciled in the share). Internal. */
+  gpOverride?: number;
   /** Bedarfs-/Eventualposition — priced (has an EP) but the Vorlage leaves its
    *  GP (col F) blank so it is NOT part of the Angebotssumme. Mirrors Excel:
    *  excluded from the project total, but still shown + editable so the user can

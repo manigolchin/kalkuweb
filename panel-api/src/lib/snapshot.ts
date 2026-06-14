@@ -204,8 +204,11 @@ function recomputePosition(p: Position, params: CalcParams): Position {
   );
   const epMaterial = round(p.materialEp != null ? p.materialEp * zielFactor : p.materialCost * (1 + params.materialZuschlag) * zielFactor);
   const epNu = round(p.nuEp != null ? p.nuEp * zielFactor : p.nuCost * (1 + params.nuZuschlag) * zielFactor);
-  const ep = round(epGeraet + epLohn + epMaterial + epNu);
-  const gp = round(p.quantity * ep);
+  // Captured GP override (col F) wins as the GESAMTPREIS; EP = GP/Menge. The
+  // split stays component-derived and is reconciled to netto in computeShareSummary.
+  const componentEp = round(epGeraet + epLohn + epMaterial + epNu);
+  const gp = p.gpOverride != null ? round(p.gpOverride * zielFactor) : round(p.quantity * componentEp);
+  const ep = p.gpOverride != null && p.quantity ? round(gp / p.quantity) : componentEp;
   return {
     ...p,
     epLohn,

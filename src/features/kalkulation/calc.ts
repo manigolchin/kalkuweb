@@ -47,7 +47,7 @@ export type PositionCalcResult = {
 };
 
 export function calculatePosition(
-  pos: Pick<Position, 'quantity' | 'materialCost' | 'timeMinutes' | 'nuCost' | 'isHeader' | 'geraeteSatz' | 'geraeteEp' | 'lohnEp' | 'lohnFaktor' | 'materialEp' | 'nuEp'>,
+  pos: Pick<Position, 'quantity' | 'materialCost' | 'timeMinutes' | 'nuCost' | 'isHeader' | 'geraeteSatz' | 'geraeteEp' | 'lohnEp' | 'lohnFaktor' | 'materialEp' | 'nuEp' | 'gpOverride'>,
   params: CalcParams,
 ): PositionCalcResult {
   if (pos.isHeader) {
@@ -95,8 +95,15 @@ export function calculatePosition(
   const epNu = round(
     pos.nuEp != null ? pos.nuEp * zielFactor : pos.nuCost * (1 + params.nuZuschlag) * zielFactor,
   );
-  const ep = round(epGeraet + epLohn + epMaterial + epNu);
-  const gp = round(pos.quantity * ep);
+  // A captured GP override (col F, the authoritative GESAMTPREIS) wins when our
+  // component rebuild deviates a lot (hand-typed markup, %-Zuschlag, stale EP).
+  // EP is then GP/Menge so the row stays self-consistent; the component split
+  // stays as computed and the share reconciles it to the total.
+  const componentEp = round(epGeraet + epLohn + epMaterial + epNu);
+  const gp = pos.gpOverride != null
+    ? round(pos.gpOverride * zielFactor)
+    : round(pos.quantity * componentEp);
+  const ep = pos.gpOverride != null && pos.quantity ? round(gp / pos.quantity) : componentEp;
   return {
     epLohn,
     epMaterial,

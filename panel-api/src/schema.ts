@@ -445,6 +445,9 @@ export type Position = {
   /** Per-position EP Nachunternehmer VK override (col AK) — flat NU VERKAUF when
    *  it deviates from NU × (1+Zuschlag). Internal. */
   nuEp?: number;
+  /** Per-position GP override (col F, the authoritative GESAMTPREIS) when the
+   *  component rebuild deviates a lot — GP pinned, EP = GP/Menge. Internal. */
+  gpOverride?: number;
   /** Bedarfs-/Eventualposition — priced but excluded from the Angebotssumme
    *  (Vorlage leaves col F blank). Excluded from totals, still shown. */
   bedarfsposition?: boolean;

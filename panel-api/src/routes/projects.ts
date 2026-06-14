@@ -71,6 +71,9 @@ const positionSchema = z.object({
   // when hand-typed values replace the Material/NU × (1+Zuschlag) default.
   materialEp: fnum().optional(),
   nuEp: fnum().optional(),
+  // Per-position GP override (col F) — pinned GESAMTPREIS when the component
+  // rebuild deviates a lot from the Vorlage's authoritative GP.
+  gpOverride: fnum().optional(),
   // Bedarfs-/Eventualposition — priced but excluded from the Angebotssumme.
   bedarfsposition: z.boolean().optional(),
   isHeader: z.boolean().default(false),
