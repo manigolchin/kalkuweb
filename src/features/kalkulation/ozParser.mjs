@@ -88,7 +88,13 @@ export function classifyRow(row) {
   const hasMenge = typeof row.C === 'number' && Number.isFinite(row.C);
   const hasDescription = row.B != null && String(row.B).trim().length > 0;
 
-  if (lvl === 0) return hasDescription ? 'buffer' : 'buffer';
+  // A blank-OZ row that still carries full price data (Einheit + EP) IS a
+  // position: some LVs — cleaning/Reinigung especially — number their positions
+  // inside the Bezeichnung text ("1. Gebäude 1") and leave col A (OZ) empty.
+  // Treating those as buffers silently dropped whole priced bids (e.g. 91 rows /
+  // €121.585 / 96 % of one offer). Only a blank-OZ row WITHOUT price data is a
+  // genuine buffer / italic hint.
+  if (lvl === 0) return hasUnit && hasEP ? 'position' : 'buffer';
   if (hasUnit && hasEP) return 'position';
   if (hasMenge && !hasUnit && !hasEP) return 'group'; // col C overload — group total
   if (!hasUnit && !hasEP) return 'group';
