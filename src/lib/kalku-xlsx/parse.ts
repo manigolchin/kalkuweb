@@ -28,7 +28,7 @@
  */
 
 import { ozKey, ozLevel, classifyRow, isErrorCell, ERROR_LITERALS } from '@/features/kalkulation/ozParser.mjs';
-import { makeBlankPosition, DEFAULT_CALC_PARAMS, round } from '@/features/kalkulation/calc';
+import { makeBlankPosition, DEFAULT_CALC_PARAMS, round, calcTotals } from '@/features/kalkulation/calc';
 import type {
   CalcParams,
   FaktorEntry,
@@ -57,7 +57,8 @@ export type ImportIssue = {
     | 'unparseable_oz'
     | 'empty_sheet'
     | 'multiple_sheets'
-    | 'duplicate_oz';
+    | 'duplicate_oz'
+    | 'total_sanity';
   message: string;
 };
 
@@ -163,6 +164,10 @@ export async function parseKalkulationWorkbook(
   const wb = XLSX.read(buf, { cellFormula: true, cellNF: true, cellStyles: false, type: 'array' });
 
   const issues: ImportIssue[] = [];
+  // Running Σ of the Excel's own per-position GP (col F) — the offer total a
+  // standard Vorlage stores. Used by the post-build sanity guard to catch a
+  // column layout that doesn't match (where col F isn't GP).
+  let offerSumF = 0;
 
   // 1) Sheet selection — prefer "Kalkulation" if present, else first sheet
   const sheetName = wb.SheetNames.find((n) => n === 'Kalkulation') ?? wb.SheetNames[0];
@@ -409,6 +414,7 @@ export async function parseKalkulationWorkbook(
     };
     const isEntirelyEmpty = Object.values(cells).every((v) => v === null || v === '' || v === undefined);
     if (isEntirelyEmpty) continue;
+    if (typeof cells.F === 'number') offerSumF += cells.F;
 
     const kind = classifyRow(cells);
     const id = nanoid(12);
@@ -595,6 +601,24 @@ export async function parseKalkulationWorkbook(
     headerExtras,
     faktoren,
   };
+
+  // Sanity guard: if the imported Angebotssumme is wildly larger than the
+  // Excel's own col-F (GP) total, the column layout almost certainly doesn't
+  // match this Vorlage (e.g. a variant where GP lives in another column) — one
+  // such file imported as 1,19 Mrd € instead of 4.584 €. Warn loudly rather
+  // than silently surfacing absurd numbers. (Excludes Bedarfspositionen, which
+  // are already kept out of both sides.)
+  if (Math.abs(offerSumF) > 1) {
+    const ourNetto = calcTotals(positions, derivedCalcParams).totalNetto;
+    if (Math.abs(ourNetto) > Math.abs(offerSumF) * 5) {
+      issues.push({
+        severity: 'warning',
+        location: `${sheetName}!F`,
+        code: 'total_sanity',
+        message: `Importierte Angebotssumme (${ourNetto.toFixed(2)} €) weicht extrem von der Excel-GP-Summe (Spalte F: ${offerSumF.toFixed(2)} €) ab — die Spaltenzuordnung passt vermutlich nicht zu dieser Vorlage. Bitte vor Verwendung prüfen.`,
+      });
+    }
+  }
 
   const ok = !issues.some((i) => i.severity === 'error');
   return { project, issues, ok, faktorenLookup, faktoren, derivedCalcParams, zuschlagMatrix, headerExtras, meta };
