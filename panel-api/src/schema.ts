@@ -439,6 +439,9 @@ export type Position = {
    *  Verrechnungslohn (col AB = Zeit/60 × Verrechnungslohn × W). When set, Lohn
    *  re-prices with the global Verrechnungslohn instead of staying flat. Default 1. */
   lohnFaktor?: number;
+  /** Bedarfs-/Eventualposition — priced but excluded from the Angebotssumme
+   *  (Vorlage leaves col F blank). Excluded from totals, still shown. */
+  bedarfsposition?: boolean;
   isHeader: boolean;
   sortOrder: number;
   sectionPath: string;

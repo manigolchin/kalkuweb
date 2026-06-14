@@ -56,6 +56,11 @@ export type Position = {
    *  specialist rate is folded in here too (W = rate ÷ (Zeit/60 × VL)) so it still
    *  scales with VL. Internal-only — never in the customer share snapshot. */
   lohnFaktor?: number;
+  /** Bedarfs-/Eventualposition — priced (has an EP) but the Vorlage leaves its
+   *  GP (col F) blank so it is NOT part of the Angebotssumme. Mirrors Excel:
+   *  excluded from the project total, but still shown + editable so the user can
+   *  fold it into the offer. Set at import when E is filled but F is blank/0. */
+  bedarfsposition?: boolean;
   isHeader: boolean;
   sortOrder: number;
   sectionPath: string;

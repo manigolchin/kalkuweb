@@ -104,7 +104,8 @@ export function computeShareSummary(positions: Position[], params: CalcParams): 
   let ekNu = 0;
 
   for (const p of positions) {
-    if (p.isHeader) continue;
+    // Bedarfs-/Eventualpositionen are priced but excluded from the Angebotssumme.
+    if (p.isHeader || p.bedarfsposition) continue;
     const adj = round(p.timeMinutes + (p.timeMinutes / 100) * params.zeitabzug);
     totalHours += (adj / 60) * p.quantity;
     netto += p.gp;

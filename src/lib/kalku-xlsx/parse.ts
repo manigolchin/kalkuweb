@@ -528,6 +528,12 @@ export async function parseKalkulationWorkbook(
           ? { lohnFaktor: rawAB / lohnBaseUnit }
           : { lohnEp: rawAB };
       }
+      // Bedarfs-/Eventualposition: priced (EP filled) but the Vorlage leaves its
+      // GP (col F) blank, so Excel keeps it OUT of the Angebotssumme. Mark it so
+      // calc excludes it from the total (still shown + editable for folding in).
+      const epFilled = typeof cells.E === 'number' && cells.E > 0;
+      const gpFilled = typeof cells.F === 'number' && Math.abs(cells.F) > 0.005;
+      const bedarfsPatch = epFilled && !gpFilled ? { bedarfsposition: true } : {};
       positions.push({
         ...base,
         oz,
@@ -539,6 +545,7 @@ export async function parseKalkulationWorkbook(
         nuCost: typeof cells.M === 'number' ? cells.M : 0,
         ...geraeteSatzPatch,
         ...lohnPatch,
+        ...bedarfsPatch,
         // Heuristic: rows that originally had an EP value get visibleToCustomer=true.
         // Internal-only rows the user adds later default to true (mirroring v1).
         visibleToCustomer: true,

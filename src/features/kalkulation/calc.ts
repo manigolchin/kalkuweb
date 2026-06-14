@@ -149,7 +149,9 @@ export function calcTotals(
   let visibleNetto = 0;
 
   for (const p of positions) {
-    if (p.isHeader) continue;
+    // Bedarfs-/Eventualpositionen are priced but excluded from the Angebotssumme
+    // (mirrors the Vorlage leaving their GP blank) — keep them out of the totals.
+    if (p.isHeader || p.bedarfsposition) continue;
     const calc = calculatePosition(p, params);
     totalNetto += calc.gp;
     totalLohn += calc.gpLohn;
@@ -189,7 +191,7 @@ export function baseNetto(positions: Position[], params: CalcParams): number {
   const base: CalcParams = { ...params, zielAufschlag: 0 };
   let sum = 0;
   for (const p of positions) {
-    if (p.isHeader) continue;
+    if (p.isHeader || p.bedarfsposition) continue;
     sum += calculatePosition(p, base).gp;
   }
   return round(sum);

@@ -336,6 +336,17 @@ describe('calc.ts — zeitabzug adjustment', () => {
   });
 });
 
+describe('calc.ts — Bedarfsposition excluded from the Angebotssumme', () => {
+  const params = { ...DEFAULT_CALC_PARAMS, materialZuschlag: 0, nuZuschlag: 0, verrechnungslohn: 0, geraeteStundensatz: 0, zeitabzug: 0, mwst: 0 };
+  test('a bedarfsposition is priced but NOT summed into totalNetto (matches Excel)', () => {
+    const normal = pos({ materialCost: 100, quantity: 1 });
+    const bedarf = pos({ materialCost: 500, quantity: 1, bedarfsposition: true });
+    expect(calcTotals([normal, bedarf], params).totalNetto).toBe(100);
+    // …but it still computes a price so the table can show it + the user can fold it in.
+    expect(calculatePosition(bedarf, params).gp).toBe(500);
+  });
+});
+
 describe('calc.ts — Lohn-Faktor W re-prices with Verrechnungslohn', () => {
   // W (Vorlage col AB = Zeit/60 × Verrechnungslohn × W) keeps imported labor
   // LIVE: changing the global Verrechnungslohn re-prices it like Excel, instead
