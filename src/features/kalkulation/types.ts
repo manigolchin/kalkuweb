@@ -56,6 +56,13 @@ export type Position = {
    *  specialist rate is folded in here too (W = rate ÷ (Zeit/60 × VL)) so it still
    *  scales with VL. Internal-only — never in the customer share snapshot. */
   lohnFaktor?: number;
+  /** Per-position EP Stoffe VK override (€/unit) — the Vorlage's "EP Stoffe VK"
+   *  (col AJ) when a hand-typed value replaces the default Material × (1+Zuschlag).
+   *  When set, calc uses it FLAT for this position's Material VERKAUF. Internal. */
+  materialEp?: number;
+  /** Per-position EP Nachunternehmer VK override (€/unit) — Vorlage "EP Nachu."
+   *  (col AK) when it deviates from NU × (1+Zuschlag). FLAT when set. Internal. */
+  nuEp?: number;
   /** Bedarfs-/Eventualposition — priced (has an EP) but the Vorlage leaves its
    *  GP (col F) blank so it is NOT part of the Angebotssumme. Mirrors Excel:
    *  excluded from the project total, but still shown + editable so the user can

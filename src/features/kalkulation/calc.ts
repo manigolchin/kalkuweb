@@ -47,7 +47,7 @@ export type PositionCalcResult = {
 };
 
 export function calculatePosition(
-  pos: Pick<Position, 'quantity' | 'materialCost' | 'timeMinutes' | 'nuCost' | 'isHeader' | 'geraeteSatz' | 'geraeteEp' | 'lohnEp' | 'lohnFaktor'>,
+  pos: Pick<Position, 'quantity' | 'materialCost' | 'timeMinutes' | 'nuCost' | 'isHeader' | 'geraeteSatz' | 'geraeteEp' | 'lohnEp' | 'lohnFaktor' | 'materialEp' | 'nuEp'>,
   params: CalcParams,
 ): PositionCalcResult {
   if (pos.isHeader) {
@@ -87,8 +87,14 @@ export function calculatePosition(
       ? pos.lohnEp * zielFactor
       : (adjustedTime / 60) * params.verrechnungslohn * (pos.lohnFaktor ?? 1) * zielFactor,
   );
-  const epMaterial = round(pos.materialCost * (1 + params.materialZuschlag) * zielFactor);
-  const epNu = round(pos.nuCost * (1 + params.nuZuschlag) * zielFactor);
+  // Hand-typed EP Stoffe VK (col AJ) / EP Nachu. (col AK) win flat when captured;
+  // otherwise the live Zuschlag model applies.
+  const epMaterial = round(
+    pos.materialEp != null ? pos.materialEp * zielFactor : pos.materialCost * (1 + params.materialZuschlag) * zielFactor,
+  );
+  const epNu = round(
+    pos.nuEp != null ? pos.nuEp * zielFactor : pos.nuCost * (1 + params.nuZuschlag) * zielFactor,
+  );
   const ep = round(epGeraet + epLohn + epMaterial + epNu);
   const gp = round(pos.quantity * ep);
   return {

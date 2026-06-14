@@ -439,6 +439,12 @@ export type Position = {
    *  Verrechnungslohn (col AB = Zeit/60 × Verrechnungslohn × W). When set, Lohn
    *  re-prices with the global Verrechnungslohn instead of staying flat. Default 1. */
   lohnFaktor?: number;
+  /** Per-position EP Stoffe VK override (col AJ) — flat Material VERKAUF when it
+   *  deviates from Material × (1+Zuschlag). Internal. */
+  materialEp?: number;
+  /** Per-position EP Nachunternehmer VK override (col AK) — flat NU VERKAUF when
+   *  it deviates from NU × (1+Zuschlag). Internal. */
+  nuEp?: number;
   /** Bedarfs-/Eventualposition — priced but excluded from the Angebotssumme
    *  (Vorlage leaves col F blank). Excluded from totals, still shown. */
   bedarfsposition?: boolean;

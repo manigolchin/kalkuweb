@@ -63,8 +63,8 @@ export function positionCostSplit(p: Position, params: CalcParams): PositionCost
   // EK/VK ratio — and the Lohn-Zuschlag — stay exactly as the Vorlage. Default 1.
   const lohnFaktor = p.lohnFaktor ?? 1;
   const lohnVkUnit = round(p.lohnEp != null ? p.lohnEp * zf : hpu * params.verrechnungslohn * lohnFaktor * zf);
-  const materialVkUnit = round(p.materialCost * (1 + params.materialZuschlag) * zf);
-  const nuVkUnit = round(p.nuCost * (1 + params.nuZuschlag) * zf);
+  const materialVkUnit = round(p.materialEp != null ? p.materialEp * zf : p.materialCost * (1 + params.materialZuschlag) * zf);
+  const nuVkUnit = round(p.nuEp != null ? p.nuEp * zf : p.nuCost * (1 + params.nuZuschlag) * zf);
   // EINKAUF (raw cost): Lohn at Mittellohn (keeps the EK/VK ratio), Material/NU
   // before Zuschlag, Geräte before Ziel-Aufschlag — so Geräte reconciles to 0 %
   // Zuschlag when there's no markup (no phantom rounding spread).
@@ -202,8 +202,8 @@ function recomputePosition(p: Position, params: CalcParams): Position {
       ? p.lohnEp * zielFactor
       : (adj / 60) * params.verrechnungslohn * (p.lohnFaktor ?? 1) * zielFactor,
   );
-  const epMaterial = round(p.materialCost * (1 + params.materialZuschlag) * zielFactor);
-  const epNu = round(p.nuCost * (1 + params.nuZuschlag) * zielFactor);
+  const epMaterial = round(p.materialEp != null ? p.materialEp * zielFactor : p.materialCost * (1 + params.materialZuschlag) * zielFactor);
+  const epNu = round(p.nuEp != null ? p.nuEp * zielFactor : p.nuCost * (1 + params.nuZuschlag) * zielFactor);
   const ep = round(epGeraet + epLohn + epMaterial + epNu);
   const gp = round(p.quantity * ep);
   return {

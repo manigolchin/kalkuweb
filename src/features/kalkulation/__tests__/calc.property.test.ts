@@ -336,6 +336,16 @@ describe('calc.ts — zeitabzug adjustment', () => {
   });
 });
 
+describe('calc.ts — EP Stoffe/NU VK overrides (cols AJ/AK) win flat', () => {
+  test('materialEp / nuEp override the Zuschlag model', () => {
+    const params = { ...DEFAULT_CALC_PARAMS, materialZuschlag: 0.5, nuZuschlag: 0.5, verrechnungslohn: 0, geraeteStundensatz: 0, zeitabzug: 0 };
+    // default would be 100×1.5=150 / 80×1.5=120; the hand-typed VK wins.
+    const r = calculatePosition(pos({ materialCost: 100, nuCost: 80, quantity: 1, materialEp: 200, nuEp: 90 }), params);
+    expect(r.epMaterial).toBe(200);
+    expect(r.epNu).toBe(90);
+  });
+});
+
 describe('calc.ts — Bedarfsposition excluded from the Angebotssumme', () => {
   const params = { ...DEFAULT_CALC_PARAMS, materialZuschlag: 0, nuZuschlag: 0, verrechnungslohn: 0, geraeteStundensatz: 0, zeitabzug: 0, mwst: 0 };
   test('a bedarfsposition is priced but NOT summed into totalNetto (matches Excel)', () => {

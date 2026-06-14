@@ -67,6 +67,10 @@ const positionSchema = z.object({
   // Per-position Lohn-Faktor "W" — labor multiplier on the Verrechnungslohn so
   // the row re-prices when VL changes (col AB = Zeit/60 × Verrechnungslohn × W).
   lohnFaktor: fnum().optional(),
+  // Per-position EP Stoffe VK / EP Nachu. overrides (cols AJ/AK) — flat VERKAUF
+  // when hand-typed values replace the Material/NU × (1+Zuschlag) default.
+  materialEp: fnum().optional(),
+  nuEp: fnum().optional(),
   // Bedarfs-/Eventualposition — priced but excluded from the Angebotssumme.
   bedarfsposition: z.boolean().optional(),
   isHeader: z.boolean().default(false),

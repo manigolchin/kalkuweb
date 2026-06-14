@@ -534,6 +534,15 @@ export async function parseKalkulationWorkbook(
           ? { lohnFaktor: rawAB / lohnBaseUnit }
           : { lohnEp: rawAB };
       }
+      // EP Stoffe VK (col AJ) / EP Nachu. (col AK) overrides — capture a flat
+      // VERKAUF when the calculator hand-typed a value that deviates from the
+      // Material/NU × (1+Zuschlag) default (same pattern as geräteEp/lohnEp).
+      const matBase = (typeof cells.I === 'number' ? cells.I : 0) * (1 + derivedCalcParams.materialZuschlag);
+      const rawAJ = ws['AJ' + r]?.v;
+      const matPatch = typeof rawAJ === 'number' && Math.abs(rawAJ - matBase) > 0.01 ? { materialEp: rawAJ } : {};
+      const nuBase = (typeof cells.M === 'number' ? cells.M : 0) * (1 + derivedCalcParams.nuZuschlag);
+      const rawAK = ws['AK' + r]?.v;
+      const nuPatch = typeof rawAK === 'number' && Math.abs(rawAK - nuBase) > 0.01 ? { nuEp: rawAK } : {};
       // Bedarfs-/Eventualposition: priced (EP filled) but the Vorlage leaves its
       // GP (col F) blank, so Excel keeps it OUT of the Angebotssumme. Mark it so
       // calc excludes it from the total (still shown + editable for folding in).
@@ -551,6 +560,8 @@ export async function parseKalkulationWorkbook(
         nuCost: typeof cells.M === 'number' ? cells.M : 0,
         ...geraeteSatzPatch,
         ...lohnPatch,
+        ...matPatch,
+        ...nuPatch,
         ...bedarfsPatch,
         // Heuristic: rows that originally had an EP value get visibleToCustomer=true.
         // Internal-only rows the user adds later default to true (mirroring v1).
