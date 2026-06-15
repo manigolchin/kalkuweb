@@ -20,6 +20,9 @@ import type { FaktorEntry } from './types';
 const F_SLOTS: ReadonlyArray<FSlotName> = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7'];
 
 export type PreCalcStripProps = {
+  /** Owning position id — threads into each F-cell's grid coordinate so the
+   *  Excel-style keyboard navigation + point mode can address F1..F7. */
+  rowId?: string;
   preCalcs?: PreCalcs;
   /** Commit handler for a single slot — only that slot is patched. */
   onSlotCommit: (slot: FSlotName, value: number, formula: string | undefined) => void;
@@ -37,6 +40,7 @@ export type PreCalcStripProps = {
 };
 
 export default function PreCalcStrip({
+  rowId,
   preCalcs,
   onSlotCommit,
   faktoren,
@@ -86,6 +90,8 @@ export default function PreCalcStrip({
                           // them in practice; matches Excel behaviour.)
                           preCalcs={preCalcs}
                           label={slot}
+                          rowId={rowId}
+                          col={slot}
                         />
                       </tr>
                     </tbody>

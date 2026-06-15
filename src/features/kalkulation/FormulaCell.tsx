@@ -31,6 +31,15 @@
  * Storage model: matches Excel's "stored formula + cached value" pattern.
  * The numeric value is the source of truth for math (calculatePosition);
  * the formula is the source of truth for re-display + re-evaluation.
+ *
+ * EXCEL-STYLE GRID (opt-in via the `rowId` + `col` props, active only inside a
+ * <KalkGridProvider>):
+ *   ↑↓←→  move the selected cell · Enter commits + moves down · Tab/Shift+Tab
+ *   move right/left · typing a digit or `=` on a selected cell begins editing.
+ *   While editing a formula, clicking an F1..F7 cell inserts its reference at
+ *   the caret (auto-`+` so two clicks build a sum) — Excel "point mode". All of
+ *   this is gated on `ctx.enabled`, so a FormulaCell rendered without a provider
+ *   behaves exactly as before.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -38,6 +47,16 @@ import clsx from 'clsx';
 import { evaluateAufmass } from './aufmass';
 import { formatNum } from './calc';
 import type { FaktorEntry } from './types';
+import {
+  useKalkGrid,
+  isFCol,
+  sameCoord,
+  shouldPrependPlus,
+  type ColKey,
+  type Coord,
+  type CellHandle,
+  type Direction,
+} from './kalkGridContext';
 
 const RESERVED_TOKENS = ['Q'];
 const F_SLOT_NAMES = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7'] as const;
@@ -74,6 +93,11 @@ export type FormulaCellProps = {
   extraTokens?: Record<string, number>;
   /** Human-readable label shown in the preview pill tooltip. */
   label?: string;
+  /** Grid coordinate — when both are set (inside a KalkGridProvider), the cell
+   *  joins Excel-style keyboard navigation + F-cell point mode. Optional, so a
+   *  bare FormulaCell (unit tests) behaves exactly as before. */
+  rowId?: string;
+  col?: ColKey;
 };
 
 /**
@@ -145,6 +169,8 @@ export default function FormulaCell({
   preCalcs,
   extraTokens,
   label,
+  rowId,
+  col,
 }: FormulaCellProps) {
   const d = value % 1 === 0 ? 0 : 2;
   const formatted = value === 0 ? '' : formatNum(value, d);
@@ -159,6 +185,69 @@ export default function FormulaCell({
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const displayRef = useRef<HTMLInputElement | null>(null);
+  // True when number-edit was started by typing (seed char) rather than by
+  // click — then the caret goes to the end instead of selecting all.
+  const seededRef = useRef(false);
+  // Suppresses the blur-commit when an Enter/Tab handler already committed +
+  // moved focus (otherwise the unmount blur would re-commit).
+  const skipBlurRef = useRef(false);
+
+  // ───── grid wiring (opt-in) ─────
+  const ctx = useKalkGrid();
+  const { enabled: gridEnabled, setPointOrigin, moveFocus, moveTab, emitReferenceClick } = ctx;
+  const coord = useMemo<Coord | null>(
+    () => (rowId && col ? { rowId, col } : null),
+    [rowId, col],
+  );
+
+  // Latest-closure ref for insertReference so the registered (stable) handle
+  // always inserts into the current draft at the current caret.
+  const insertReferenceRef = useRef<(token: string) => void>(() => {});
+  useEffect(() => {
+    insertReferenceRef.current = (token: string) => {
+      // Append at the end of the formula — the click-to-build workflow grows
+      // left-to-right, and end-append avoids fragile caret syncing on a
+      // controlled <textarea>. A leading `+` is added so consecutive clicks
+      // form a sum (F1 then F2 → "F1+F2"); skipped right after an operator.
+      const before = draft;
+      const insert = (shouldPrependPlus(before) ? '+' : '') + token;
+      const next = before + insert;
+      const newCaret = next.length;
+      setDraft(next);
+      setCursor(newCaret);
+      requestAnimationFrame(() => {
+        const t = textareaRef.current;
+        if (t) {
+          t.value = next;
+          t.focus();
+          t.setSelectionRange(newCaret, newCaret);
+        }
+      });
+    };
+  });
+
+  // Register an imperative handle so the grid can focus this cell + (when it's
+  // the point-mode origin) push a clicked reference into its formula. The
+  // handle closes over the stable displayRef / insertReferenceRef, so it stays
+  // current without re-registering on every keystroke.
+  useEffect(() => {
+    if (!coord || !gridEnabled) return;
+    const handle: CellHandle = {
+      focusCell: () => displayRef.current?.focus(),
+      insertReference: (t: string) => insertReferenceRef.current(t),
+    };
+    return ctx.register(coord, handle);
+    // ctx.register is stable; re-register only when the coordinate changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coord, gridEnabled, ctx.register]);
+
+  // Announce / withdraw point-mode origin as this cell enters/leaves formula
+  // mode. Leaving via commit/cancel clears it explicitly (see those handlers);
+  // the provider also clears a dangling origin if its cell unmounts.
+  useEffect(() => {
+    if (coord && gridEnabled && mode === 'formula') setPointOrigin(coord);
+  }, [mode, coord, gridEnabled, setPointOrigin]);
 
   // Auto-focus + auto-size when switching to formula mode.
   useEffect(() => {
@@ -170,7 +259,14 @@ export default function FormulaCell({
       el.style.height = Math.min(Math.max(el.scrollHeight, 36), 200) + 'px';
     } else if (mode === 'number' && inputRef.current) {
       inputRef.current.focus();
-      inputRef.current.select();
+      if (seededRef.current) {
+        // Entered by typing — caret at end so the next keystroke appends.
+        const len = inputRef.current.value.length;
+        inputRef.current.setSelectionRange(len, len);
+        seededRef.current = false;
+      } else {
+        inputRef.current.select();
+      }
     }
   }, [mode]);
 
@@ -240,6 +336,18 @@ export default function FormulaCell({
     }
   }
 
+  /** Begin editing seeded by a typed character on a selected (display) cell. */
+  function startEditSeed(ch: string) {
+    if (ch === '=') {
+      setDraft('');
+      setMode('formula');
+    } else {
+      seededRef.current = true;
+      setDraft(ch);
+      setMode('number');
+    }
+  }
+
   function commitFromNumber(raw: string) {
     if (raw === formatted) {
       // No change — preserve any existing formula.
@@ -263,22 +371,105 @@ export default function FormulaCell({
 
   function commitFromFormula() {
     if (!evaluation) {
+      setPointOrigin(null);
       setMode('display');
       return;
     }
     if (evaluation.hasErrors) {
-      // Don't commit a broken formula; stay in formula mode + flash.
+      // Don't commit a broken formula; stay in formula mode (keep origin) + flash.
       return;
     }
     const rounded = Math.round(evaluation.total * 10000) / 10000;
     const cleaned = draft.trim();
     onCommit(rounded, cleaned.length > 0 ? cleaned : undefined);
+    setPointOrigin(null);
     setMode('display');
   }
 
   function cancelEdit() {
+    setPointOrigin(null);
     setDraft('');
     setMode('display');
+  }
+
+  // ───── commit-then-navigate helpers (no-op move without a provider) ─────
+
+  type Move = Direction | 'tab-fwd' | 'tab-back';
+  const navAfter = useCallback(
+    (move: Move) => {
+      if (!coord || !gridEnabled) return;
+      if (move === 'tab-fwd') moveTab(coord, false);
+      else if (move === 'tab-back') moveTab(coord, true);
+      else moveFocus(coord, move);
+    },
+    [coord, gridEnabled, moveFocus, moveTab],
+  );
+
+  function commitNumberAndMove(move: Move) {
+    if (coord && gridEnabled) skipBlurRef.current = true;
+    commitFromNumber(draft);
+    navAfter(move);
+  }
+
+  function commitFormulaAndMove(move: Move) {
+    const willCommit = !evaluation || !evaluation.hasErrors;
+    if (coord && gridEnabled && willCommit) skipBlurRef.current = true;
+    commitFromFormula();
+    if (willCommit) navAfter(move);
+  }
+
+  // ───── point mode (display cells become reference-insert targets) ─────
+
+  const isPointTarget =
+    gridEnabled &&
+    !!coord &&
+    !!ctx.pointOrigin &&
+    !sameCoord(ctx.pointOrigin, coord) &&
+    isFCol(coord.col);
+
+  function handleCellClick() {
+    if (isPointTarget && coord) {
+      emitReferenceClick(coord);
+      return;
+    }
+    startEdit();
+  }
+
+  function handleCellMouseDown(e: React.MouseEvent) {
+    // Keep the origin formula textarea focused (no blur-commit) while the user
+    // clicks an F-cell to insert its reference.
+    if (isPointTarget) e.preventDefault();
+  }
+
+  function handleDisplayKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!coord || !gridEnabled) return;
+    const k = e.key;
+    if (k === 'ArrowUp') {
+      e.preventDefault();
+      moveFocus(coord, 'up');
+    } else if (k === 'ArrowDown') {
+      e.preventDefault();
+      moveFocus(coord, 'down');
+    } else if (k === 'ArrowLeft') {
+      e.preventDefault();
+      moveFocus(coord, 'left');
+    } else if (k === 'ArrowRight') {
+      e.preventDefault();
+      moveFocus(coord, 'right');
+    } else if (k === 'Tab') {
+      e.preventDefault();
+      moveTab(coord, e.shiftKey);
+    } else if (k === 'Enter') {
+      e.preventDefault();
+      moveFocus(coord, 'down');
+    } else if (k === 'F2') {
+      e.preventDefault();
+      startEdit();
+    } else if (!e.ctrlKey && !e.metaKey && !e.altKey && k.length === 1 && /[0-9=.,-]/.test(k)) {
+      // Excel: start typing on a selected cell begins editing with that char.
+      e.preventDefault();
+      startEditSeed(k);
+    }
   }
 
   // ───── render ─────
@@ -286,21 +477,31 @@ export default function FormulaCell({
   if (mode === 'display') {
     return (
       <td
-        className="bg-slate-50/70 border-t border-slate-100 px-1 py-[10px] align-top relative"
-        onClick={startEdit}
+        className={clsx(
+          'bg-slate-50/70 border-t border-slate-100 px-1 py-[10px] align-top relative',
+          isPointTarget && 'cursor-copy',
+        )}
+        onClick={handleCellClick}
+        onMouseDown={handleCellMouseDown}
       >
         <div className="relative">
           <input
+            ref={displayRef}
             readOnly
+            tabIndex={coord && gridEnabled ? 0 : undefined}
             value={formatted}
             placeholder="0"
             data-testid={hasFormula ? 'formula-cell-with-fx' : 'formula-cell-plain'}
+            data-cell-row={coord?.rowId}
+            data-cell-col={coord?.col}
             title={hasFormula ? `Formel: ${formula}` : undefined}
+            onKeyDown={handleDisplayKeyDown}
             className={clsx(
               'w-full px-1.5 py-1 rounded text-right tabular-nums outline-none cursor-text border border-transparent',
-              'placeholder:text-slate-300',
+              'placeholder:text-slate-300 focus:border-primary-400 focus:ring-1 focus:ring-primary-200 focus:bg-white',
               value === 0 ? 'text-slate-500' : 'text-slate-900',
               hasFormula && 'bg-emerald-50/40 pr-5',
+              isPointTarget && 'outline outline-2 outline-dashed outline-sky-400 -outline-offset-2 bg-sky-50/70',
             )}
           />
           {hasFormula && (
@@ -335,13 +536,31 @@ export default function FormulaCell({
               setMode('formula');
             }
           }}
-          onBlur={() => commitFromNumber(draft)}
+          onBlur={() => {
+            if (skipBlurRef.current) {
+              skipBlurRef.current = false;
+              return;
+            }
+            commitFromNumber(draft);
+          }}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') e.currentTarget.blur();
-            else if (e.key === 'Escape') {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              commitNumberAndMove('down');
+            } else if (e.key === 'Tab') {
+              e.preventDefault();
+              commitNumberAndMove(e.shiftKey ? 'tab-back' : 'tab-fwd');
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              commitNumberAndMove('up');
+            } else if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              commitNumberAndMove('down');
+            } else if (e.key === 'Escape') {
               e.preventDefault();
               cancelEdit();
             }
+            // ArrowLeft/Right fall through → move the text caret.
           }}
           className={clsx(
             'w-full px-1.5 py-1 rounded text-right tabular-nums outline-none border',
@@ -393,16 +612,22 @@ export default function FormulaCell({
             el.style.height = Math.min(Math.max(el.scrollHeight, 36), 200) + 'px';
           }}
           onKeyDown={(e) => {
-            // Tab to accept autocomplete suggestion.
+            // Tab to accept autocomplete suggestion (takes priority over nav).
             if (e.key === 'Tab' && suggestion) {
               e.preventDefault();
               acceptSuggestion();
               return;
             }
-            // Plain Enter commits; Shift+Enter inserts a newline.
+            // No suggestion → Tab commits + moves to the next/prev cell.
+            if (e.key === 'Tab') {
+              e.preventDefault();
+              commitFormulaAndMove(e.shiftKey ? 'tab-back' : 'tab-fwd');
+              return;
+            }
+            // Plain Enter commits (+ moves down); Shift+Enter inserts a newline.
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
-              commitFromFormula();
+              commitFormulaAndMove('down');
               return;
             }
             if (e.key === 'Escape') {
@@ -410,8 +635,14 @@ export default function FormulaCell({
               cancelEdit();
               return;
             }
+            // Arrow keys fall through → move the text caret (multiline editing).
           }}
           onBlur={(e) => {
+            // Already committed via Enter/Tab → the unmount blur must not re-commit.
+            if (skipBlurRef.current) {
+              skipBlurRef.current = false;
+              return;
+            }
             // Don't commit on blur if the user is clicking inside our own
             // cell (e.g. clicking the suggestion). Heuristic: relatedTarget
             // null = lost focus to the document → commit. Otherwise stay.
@@ -443,7 +674,14 @@ export default function FormulaCell({
         <span>
           <kbd className="font-mono">Enter</kbd> übern. ·{' '}
           <kbd className="font-mono">Esc</kbd> abbr.{' '}
-          {suggestion && <>· <kbd className="font-mono">Tab</kbd> = {suggestion.full}</>}
+          {suggestion ? (
+            <>
+              · <kbd className="font-mono">Tab</kbd> = {suggestion.full}
+            </>
+          ) : (
+            gridEnabled &&
+            coord && <>· F1..F7 anklicken zum Einfügen</>
+          )}
         </span>
         {evaluation && evaluation.hasErrors && (
           <span className="text-rose-700 font-semibold">⚠ Formel-Fehler</span>

@@ -38,6 +38,7 @@ import {
 } from './types';
 import FormulaCell from './FormulaCell';
 import PreCalcStrip from './PreCalcStrip';
+import { KalkGridProvider, type RowDescriptor } from './kalkGridContext';
 import {
   calculatePosition,
   calcTotals,
@@ -659,6 +660,24 @@ export default function PositionTableV2({
   );
   const expandAll = useCallback(() => setCollapsed(new Set()), []);
 
+  // Excel-style keyboard navigation + F-cell point mode: the flat, *visible*
+  // order of navigable position rows (collapsed groups + header rows excluded).
+  // Mirrors exactly what GroupRows/PositionRow mount, so neighbour math in
+  // KalkGridProvider stays in sync with the DOM. `hasPreCalc` = the row's
+  // F1..F7 strip is open (its F-columns are mounted + navigable).
+  const orderedRows = useMemo<RowDescriptor[]>(() => {
+    const out: RowDescriptor[] = [];
+    for (const g of groups) {
+      if (g.kind === 'group') {
+        if (collapsed.has(g.id)) continue;
+        for (const r of g.rows) out.push({ rowId: r.id, hasPreCalc: expandedPreCalc.has(r.id) });
+      } else {
+        out.push({ rowId: g.row.id, hasPreCalc: expandedPreCalc.has(g.row.id) });
+      }
+    }
+    return out;
+  }, [groups, collapsed, expandedPreCalc]);
+
   if (view === 'kunden') {
     return (
       <KundenPreview
@@ -673,6 +692,7 @@ export default function PositionTableV2({
   }
 
   return (
+    <KalkGridProvider orderedRows={orderedRows}>
     <div className="space-y-3">
       {/* PART Q: sticky Zuschlag matrix at the top of INTERN view. Renders
           only when the imported project carries the captured matrix (i.e.
@@ -858,6 +878,7 @@ export default function PositionTableV2({
       />
     )}
     </div>
+    </KalkGridProvider>
   );
 }
 
@@ -1125,7 +1146,10 @@ function PositionRow({
   // (geraeteEp / lohnEp) wins. Type a number/=formula to override, clear to revert.
   const adjMin = p.timeMinutes + (p.timeMinutes / 100) * params.zeitabzug;
   const epGeraeteCell = p.geraeteEp ?? (adjMin / 60) * (p.geraeteSatz ?? params.geraeteStundensatz);
-  const epLohnCell = p.lohnEp ?? (adjMin / 60) * params.verrechnungslohn;
+  // Include the per-row Lohn-Faktor W (Vorlage AB = Zeit/60 × Verrechnungslohn × W)
+  // so a Stundenlohn row shows its real EP Löhne (e.g. 64,90 × 1,35 = 87,62), not
+  // the bare Verrechnungslohn. Default 1; a flat lohnEp override still wins.
+  const epLohnCell = p.lohnEp ?? (adjMin / 60) * params.verrechnungslohn * (p.lohnFaktor ?? 1);
   // Named tokens a custom EP-Geräte / EP-Löhne formula can reference, so the
   // calculator can rebuild the Vorlage's own formula (e.g. `=Zeit/60*verrechnungslohn*1.41`).
   const formulaTokens = useMemo(
@@ -1351,6 +1375,8 @@ function PositionRow({
           contextMenge={p.quantity}
           preCalcs={p.preCalcs}
           label="Material EK"
+          rowId={p.id}
+          col="material"
         />
         <FormulaCell
           value={p.timeMinutes}
@@ -1360,6 +1386,8 @@ function PositionRow({
           contextMenge={p.quantity}
           preCalcs={p.preCalcs}
           label="Min/Einheit"
+          rowId={p.id}
+          col="time"
         />
         <FormulaCell
           value={p.nuCost}
@@ -1369,6 +1397,8 @@ function PositionRow({
           contextMenge={p.quantity}
           preCalcs={p.preCalcs}
           label="NU EK"
+          rowId={p.id}
+          col="nu"
         />
         {/* Zulage Geräte (col Z) — the per-position Geräte-Stundensatz that
             drives the EP-Geräte default formula. Defaults to the project rate
@@ -1383,6 +1413,8 @@ function PositionRow({
           contextMenge={p.quantity}
           preCalcs={p.preCalcs}
           label="Zulage Geräte (€/h)"
+          rowId={p.id}
+          col="geraeteSatz"
         />
         {/* EP Geräte (col AA) + EP Löhne (col AB) — per-position outputs that
             default to the Vorlage formula but can be overridden per row with a
@@ -1406,6 +1438,8 @@ function PositionRow({
           preCalcs={p.preCalcs}
           extraTokens={formulaTokens}
           label="EP Geräte"
+          rowId={p.id}
+          col="epGeraete"
         />
         <FormulaCell
           value={epLohnCell}
@@ -1425,6 +1459,8 @@ function PositionRow({
           preCalcs={p.preCalcs}
           extraTokens={formulaTokens}
           label="EP Löhne"
+          rowId={p.id}
+          col="epLohn"
         />
 
         <td className="bg-slate-50/70 border-t border-slate-100 px-1 py-[10px] align-top">
@@ -1523,6 +1559,7 @@ function PositionRow({
           columns bring it to 17. */}
       {isPreCalcExpanded && (
         <PreCalcStrip
+          rowId={p.id}
           preCalcs={p.preCalcs}
           colSpan={18}
           faktoren={faktoren}
