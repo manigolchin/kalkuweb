@@ -47,7 +47,7 @@ export type PositionCalcResult = {
 };
 
 export function calculatePosition(
-  pos: Pick<Position, 'quantity' | 'materialCost' | 'timeMinutes' | 'nuCost' | 'isHeader' | 'geraeteSatz' | 'geraeteEp' | 'lohnEp' | 'lohnFaktor' | 'materialEp' | 'nuEp' | 'gpOverride'>,
+  pos: Pick<Position, 'quantity' | 'materialCost' | 'timeMinutes' | 'nuCost' | 'isHeader' | 'geraeteSatz' | 'geraeteEp' | 'lohnEp' | 'lohnFaktor' | 'materialEp' | 'nuEp' | 'gpOverride' | 'bedarfsposition'>,
   params: CalcParams,
 ): PositionCalcResult {
   if (pos.isHeader) {
@@ -104,18 +104,22 @@ export function calculatePosition(
     ? round(pos.gpOverride * zielFactor)
     : round(pos.quantity * componentEp);
   const ep = pos.gpOverride != null && pos.quantity ? round(gp / pos.quantity) : componentEp;
+  // Bedarfs-/Eventualposition: the Vorlage leaves its GP blank/0 (not part of the
+  // offer). Show GP = 0 like the cell — the unit prices (EP, EP-components) stay
+  // visible so the user can see the row and fold it in. Hours don't count either.
+  const isBedarf = pos.bedarfsposition === true;
   return {
     epLohn,
     epMaterial,
     epGeraet,
     epNu,
     ep,
-    gp,
-    gpLohn: round(pos.quantity * epLohn),
-    gpMaterial: round(pos.quantity * epMaterial),
-    gpGeraet: round(pos.quantity * epGeraet),
-    gpNu: round(pos.quantity * epNu),
-    hoursTotal: round((adjustedTime * pos.quantity) / 60),
+    gp: isBedarf ? 0 : gp,
+    gpLohn: isBedarf ? 0 : round(pos.quantity * epLohn),
+    gpMaterial: isBedarf ? 0 : round(pos.quantity * epMaterial),
+    gpGeraet: isBedarf ? 0 : round(pos.quantity * epGeraet),
+    gpNu: isBedarf ? 0 : round(pos.quantity * epNu),
+    hoursTotal: isBedarf ? 0 : round((adjustedTime * pos.quantity) / 60),
   };
 }
 

@@ -42,7 +42,9 @@ export type PositionCostSplit = {
 };
 
 export function positionCostSplit(p: Position, params: CalcParams): PositionCostSplit {
-  if (p.isHeader) {
+  if (p.isHeader || p.bedarfsposition) {
+    // Bedarfs-/Eventualpositionen carry no GP in the offer (Vorlage leaves col F
+    // blank) — contribute nothing to the cost split / totals.
     return { gpLohn: 0, gpMaterial: 0, gpGeraet: 0, gpNu: 0, ekLohn: 0, ekMaterial: 0, ekGeraet: 0, ekNu: 0 };
   }
   const zf = 1 + (params.zielAufschlag ?? 0);
@@ -216,7 +218,8 @@ function recomputePosition(p: Position, params: CalcParams): Position {
     epGeraet,
     epNu,
     ep,
-    gp,
+    // Bedarfsposition shows GP = 0 like the Vorlage cell (excluded from offer).
+    gp: p.bedarfsposition ? 0 : gp,
   };
 }
 

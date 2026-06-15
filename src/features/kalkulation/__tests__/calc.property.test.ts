@@ -358,12 +358,13 @@ describe('calc.ts — EP Stoffe/NU VK overrides (cols AJ/AK) win flat', () => {
 
 describe('calc.ts — Bedarfsposition excluded from the Angebotssumme', () => {
   const params = { ...DEFAULT_CALC_PARAMS, materialZuschlag: 0, nuZuschlag: 0, verrechnungslohn: 0, geraeteStundensatz: 0, zeitabzug: 0, mwst: 0 };
-  test('a bedarfsposition is priced but NOT summed into totalNetto (matches Excel)', () => {
+  test('a bedarfsposition shows GP=0 (like the Excel cell) and is not summed', () => {
     const normal = pos({ materialCost: 100, quantity: 1 });
     const bedarf = pos({ materialCost: 500, quantity: 1, bedarfsposition: true });
     expect(calcTotals([normal, bedarf], params).totalNetto).toBe(100);
-    // …but it still computes a price so the table can show it + the user can fold it in.
-    expect(calculatePosition(bedarf, params).gp).toBe(500);
+    const b = calculatePosition(bedarf, params);
+    expect(b.gp).toBe(0);   // GP shows 0 like the blank Vorlage cell…
+    expect(b.ep).toBe(500); // …but the unit price (EP) stays visible so it can be folded in
   });
 });
 
