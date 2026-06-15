@@ -13,6 +13,13 @@ import {
   auditEvents,
   shareAccessLog,
   positionComments,
+  changeRequests,
+  CHANGE_REQUEST_FIELDS,
+  type ChangeRequestField,
+  type ChangeRequestScope,
+  type ChangeRequestUnit,
+  type ShareSnapshot,
+  type ShareSettings,
 } from '../schema.js';
 import { clientIp, clientFingerprint } from '../lib/middleware.js';
 import { buildLegacySnapshot, snapshotHash } from '../lib/snapshot.js';
@@ -163,6 +170,82 @@ const changesSchema = z.object({
     .max(100),
 });
 
+const changeRequestsSchema = z.object({
+  customerName: z.string().trim().min(1).max(200).optional(),
+  customerEmail: z.string().email().max(200).optional(),
+  items: z
+    .array(
+      z.object({
+        scope: z.enum(['global', 'position']),
+        positionOz: z.string().trim().max(200).optional(),
+        field: z.enum(CHANGE_REQUEST_FIELDS),
+        /** The value the customer wants. Null/omitted = only a direction + note. */
+        requestedValue: z.number().finite().min(-1e12).max(1e12).nullable().optional(),
+        direction: z.enum(['lower', 'higher', 'exact', 'unspecified']).optional(),
+        note: z.string().trim().max(2000).optional(),
+      }),
+    )
+    .min(1)
+    .max(200),
+});
+
+/** Which (scope, field) combinations are valid, and how each maps onto the
+ *  frozen snapshot. Returns the display unit + the value the customer was
+ *  shown (lifted server-side so a malicious client can't fake the "Ist"
+ *  side of the diff). `currentValue` is null when the snapshot doesn't carry
+ *  that number (legacy snapshot, or a field the share didn't display — e.g.
+ *  per-position Arbeitszeit). Returns null when the combo is not allowed. */
+function changeRequestContext(
+  snapshot: ShareSnapshot | null,
+  settings: ShareSettings,
+  scope: ChangeRequestScope,
+  positionOz: string | undefined,
+  field: ChangeRequestField,
+): { unit: ChangeRequestUnit; currentValue: number | null } | null {
+  // Visibility gate — mirror the client's `availableFields` so a crafted POST
+  // can't lodge a wish against a figure the share never revealed to this
+  // customer (defense-in-depth; the UI already only offers visible fields).
+  const breakdown = settings.showCostBreakdown !== false;
+  const calc = settings.showCalculation !== false;
+  const fieldVisible =
+    field === 'sonstiges' || field === 'menge' || field === 'gesamtpreis'
+      ? true
+      : field === 'endbetrag'
+        ? !!settings.showTotals
+        : field === 'zeit'
+          ? scope === 'global'
+            ? calc
+            : true
+          : /* lohn | material | geraete */ breakdown;
+  if (!fieldVisible) return null;
+
+  const summary = snapshot?.summary ?? null;
+  if (scope === 'global') {
+    switch (field) {
+      case 'endbetrag': return { unit: 'eur', currentValue: summary?.netto ?? null };
+      case 'lohn': return { unit: 'eur', currentValue: summary?.costTypes.lohn.vk ?? null };
+      case 'material': return { unit: 'eur', currentValue: summary?.costTypes.material.vk ?? null };
+      case 'geraete': return { unit: 'eur', currentValue: summary?.costTypes.geraete.vk ?? null };
+      case 'zeit': return { unit: 'std', currentValue: summary?.totalHours ?? null };
+      case 'sonstiges': return { unit: 'eur', currentValue: null };
+      default: return null; // gesamtpreis / menge are position-only
+    }
+  }
+  // scope === 'position' — locate the snapshot line by its OZ.
+  const pos = (snapshot?.positions ?? []).find((p) => p.oz === positionOz);
+  if (!pos) return null;
+  switch (field) {
+    case 'menge': return { unit: 'qty', currentValue: pos.quantity ?? null };
+    case 'gesamtpreis': return { unit: 'eur', currentValue: pos.gp ?? null };
+    case 'material': return { unit: 'eur', currentValue: pos.gpMaterial ?? null };
+    case 'geraete': return { unit: 'eur', currentValue: pos.gpGeraet ?? null };
+    case 'lohn': return { unit: 'eur', currentValue: pos.gpLohn ?? null };
+    case 'zeit': return { unit: 'min', currentValue: null }; // minutes not in the customer snapshot
+    case 'sonstiges': return { unit: 'eur', currentValue: null };
+    default: return null; // endbetrag is global-only
+  }
+}
+
 export const publicRoute = new Hono()
   .get('/share/:token', async (c) => {
     const token = c.req.param('token');
@@ -247,10 +330,62 @@ export const publicRoute = new Hono()
     const latestVersionNumber = project.versionNumber;
     const hasNewerVersion = latestVersionNumber > snapshot.projectVersionNumber;
 
+    // Gate the payload by the share's display toggles — NOT just the UI. The
+    // calculator's choice to hide the cost breakdown / calculation must mean
+    // the data never reaches the customer (raw JSON included), so a hidden
+    // toggle can't be bypassed by reading the network response.
+    const st = share.settings;
+    const outPositions =
+      st.showCostBreakdown === false
+        ? snapshot.positions.map(({ gpLohn, gpMaterial, gpGeraet, gpNu, ...rest }) => {
+            void gpLohn; void gpMaterial; void gpGeraet; void gpNu;
+            return rest;
+          })
+        : snapshot.positions;
+    let outSummary = snapshot.summary ?? null;
+    if (outSummary && st.showTotals === false) {
+      outSummary = null; // no totals at all → no aggregate block
+    } else if (outSummary && st.showCalculation === false) {
+      // Redact EINKAUF / Zuschlag / Überschuss / KPIs (the cost+margin detail).
+      // Keep the VERKAUF composition (vk) for the Kostenzusammensetzung bar —
+      // UNLESS the cost breakdown is ALSO hidden, in which case neither the
+      // composition bar nor the Kalkulation table renders vk, so it must not ship
+      // at all (a customer could otherwise read the per-cost-type VERKAUF split
+      // from the raw JSON). netto/mwst/brutto stay (gated only by showTotals).
+      const hideVk = st.showCostBreakdown === false;
+      const redact = (ct: { ek: number; vk: number; zuschlagPct: number; differnz: number }) => ({ ek: 0, vk: hideVk ? 0 : ct.vk, zuschlagPct: 0, differnz: 0 });
+      outSummary = {
+        ...outSummary,
+        ekTotal: 0,
+        ueberschuss: 0,
+        mitarbeiter: 0,
+        arbeitstage: 0,
+        monate: 0,
+        totalHours: 0,
+        costTypes: {
+          lohn: redact(outSummary.costTypes.lohn),
+          material: redact(outSummary.costTypes.material),
+          geraete: redact(outSummary.costTypes.geraete),
+          nu: redact(outSummary.costTypes.nu),
+        },
+      };
+    }
+
+    // Gate the „04_Angebote" link the same way as the cost data above: the
+    // button only reaches the customer when the calculator turned it on AND the
+    // stored value is a real http(s) URL. When off, strip the URL entirely — it
+    // points at the firm's internal SharePoint and must never ship to a customer
+    // who shouldn't see it. `showAngebote` is normalised to the gated result so
+    // the client can trust the flag without re-deriving it.
+    const angeboteUrl = typeof st.angeboteFolderUrl === 'string' ? st.angeboteFolderUrl : '';
+    const showAngebote = st.showAngebote === true && /^https?:\/\//i.test(angeboteUrl);
+    const outSettings: typeof st = { ...st, showAngebote };
+    if (!showAngebote) delete outSettings.angeboteFolderUrl;
+
     return c.json({
       shareId: share.id,
       token: share.token,
-      settings: share.settings,
+      settings: outSettings,
       snapshotHash: share.snapshotHash,
       snapshottedAt: snapshot.snapshottedAt,
       nachtragNumber: share.nachtragNumber,
@@ -269,7 +404,8 @@ export const publicRoute = new Hono()
         // (which stays private; see P0-2).
         contactEmail: owner?.companyContactEmail || '',
       },
-      positions: snapshot.positions,
+      positions: outPositions,
+      summary: outSummary,
       createdAt: share.createdAt,
       // PART J: gate metadata for the frontend. `passwordRequired` is
       // intentionally `false` here — if it were `true` the request would
@@ -286,9 +422,12 @@ export const publicRoute = new Hono()
    *  the link can fetch the PDF (matches the existing GET /share/:token model). */
   .get('/share/:token/pdf', async (c) => {
     const token = c.req.param('token');
-    const share = await db.query.shares.findFirst({ where: eq(shares.token, token) });
-    if (!share) return c.json({ error: 'not_found' }, 404);
-    if (share.revokedAt) return c.json({ error: 'revoked' }, 410);
+    // Route through the same gate the HTML view uses so a password-protected
+    // share's PDF can't be pulled with only the token (revoked/expired/password
+    // /rate-limit/audit-log all handled centrally).
+    const gate = await gateShare(c, token);
+    if ('response' in gate) return gate.response;
+    const share = gate.share;
 
     const project = await db.query.projects.findFirst({ where: eq(projects.id, share.projectId) });
     if (!project) return c.json({ error: 'not_found' }, 404);
@@ -340,9 +479,9 @@ export const publicRoute = new Hono()
     const parsed = approveSchema.safeParse(body);
     if (!parsed.success) return c.json({ error: 'invalid_input', detail: parsed.error.issues }, 400);
 
-    const share = await db.query.shares.findFirst({ where: eq(shares.token, token) });
-    if (!share) return c.json({ error: 'not_found' }, 404);
-    if (share.revokedAt) return c.json({ error: 'revoked' }, 410);
+    const gate = await gateShare(c, token);
+    if ('response' in gate) return gate.response;
+    const share = gate.share;
     if (!share.settings.allowApproval) return c.json({ error: 'not_allowed' }, 403);
 
     const now = new Date();
@@ -495,9 +634,9 @@ export const publicRoute = new Hono()
     const parsed = changesSchema.safeParse(body);
     if (!parsed.success) return c.json({ error: 'invalid_input', detail: parsed.error.issues }, 400);
 
-    const share = await db.query.shares.findFirst({ where: eq(shares.token, token) });
-    if (!share) return c.json({ error: 'not_found' }, 404);
-    if (share.revokedAt) return c.json({ error: 'revoked' }, 410);
+    const gate = await gateShare(c, token);
+    if ('response' in gate) return gate.response;
+    const share = gate.share;
     if (!share.settings.allowChangeRequests) return c.json({ error: 'not_allowed' }, 403);
 
     const now = new Date();
@@ -609,4 +748,98 @@ export const publicRoute = new Hono()
       positionOz: parsed.data.positionOz,
       intent: parsed.data.intent,
     });
+  })
+
+  /**
+   * Round 12: structured change requests ("Änderungswünsche"). Batch POST of
+   * price/quantity wishes — per-position OR global (Endbetrag / Lohn-Σ / …).
+   * Honors the password gate + allowChangeRequests. The "Ist" value of each
+   * wish is lifted SERVER-SIDE from the frozen snapshot (never trusted from the
+   * client), so the owner's inbox diff is authentic.
+   */
+  .post('/share/:token/change-requests', async (c) => {
+    const token = c.req.param('token');
+    const gate = await gateShare(c, token);
+    if ('response' in gate) return gate.response;
+    const share = gate.share;
+    if (!share.settings.allowChangeRequests) return c.json({ error: 'not_allowed' }, 403);
+
+    const body = await c.req.json().catch(() => null);
+    const parsed = changeRequestsSchema.safeParse(body);
+    if (!parsed.success) return c.json({ error: 'invalid_input', detail: parsed.error.issues }, 400);
+
+    const snapshot = (share.snapshotData ?? null) as ShareSnapshot | null;
+    const now = new Date();
+    const ip = clientIp(c) ?? null;
+    const ua = (c.req.header('user-agent') || '').slice(0, 500);
+
+    const rows: Array<typeof changeRequests.$inferInsert> = [];
+    for (const item of parsed.data.items) {
+      const ctx = changeRequestContext(snapshot, share.settings, item.scope, item.positionOz, item.field);
+      // Reject the whole batch on a structurally-invalid item (bad scope/field
+      // combo, or a position OZ that isn't in this share's snapshot) so the
+      // customer gets a clear error rather than silently-dropped wishes.
+      if (!ctx) {
+        return c.json(
+          { error: 'invalid_change_request', scope: item.scope, field: item.field, positionOz: item.positionOz ?? null },
+          400,
+        );
+      }
+      const requested = item.requestedValue ?? null;
+      let direction = item.direction ?? 'unspecified';
+      // Infer the direction from an exact target vs. the shown value.
+      if (requested != null && direction === 'unspecified') {
+        direction =
+          ctx.currentValue == null
+            ? 'exact'
+            : requested < ctx.currentValue
+              ? 'lower'
+              : requested > ctx.currentValue
+                ? 'higher'
+                : 'exact';
+      }
+      const note = (item.note ?? '').trim();
+      // Drop entirely-empty wishes (no value, no direction, no note).
+      if (requested == null && direction === 'unspecified' && note.length === 0) continue;
+      rows.push({
+        id: nanoid(16),
+        shareId: share.id,
+        scope: item.scope,
+        positionOz: item.scope === 'position' ? (item.positionOz ?? null) : null,
+        field: item.field,
+        unit: ctx.unit,
+        currentValue: ctx.currentValue,
+        requestedValue: requested,
+        direction,
+        note,
+        authorName: parsed.data.customerName ?? null,
+        authorEmail: parsed.data.customerEmail ?? null,
+        ip,
+        userAgent: ua,
+        createdAt: now,
+      });
+    }
+    if (rows.length === 0) return c.json({ error: 'empty', message: 'no_actionable_items' }, 400);
+
+    await db.insert(changeRequests).values(rows);
+
+    await recordAuditEvent({
+      shareId: share.id,
+      projectId: share.projectId,
+      eventType: 'response.submitted',
+      actorKind: 'customer',
+      actorRef: parsed.data.customerEmail ?? parsed.data.customerName ?? null,
+      ip: clientIp(c),
+      userAgent: ua,
+      payload: {
+        kind: 'change_requests',
+        count: rows.length,
+        fields: rows.map((r) => `${r.scope}:${r.field}`),
+        snapshotHash: share.snapshotHash,
+        customerName: parsed.data.customerName,
+        browserFingerprint: clientFingerprint(c),
+      },
+    });
+
+    return c.json({ ok: true, count: rows.length, createdAt: now.toISOString() });
   });

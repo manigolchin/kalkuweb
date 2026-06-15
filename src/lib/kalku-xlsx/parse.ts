@@ -28,7 +28,7 @@
  */
 
 import { ozKey, ozLevel, classifyRow, isErrorCell, ERROR_LITERALS } from '@/features/kalkulation/ozParser.mjs';
-import { makeBlankPosition, DEFAULT_CALC_PARAMS } from '@/features/kalkulation/calc';
+import { makeBlankPosition, DEFAULT_CALC_PARAMS, round, calcTotals, calculatePosition } from '@/features/kalkulation/calc';
 import type {
   CalcParams,
   FaktorEntry,
@@ -57,7 +57,8 @@ export type ImportIssue = {
     | 'unparseable_oz'
     | 'empty_sheet'
     | 'multiple_sheets'
-    | 'duplicate_oz';
+    | 'duplicate_oz'
+    | 'total_sanity';
   message: string;
 };
 
@@ -163,6 +164,10 @@ export async function parseKalkulationWorkbook(
   const wb = XLSX.read(buf, { cellFormula: true, cellNF: true, cellStyles: false, type: 'array' });
 
   const issues: ImportIssue[] = [];
+  // Running Σ of the Excel's own per-position GP (col F) — the offer total a
+  // standard Vorlage stores. Used by the post-build sanity guard to catch a
+  // column layout that doesn't match (where col F isn't GP).
+  let offerSumF = 0;
 
   // 1) Sheet selection — prefer "Kalkulation" if present, else first sheet
   const sheetName = wb.SheetNames.find((n) => n === 'Kalkulation') ?? wb.SheetNames[0];
@@ -270,8 +275,16 @@ export async function parseKalkulationWorkbook(
     materialZuschlag: readNumber(ws, 'K', 4) ?? DEFAULT_CALC_PARAMS.materialZuschlag,
     nuZuschlag: readNumber(ws, 'K', 5) ?? DEFAULT_CALC_PARAMS.nuZuschlag,
     geraeteZuschlagPct: readNumber(ws, 'K', 6) ?? DEFAULT_CALC_PARAMS.geraeteZuschlagPct,
-    // Zeitwert from J11 (e.g. -0.15 in example 1, +0.5 in example 2)
-    zeitabzug: ((readNumber(ws, 'J', 11) ?? 0) * 100), // CalcParams expresses zeitabzug in percent
+    // Global Geräte-Satz (gzuschlag, AP3) — the per-row default. Per-position
+    // overrides ("Zulage Geräte", col Z) are captured on each Position below.
+    geraeteStundensatz: readNumber(ws, 'AP', 3) ?? DEFAULT_CALC_PARAMS.geraeteStundensatz,
+    // Zeitabzug as a percent. The Vorlage's named range `zeitabzug` IS this
+    // percent value, held EXACTLY in cell AP5 (e.g. -55, +50, -15). Read it
+    // directly: deriving it as J11×100 (J11 = zeitabzug/100) reintroduces binary
+    // -FP error — e.g. -0.55×100 = -55.00000000000001 — which then drags the
+    // rounded adjusted-time (AC) a cent off on boundary rows. Fall back to
+    // J11×100 only when AP5 is absent.
+    zeitabzug: readNumber(ws, 'AP', 5) ?? ((readNumber(ws, 'J', 11) ?? 0) * 100),
     mwst: readNumber(ws, 'D', 9) ?? DEFAULT_CALC_PARAMS.mwst,
   };
 
@@ -281,6 +294,10 @@ export async function parseKalkulationWorkbook(
   const faktorenLookup: FaktorRow[] = [];
   const faktoren: FaktorEntry[] = [];
   const factorCols = ['N','O','P','Q','R','S','T','U','V','W'];
+  // Round 5: the X–AP Vorrechnung helper columns (rows 2–12) that the exporter
+  // also reproduces — captured into each FaktorEntry.raw for full Vorlage
+  // fidelity. (AD/AI/AL/AO are 1-px spacer columns; harmless to read.)
+  const EXTRA_FACTOR_COLS = ['X','Y','Z','AA','AB','AC','AE','AF','AG','AH','AJ','AK','AM','AN','AP'];
   for (let r = 2; r <= 12; r++) {
     const rowFactor: FaktorRow = {
       factorName: `Row${r}`,
@@ -290,16 +307,17 @@ export async function parseKalkulationWorkbook(
       const cell = ws[c + r];
       if (!cell) continue;
       if (isErrorCell(cell)) {
-        // Round 2 policy: ALL formula errors are blocking (severity='error').
-        // Reasoning: even though Faktoren-Lookup cells are not directly shown
-        // to the customer, the user explicitly asked for a hard gate. They
-        // can fix the file in Excel and re-import, OR (escape hatch) use the
-        // generic mapping wizard which doesn't trip on these cells.
+        // Faktoren-Lookup is sidebar REFERENCE data (cols N-W, rows 2-12), not
+        // the customer LV. A broken factor formula (often a stale #REF! to a
+        // deleted helper cell — common in real Elektro Vorlagen) must NOT block
+        // the whole import: the actual LV positions carry cached EP/Min/Material
+        // values and parse fine. So this is a WARNING. Customer-zone (A-G)
+        // formula errors stay blocking (see the row-loop below).
         issues.push({
-          severity: 'error',
+          severity: 'warning',
           location: `${sheetName}!${c}${r}`,
           code: 'formula_error',
-          message: `Faktoren-Lookup Zelle ${c}${r} liefert Formelfehler${cell.f ? ` (Formel: ${cell.f})` : ''}. Bitte in Excel reparieren.`,
+          message: `Faktoren-Bibliothek Zelle ${c}${r} liefert Formelfehler${cell.f ? ` (Formel: ${cell.f})` : ''} — Import läuft weiter, betrifft nur die Faktoren-Referenz.`,
         });
         rowFactor.cells[c] = (cell.v != null ? String(cell.v) : '#ERR');
       } else {
@@ -331,6 +349,24 @@ export async function parseKalkulationWorkbook(
             if (!einheit && /^[a-zA-Z%/.°²³µm]{1,8}$/.test(v.trim())) einheit = v.trim();
           }
         }
+        // Round 5: enrich `raw` with the X–AP Vorrechnung helper cells (same
+        // rows 2–12) so the exporter can reproduce the full Vorlage block, not
+        // just the N–W factor library. These columns double as per-position
+        // helpers from row 14 on, but here we only read the header band. We skip
+        // internal template instructions (the "INTERN: …diese 4 Zellen löschen!"
+        // notes) — they're scaffolding, not data, and don't belong in an export.
+        const enrichedRaw: Record<string, number | string | null> = { ...rowFactor.cells };
+        for (const c of EXTRA_FACTOR_COLS) {
+          const cell = ws[c + r];
+          if (!cell || cell.v == null || isErrorCell(cell)) continue;
+          const val = typeof cell.v === 'number' ? cell.v : String(cell.v);
+          if (typeof val === 'string' && (val === '' || /INTERN/i.test(val))) continue;
+          // A Vorrechnung FORMULA that evaluates to 0 displays blank in the
+          // source (e.g. `AP8/1.19` with AP8=0) — don't emit a stray "0". A
+          // literal 0 (no formula) IS shown, so keep it.
+          if (val === 0 && cell.f) continue;
+          enrichedRaw[c] = val;
+        }
         faktoren.push({
           name: typeof firstVal === 'string' ? firstVal : String(firstVal),
           einheit,
@@ -338,7 +374,7 @@ export async function parseKalkulationWorkbook(
           minEinheit: numerics[1],
           sourceCol: firstNonEmpty,
           sourceRow: r,
-          raw: rowFactor.cells,
+          raw: enrichedRaw,
         });
       }
     }
@@ -378,6 +414,7 @@ export async function parseKalkulationWorkbook(
     };
     const isEntirelyEmpty = Object.values(cells).every((v) => v === null || v === '' || v === undefined);
     if (isEntirelyEmpty) continue;
+    if (typeof cells.F === 'number') offerSumF += cells.F;
 
     const kind = classifyRow(cells);
     const id = nanoid(12);
@@ -421,20 +458,144 @@ export async function parseKalkulationWorkbook(
           message: `Zeile ${r} hat keine OZ-Nummer — wird als anonyme Position importiert.`,
         });
       }
-      positions.push({
+      // Time-per-unit. The real Vorlage carries the raw "Zeit in min" in col Y
+      // — stable across BOTH template variants (J="Min/Einheit" where J also
+      // equals the time, AND J="Arbeitstage" where J is person-days, NOT the
+      // time). Our own export writes the time to J with Y empty.
+      const rawY = ws['Y' + r]?.v;
+      const yTime =
+        typeof rawY === 'number' && rawY > 0
+          ? rawY
+          : typeof cells.J === 'number'
+            ? cells.J
+            : 0;
+      // The prices are built from "Echte Zeit" (col AC), which in TARGET-PRICE
+      // mode is back-solved from the target EP and no longer equals Y·(1+Zeitwert).
+      // echteZeitToRawMinutes recovers the raw minutes so calc re-derives exactly
+      // AC (a no-op on normal files where AC ≈ Y·(1+Zeitwert)). Verified on the
+      // Gesellchen "Besucherplattform" LV (Geräte −42 %, Lohn +6 %, Stunden 218
+      // vs 520 before this).
+      const timeMinutes = echteZeitToRawMinutes(
+        ws['AC' + r]?.v,
+        yTime,
+        derivedCalcParams.zeitabzug ?? 0,
+      );
+      // Per-position Geräte. The Vorlage has TWO ways to price equipment:
+      //   1) Rate-based (the common case, 274/279 rows in the MPB Biergasse
+      //      LV): "EP Geräte" (col AA) is a FORMULA = (Echte-Zeit/60) × "Zulage
+      //      Geräte" (col Z). We reproduce this with a per-position geraeteSatz
+      //      = Z, so the Stellschrauben re-price it when time changes.
+      //   2) Lump-sum override: the calculator HARD-CODES col AA with a fixed
+      //      equipment cost (crane/lift on a Baustelleneinrichtung row, or a
+      //      flat geräte on a zero-time row) that the time×Z formula can't
+      //      reproduce. ΣAA×Menge equals the Vorlage's Geräte-VERKAUF total
+      //      exactly, so col AA is the source of truth — we pin it as a flat
+      //      per-unit geraeteEp. Without this the Geräte total imports ~4–5 %
+      //      low (the "GERAETE_GAP" class in the 100-LV fidelity test).
+      const rawZ = ws['Z' + r]?.v;
+      const rawAA = ws['AA' + r]?.v;
+      // Excel evaluates an EMPTY col-Z as 0 inside `AA = AC/60 * Z`: Stundenlohn/
+      // Regie rows leave Z blank, so the Vorlage prices ZERO Geräte on them. An
+      // absent Z therefore means rate 0 for THIS row — NOT the global Geräte-Satz.
+      // Falling back to the global on a blank Z invents a phantom Geräte cost.
+      const effectiveZ = typeof rawZ === 'number' && rawZ >= 0 ? rawZ : 0;
+      const adjForGeraete =
+        timeMinutes + (timeMinutes / 100) * derivedCalcParams.zeitabzug;
+      const formulaGeraete = (adjForGeraete / 60) * effectiveZ;
+      let geraeteSatzPatch: { geraeteEp?: number; geraeteSatz?: number } = {};
+      // "EP Geräte" (col AA) is the per-unit VERKAUF Geräte that sums into the
+      // Vorlage total (Σ Menge×AA), and the calculator can hand-edit it: a
+      // lump-sum literal (crane/lift, zero-time row), a custom formula, or a
+      // discount. So whenever AA DEVIATES from the rate model we PIN it flat as
+      // the source of truth; a row that still matches AC/60×Z stays on the live
+      // rate (geraeteSatz=Z) so the Stellschrauben can re-price it. Pinning
+      // formula cells is safe now that the time basis is Echte Zeit (AC): a
+      // standard `AA=AC/60×Z` row reproduces formulaGeraete to the cent and does
+      // NOT trip the gate — only genuine overrides (incl. negatives) do.
+      if (typeof rawAA === 'number' && Math.abs(rawAA - formulaGeraete) > 0.01) {
+        geraeteSatzPatch = { geraeteEp: rawAA };
+      } else if (Math.abs(effectiveZ - derivedCalcParams.geraeteStundensatz) > 1e-9) {
+        geraeteSatzPatch = { geraeteSatz: effectiveZ };
+      }
+      // "EP Löhne" (col AB) = Zeit/60 × Verrechnungslohn × W. Capture the per-row
+      // factor W (= AB ÷ the plain Zeit×Verrechnungslohn) as `lohnFaktor` so the
+      // Lohn RE-PRICES when the global Verrechnungslohn (or this row's Zeit)
+      // changes — a hard-coded specialist rate (84,50 €/h) or a Nachlass/discount
+      // folds into W too, so it still scales with VL. Use the SAME rounded time
+      // calc uses, so calc's `(round(Zeit)/60)·VL·W` reproduces AB to the cent
+      // (the base cancels). A plain no-W row gives W≈1 → left unset → re-prices on
+      // the rate. Only a zero-time flat Lohn (no time basis to scale) is pinned
+      // as a fixed lohnEp.
+      const rawAB = ws['AB' + r]?.v;
+      const lohnBaseUnit = (round(adjForGeraete) / 60) * derivedCalcParams.verrechnungslohn;
+      let lohnPatch: { lohnEp?: number; lohnFaktor?: number } = {};
+      if (typeof rawAB === 'number' && Math.abs(rawAB - lohnBaseUnit) > 0.01) {
+        lohnPatch = Math.abs(lohnBaseUnit) > 1e-9
+          ? { lohnFaktor: rawAB / lohnBaseUnit }
+          : { lohnEp: rawAB };
+      }
+      // EP Stoffe VK (col AJ) / EP Nachu. (col AK) overrides — capture a flat
+      // VERKAUF when the calculator hand-typed a value that deviates from the
+      // Material/NU × (1+Zuschlag) default (same pattern as geräteEp/lohnEp).
+      const matBase = (typeof cells.I === 'number' ? cells.I : 0) * (1 + derivedCalcParams.materialZuschlag);
+      const rawAJ = ws['AJ' + r]?.v;
+      const matPatch = typeof rawAJ === 'number' && Math.abs(rawAJ - matBase) > 0.01 ? { materialEp: rawAJ } : {};
+      const nuBase = (typeof cells.M === 'number' ? cells.M : 0) * (1 + derivedCalcParams.nuZuschlag);
+      const rawAK = ws['AK' + r]?.v;
+      const nuPatch = typeof rawAK === 'number' && Math.abs(rawAK - nuBase) > 0.01 ? { nuEp: rawAK } : {};
+      // Bedarfs-/Eventualposition: the Vorlage leaves its GP (col F) blank/0 so
+      // Excel keeps it OUT of the Angebotssumme — even though the row carries
+      // price inputs (a filled EP, a zeroed-out duplicate that still has its raw
+      // Stoffe/Zeit/NU, etc.). Mark it so calc excludes it from the total (still
+      // shown + editable for folding in). Honoring F=0 matches the Excel offer.
+      const gpFilled = typeof cells.F === 'number' && Math.abs(cells.F) > 0.005;
+      const hasPricedInput =
+        (typeof cells.E === 'number' && cells.E > 0) ||
+        (typeof cells.I === 'number' && cells.I > 0) ||
+        timeMinutes > 0 ||
+        (typeof cells.M === 'number' && cells.M > 0);
+      const bedarfsPatch = !gpFilled && hasPricedInput ? { bedarfsposition: true } : {};
+      const newPos: Position = {
         ...base,
         oz,
         shortText: String(cells.B ?? '').trim(),
         quantity: typeof cells.C === 'number' ? cells.C : parseDeNumber(cells.C),
         unit: String(cells.D ?? '').trim(),
         materialCost: typeof cells.I === 'number' ? cells.I : 0,
-        timeMinutes: typeof cells.J === 'number' ? cells.J : 0,
+        timeMinutes,
         nuCost: typeof cells.M === 'number' ? cells.M : 0,
+        ...geraeteSatzPatch,
+        ...lohnPatch,
+        ...matPatch,
+        ...nuPatch,
+        ...bedarfsPatch,
         // Heuristic: rows that originally had an EP value get visibleToCustomer=true.
         // Internal-only rows the user adds later default to true (mirroring v1).
         visibleToCustomer: true,
         sectionPath: key.split('.').slice(0, -1).join('.'),
-      });
+      };
+      // Trust the Vorlage's cached GESAMTPREIS (col F — the authoritative offer
+      // price) when our component rebuild deviates a LOT from it: a hand-typed EP
+      // markup, a %-Zuschlag row where F≠Menge×EP, or a stale EP. Pin GP=F
+      // ("insert the number"). We key on col F, NOT col E: on some files col E is
+      // stale/garbage while col F is correct, so trusting E mis-priced them. The
+      // 5%+€1 gate leaves normal rows (incl. sub-% rounding) on the live model,
+      // and Bedarfspositionen (F blank) are already excluded.
+      if (!newPos.bedarfsposition && typeof cells.F === 'number' && Math.abs(cells.F) > 0.01) {
+        const modelGp = calculatePosition(newPos, derivedCalcParams).gp;
+        const dev = Math.abs(modelGp - cells.F);
+        const hi = Math.max(Math.abs(cells.F), Math.abs(modelGp));
+        const lo = Math.max(Math.min(Math.abs(cells.F), Math.abs(modelGp)), 0.01);
+        // Pin only on a real but MODERATE deviation (>5% and >1 €). The hi≤lo×10
+        // ratio gate refuses to trust an implausibly far col F — a corrupt source
+        // (e.g. the C²-bug where F = Menge²×…, ratio ≈ Menge) would otherwise make
+        // us import junk; instead our sane model value stays and the file-level
+        // sanity guard warns.
+        if (dev > 1 && dev > Math.abs(cells.F) * 0.05 && hi <= lo * 10) {
+          newPos.gpOverride = cells.F;
+        }
+      }
+      positions.push(newPos);
     }
   }
 
@@ -480,6 +641,35 @@ export async function parseKalkulationWorkbook(
     faktoren,
   };
 
+  // Sanity guard: if the imported Angebotssumme is wildly larger than the
+  // Excel's own col-F (GP) total, the column layout almost certainly doesn't
+  // match this Vorlage (e.g. a variant where GP lives in another column) — one
+  // such file imported as 1,19 Mrd € instead of 4.584 €. Warn loudly rather
+  // than silently surfacing absurd numbers. (Excludes Bedarfspositionen, which
+  // are already kept out of both sides.)
+  if (Math.abs(offerSumF) > 1) {
+    const ourNetto = calcTotals(positions, derivedCalcParams).totalNetto;
+    if (Math.abs(ourNetto) > Math.abs(offerSumF) * 5) {
+      issues.push({
+        severity: 'warning',
+        location: `${sheetName}!F`,
+        code: 'total_sanity',
+        message: `Importierte Angebotssumme (${ourNetto.toFixed(2)} €) weicht extrem von der Excel-GP-Summe (Spalte F: ${offerSumF.toFixed(2)} €) ab — die Spaltenzuordnung passt vermutlich nicht zu dieser Vorlage. Bitte vor Verwendung prüfen.`,
+      });
+    } else if (Math.abs(offerSumF) > Math.abs(ourNetto) * 5) {
+      // Inverse: the Excel's GP total dwarfs ours — the source file likely has
+      // broken formulas (e.g. Menge folded into the EP, then ×Menge again, so
+      // GP = Menge²×… as on one real RV file). Flag the FILE as suspect rather
+      // than letting it look like the import silently lost money.
+      issues.push({
+        severity: 'warning',
+        location: `${sheetName}!F`,
+        code: 'total_sanity',
+        message: `Excel-GP-Summe (Spalte F: ${offerSumF.toFixed(2)} €) ist um ein Vielfaches größer als die importierte Summe (${ourNetto.toFixed(2)} €) — die Datei enthält vermutlich fehlerhafte Formeln (z.B. Menge doppelt im EP). Bitte die Quelldatei prüfen.`,
+      });
+    }
+  }
+
   const ok = !issues.some((i) => i.severity === 'error');
   return { project, issues, ok, faktorenLookup, faktoren, derivedCalcParams, zuschlagMatrix, headerExtras, meta };
 }
@@ -514,6 +704,26 @@ function parseDeNumber(raw: unknown): number {
   const s = String(raw).replace(/\./g, '').replace(',', '.').trim();
   const n = parseFloat(s);
   return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Per-unit minutes for calc, given the Vorlage's "Echte Zeit" (col AC, `rawAC`),
+ * the raw "Zeit in min" (col Y, `yTime`), and the Zeitwert percent.
+ *
+ * Equipment + labor prices are built from AC (AA = AC/60·Z, AB = AC/60·VL).
+ * Normally AC = Y·(1+Zeitwert/100), so returning Y lets calc re-apply the
+ * Zeitwert back to exactly AC. But when the Vorlage is filled in TARGET-PRICE
+ * mode, AC is back-solved from the target EP and no longer equals Y·(1+Zeitwert)
+ * — Y is then stale. So when AC materially diverges from the Y-derived time we
+ * recover the raw minutes from AC (raw = AC/(1+Zeitwert)); calc then re-derives
+ * exactly AC. A no-op on normal files (AC ≈ Y·(1+Zeitwert) → returns Y).
+ */
+export function echteZeitToRawMinutes(rawAC: unknown, yTime: number, zeitabzugPct: number): number {
+  const zf = 1 + (zeitabzugPct ?? 0) / 100;
+  if (typeof rawAC === 'number' && zf > 0 && Math.abs(rawAC - yTime * zf) > 0.01) {
+    return rawAC / zf;
+  }
+  return yTime;
 }
 
 function emptyResult(issues: ImportIssue[]): ParseResult {

@@ -19,11 +19,17 @@ import {
   X,
   Building2,
   Library,
+  MapPin,
+  TrendingUp,
+  ExternalLink,
+  Users,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/lib/auth';
 import { api, ApiError } from '@/lib/api';
+import { hasPanelPermission, isPanelAdmin } from '@/lib/panelPermissions';
+import type { PanelPermissionKey } from '@/features/kalkulation/types';
 import { usePanelTheme, StatusBadge, Kbd } from './ui';
 import CommandPalette from './CommandPalette';
 import PanelErrorBoundary from '@/components/panel/PanelErrorBoundary';
@@ -34,17 +40,50 @@ type NavItem = {
   icon: typeof Calculator;
   end?: boolean;
   comingSoon?: boolean;
+  /** Opens in a new tab via <a> instead of an in-app <NavLink> route. */
+  external?: boolean;
+  /** When set, the item is hidden unless the user has this feature
+   *  permission (admins implicitly pass). Unset = always visible. */
+  permission?: PanelPermissionKey;
+  /** When true, only role==='admin' sees the item. */
+  adminOnly?: boolean;
 };
 
 const NAV: NavItem[] = [
   { to: '/panel', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/panel/firmen', label: 'Firmen', icon: Building2 },
-  { to: '/panel/kalkulation', label: 'Kalkulation', icon: Calculator },
-  { to: '/panel/vorlagen', label: 'Vorlagen', icon: Library },
-  { to: '/panel/feedback', label: 'Kunden-Feedback', icon: Inbox },
+  { to: '/panel/firmen', label: 'Firmen', icon: Building2, permission: 'firmen' },
+  {
+    // Routed through the panel SSO handoff so a logged-in user lands in
+    // preisanfrage already authenticated (falls back to manual login).
+    to: '/api/panel/sso/preisanfrage?next=/submissionskarte',
+    label: 'Submissionskarte',
+    icon: MapPin,
+    external: true,
+    permission: 'submissionskarte',
+  },
+  {
+    to: '/api/panel/sso/preisanfrage?next=/statistik',
+    label: 'Statistik',
+    icon: TrendingUp,
+    external: true,
+    permission: 'statistik',
+  },
+  { to: '/panel/kalkulation', label: 'Kalkulation', icon: Calculator, permission: 'kalkulation' },
+  { to: '/panel/vorlagen', label: 'Vorlagen', icon: Library, permission: 'vorlagen' },
+  { to: '/panel/feedback', label: 'Kunden-Feedback', icon: Inbox, permission: 'feedback' },
   { to: '/panel/archiv', label: 'Archiv', icon: FolderClosed, comingSoon: true },
+  { to: '/panel/benutzer', label: 'Benutzer', icon: Users, adminOnly: true },
   { to: '/panel/einstellungen', label: 'Einstellungen', icon: Settings },
 ];
+
+/** Filter the static NAV down to what `user` may see. */
+function visibleNav(user: ReturnType<typeof useAuth>['user']): NavItem[] {
+  return NAV.filter((item) => {
+    if (item.adminOnly) return isPanelAdmin(user);
+    if (item.permission) return hasPanelPermission(user, item.permission);
+    return true;
+  });
+}
 
 const SIDEBAR_KEY = 'kalku.panel.sidebarCollapsed';
 
@@ -52,6 +91,10 @@ export default function PanelLayout() {
   const { user, logout, setUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  // The Kalkulations-Detailseite has a very wide table (18 Spalten) and its own
+  // top PriceBar — let it use the FULL window width; every other panel page keeps
+  // the readable 1600px cap.
+  const isWidePage = /^\/panel\/kalkulation\/[^/]+$/.test(location.pathname);
   const { theme, toggle: toggleTheme } = usePanelTheme();
   const [unreadFeedback, setUnreadFeedback] = useState<number>(0);
   const [collapsed, setCollapsed] = useState<boolean>(() => {
@@ -273,7 +316,9 @@ export default function PanelLayout() {
         <main
           id="main-content"
           tabIndex={-1}
-          className="flex-1 px-4 sm:px-6 py-6 max-w-[1600px] w-full mx-auto focus:outline-none"
+          className={`flex-1 px-4 sm:px-6 py-6 w-full mx-auto focus:outline-none ${
+            isWidePage ? 'max-w-none' : 'max-w-[1600px]'
+          }`}
         >
           <PanelErrorBoundary>
             <Outlet />
@@ -350,40 +395,68 @@ function Sidebar({
 
       {/* Nav */}
       <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
-        {NAV.map(({ to, label, icon: Icon, end, comingSoon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={end}
-            className={({ isActive }) =>
-              clsx(
-                'group relative flex items-center gap-3 rounded-lg text-sm font-medium transition-colors',
-                collapsed ? 'justify-center h-10' : 'px-3 h-10',
-                isActive
-                  ? 'bg-primary-50 text-primary-700 dark:bg-primary-500/15 dark:text-primary-200'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100',
-              )
-            }
-            title={collapsed ? label : undefined}
-          >
-            <Icon className="w-4 h-4 flex-shrink-0" />
-            {!collapsed && (
-              <>
-                <span className="flex-1 truncate">{label}</span>
-                {to === '/panel/feedback' && unreadFeedback > 0 && (
-                  <span className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-amber-500 text-white text-[11px] font-bold tabular-nums">
-                    {unreadFeedback > 99 ? '99+' : unreadFeedback}
-                  </span>
-                )}
-                {comingSoon && <StatusBadge kind="soon" size="xs" />}
-              </>
-            )}
-            {/* Collapsed: tiny dot indicator for unread */}
-            {collapsed && to === '/panel/feedback' && unreadFeedback > 0 && (
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-amber-500" />
-            )}
-          </NavLink>
-        ))}
+        {visibleNav(user).map((item) => {
+          const { to, label, icon: Icon, end, comingSoon, external } = item;
+          const cls = (isActive: boolean) =>
+            clsx(
+              'group relative flex items-center gap-3 rounded-lg text-sm font-medium transition-colors',
+              collapsed ? 'justify-center h-10' : 'px-3 h-10',
+              isActive
+                ? 'bg-primary-50 text-primary-700 dark:bg-primary-500/15 dark:text-primary-200'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100',
+            );
+          const body = (
+            <>
+              <Icon className="w-4 h-4 flex-shrink-0" />
+              {!collapsed && (
+                <>
+                  <span className="flex-1 truncate">{label}</span>
+                  {external && (
+                    <ExternalLink
+                      className="w-3.5 h-3.5 flex-shrink-0 text-slate-400 dark:text-slate-500"
+                      aria-hidden
+                    />
+                  )}
+                  {to === '/panel/feedback' && unreadFeedback > 0 && (
+                    <span className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-amber-500 text-white text-[11px] font-bold tabular-nums">
+                      {unreadFeedback > 99 ? '99+' : unreadFeedback}
+                    </span>
+                  )}
+                  {comingSoon && <StatusBadge kind="soon" size="xs" />}
+                </>
+              )}
+              {/* Collapsed: tiny dot indicator for unread */}
+              {collapsed && to === '/panel/feedback' && unreadFeedback > 0 && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-amber-500" />
+              )}
+            </>
+          );
+          if (external) {
+            return (
+              <a
+                key={to}
+                href={to}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cls(false)}
+                title={collapsed ? label : undefined}
+              >
+                {body}
+              </a>
+            );
+          }
+          return (
+            <NavLink
+              key={to}
+              to={to}
+              end={end}
+              className={({ isActive }) => cls(isActive)}
+              title={collapsed ? label : undefined}
+            >
+              {body}
+            </NavLink>
+          );
+        })}
       </nav>
 
       {/* Footer */}

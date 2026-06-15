@@ -346,18 +346,21 @@ function projectFromParse(parsed: ParseResult): ProjectData {
             view="intern"
           />,
         );
-        const fullText = container.innerHTML.includes(escapeHtml(longest.text));
-        if (!fullText) {
-          // Try without HTML escaping (the text may not contain ampersands)
-          const plain = container.innerHTML.includes(longest.text);
-          if (!plain) {
-            row.features.f4 = { status: 'fail', note: `longest text (${longest.len} chars, OZ "${longest.oz.trim()}") not found verbatim in INTERN DOM` };
-            unmount();
-            return;
-          }
+        // Search only the Bezeichnung cells' text. Serializing the whole
+        // container via innerHTML OOMs happy-dom on large LVs (e.g. ex8),
+        // so we scope the search to the cells that actually hold the text.
+        // textContent is unescaped — compare against the raw source string.
+        const bezNodes = container.querySelectorAll('[data-readonly="bezeichnung"]');
+        let foundFull = false;
+        for (const n of Array.from(bezNodes)) {
+          if ((n.textContent ?? '').includes(longest.text)) { foundFull = true; break; }
+        }
+        if (!foundFull) {
+          row.features.f4 = { status: 'fail', note: `longest text (${longest.len} chars, OZ "${longest.oz.trim()}") not found verbatim in any Bezeichnung cell` };
+          unmount();
+          return;
         }
         // Confirm the data-readonly="bezeichnung" elements use whitespace-pre-wrap + break-words
-        const bezNodes = container.querySelectorAll('[data-readonly="bezeichnung"]');
         let allWrap = true;
         for (const n of Array.from(bezNodes)) {
           const cls = (n as HTMLElement).className;
@@ -612,12 +615,3 @@ function projectFromParse(parsed: ParseResult): ProjectData {
     expect(rows.length).toBe(EXAMPLES.length);
   });
 });
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}

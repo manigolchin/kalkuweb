@@ -38,6 +38,7 @@ import {
 } from './types';
 import FormulaCell from './FormulaCell';
 import PreCalcStrip from './PreCalcStrip';
+import { KalkGridProvider, type RowDescriptor } from './kalkGridContext';
 import {
   calculatePosition,
   calcTotals,
@@ -659,6 +660,24 @@ export default function PositionTableV2({
   );
   const expandAll = useCallback(() => setCollapsed(new Set()), []);
 
+  // Excel-style keyboard navigation + F-cell point mode: the flat, *visible*
+  // order of navigable position rows (collapsed groups + header rows excluded).
+  // Mirrors exactly what GroupRows/PositionRow mount, so neighbour math in
+  // KalkGridProvider stays in sync with the DOM. `hasPreCalc` = the row's
+  // F1..F7 strip is open (its F-columns are mounted + navigable).
+  const orderedRows = useMemo<RowDescriptor[]>(() => {
+    const out: RowDescriptor[] = [];
+    for (const g of groups) {
+      if (g.kind === 'group') {
+        if (collapsed.has(g.id)) continue;
+        for (const r of g.rows) out.push({ rowId: r.id, hasPreCalc: expandedPreCalc.has(r.id) });
+      } else {
+        out.push({ rowId: g.row.id, hasPreCalc: expandedPreCalc.has(g.row.id) });
+      }
+    }
+    return out;
+  }, [groups, collapsed, expandedPreCalc]);
+
   if (view === 'kunden') {
     return (
       <KundenPreview
@@ -673,6 +692,7 @@ export default function PositionTableV2({
   }
 
   return (
+    <KalkGridProvider orderedRows={orderedRows}>
     <div className="space-y-3">
       {/* PART Q: sticky Zuschlag matrix at the top of INTERN view. Renders
           only when the imported project carries the captured matrix (i.e.
@@ -755,9 +775,18 @@ export default function PositionTableV2({
               <th className="bg-white p-0 w-0">
                 <div className="h-9 w-px bg-slate-300 mx-auto" aria-hidden />
               </th>
-              <ColHead className="w-[80px] bg-slate-100/70" align="right" intern>Material</ColHead>
-              <ColHead className="w-[80px] bg-slate-100/70" align="right" intern>Zeit min</ColHead>
-              <ColHead className="w-[80px] bg-slate-100/70" align="right" intern>NU €</ColHead>
+              <ColHead className="w-[108px] bg-slate-100/70" align="right" intern>Material</ColHead>
+              <ColHead className="w-[108px] bg-slate-100/70" align="right" intern>Zeit min</ColHead>
+              <ColHead className="w-[108px] bg-slate-100/70" align="right" intern>NU €</ColHead>
+              <ColHead className="w-[108px] bg-slate-100/70" align="right" intern>
+                <span title="Zulage Geräte (€/h) je Position — Standard: projektweiter Geräte-Stundensatz. Zahl überschreibt diese Zeile, leeren = zurück zum Projektsatz.">Zulage Ger.</span>
+              </ColHead>
+              <ColHead className="w-[116px] bg-slate-100/70" align="right" intern>
+                <span title="EP Geräte je Einheit — Standard: Zeit/60 × Zulage Geräte. Zahl oder =Formel überschreibt diese Zeile.">EP Geräte</span>
+              </ColHead>
+              <ColHead className="w-[116px] bg-slate-100/70" align="right" intern>
+                <span title="EP Löhne je Einheit — Standard: Zeit/60 × Verrechnungslohn. Zahl oder =Formel überschreibt diese Zeile.">EP Löhne</span>
+              </ColHead>
               <ColHead className="w-[110px] bg-slate-100/70" intern>Typ</ColHead>
               {/* Header for the Vorrechnung toggle column. Was empty in
                   prior versions — labeling it helps users discover the
@@ -773,7 +802,7 @@ export default function PositionTableV2({
           <tbody>
             {groups.length === 0 && (
               <tr>
-                <td colSpan={15} className="px-6 py-16 text-center text-slate-400 border-t border-slate-100">
+                <td colSpan={18} className="px-6 py-16 text-center text-slate-400 border-t border-slate-100">
                   Noch keine Positionen. Mit <strong>+ Position</strong> oder <strong>+ Titel</strong> beginnen.
                 </td>
               </tr>
@@ -849,6 +878,7 @@ export default function PositionTableV2({
       />
     )}
     </div>
+    </KalkGridProvider>
   );
 }
 
@@ -1017,7 +1047,7 @@ function GroupRows({
         <td className="bg-primary-50/60 border-t border-slate-200 p-0">
           <div className="h-full w-px bg-slate-300 mx-auto" aria-hidden />
         </td>
-        <td colSpan={6} className="bg-primary-100/40 border-t border-slate-200 px-2 py-1.5">
+        <td colSpan={9} className="bg-primary-100/40 border-t border-slate-200 px-2 py-1.5">
           {group.visibleSubtotal !== group.subtotal && (
             <div className="text-[10px] uppercase tracking-wider text-primary-800/80 text-right tabular-nums">
               ∑ Kunde: {formatEUR(group.visibleSubtotal)}
@@ -1110,6 +1140,28 @@ function PositionRow({
   chip,
 }: PositionRowProps) {
   const calc = useMemo(() => calculatePosition(p, params), [p, params]);
+  // Effective per-unit EP Geräte / EP Löhne for the editable cells. Default =
+  // the Vorlage formula (Echte-Zeit/60 × Zulage-Geräte resp. × Verrechnungslohn,
+  // pre-Ziel-Aufschlag, matching the stored override basis); a per-row override
+  // (geraeteEp / lohnEp) wins. Type a number/=formula to override, clear to revert.
+  const adjMin = p.timeMinutes + (p.timeMinutes / 100) * params.zeitabzug;
+  const epGeraeteCell = p.geraeteEp ?? (adjMin / 60) * (p.geraeteSatz ?? params.geraeteStundensatz);
+  // Include the per-row Lohn-Faktor W (Vorlage AB = Zeit/60 × Verrechnungslohn × W)
+  // so a Stundenlohn row shows its real EP Löhne (e.g. 64,90 × 1,35 = 87,62), not
+  // the bare Verrechnungslohn. Default 1; a flat lohnEp override still wins.
+  const epLohnCell = p.lohnEp ?? (adjMin / 60) * params.verrechnungslohn * (p.lohnFaktor ?? 1);
+  // Named tokens a custom EP-Geräte / EP-Löhne formula can reference, so the
+  // calculator can rebuild the Vorlage's own formula (e.g. `=Zeit/60*verrechnungslohn*1.41`).
+  const formulaTokens = useMemo(
+    () => ({
+      Zeit: p.timeMinutes,
+      EchteZeit: adjMin,
+      verrechnungslohn: params.verrechnungslohn,
+      mittellohn: params.mittellohn,
+      geraetesatz: p.geraeteSatz ?? params.geraeteStundensatz,
+    }),
+    [p.timeMinutes, adjMin, params.verrechnungslohn, params.mittellohn, p.geraeteSatz, params.geraeteStundensatz],
+  );
   const pt = (p.positionType ?? 'standard') as PositionType;
   const internal = INTERNAL_POSITION_TYPES.has(pt);
   const hasLong = (p.longText ?? '').trim().length > 0;
@@ -1323,6 +1375,8 @@ function PositionRow({
           contextMenge={p.quantity}
           preCalcs={p.preCalcs}
           label="Material EK"
+          rowId={p.id}
+          col="material"
         />
         <FormulaCell
           value={p.timeMinutes}
@@ -1332,6 +1386,8 @@ function PositionRow({
           contextMenge={p.quantity}
           preCalcs={p.preCalcs}
           label="Min/Einheit"
+          rowId={p.id}
+          col="time"
         />
         <FormulaCell
           value={p.nuCost}
@@ -1341,6 +1397,70 @@ function PositionRow({
           contextMenge={p.quantity}
           preCalcs={p.preCalcs}
           label="NU EK"
+          rowId={p.id}
+          col="nu"
+        />
+        {/* Zulage Geräte (col Z) — the per-position Geräte-Stundensatz that
+            drives the EP-Geräte default formula. Defaults to the project rate
+            (calcParams.geraeteStundensatz); a number here pins a per-row rate
+            (crane/lift), clearing (0) reverts to the project rate. */}
+        <FormulaCell
+          value={p.geraeteSatz ?? params.geraeteStundensatz}
+          onCommit={(v) =>
+            updateRow(p.id, { geraeteSatz: v === 0 ? undefined : v })
+          }
+          faktoren={faktoren}
+          contextMenge={p.quantity}
+          preCalcs={p.preCalcs}
+          label="Zulage Geräte (€/h)"
+          rowId={p.id}
+          col="geraeteSatz"
+        />
+        {/* EP Geräte (col AA) + EP Löhne (col AB) — per-position outputs that
+            default to the Vorlage formula but can be overridden per row with a
+            fixed number or a custom formula (like Excel). Clearing the cell
+            (empty / 0) reverts to the formula. v === 0 ⇒ drop the override. */}
+        <FormulaCell
+          value={epGeraeteCell}
+          formula={p.geraeteEpFormula}
+          onCommit={(v, f) =>
+            updateRow(
+              p.id,
+              f
+                ? { geraeteEp: v, geraeteEpFormula: f }
+                : v === 0
+                  ? { geraeteEp: undefined, geraeteEpFormula: undefined }
+                  : { geraeteEp: v, geraeteEpFormula: undefined },
+            )
+          }
+          faktoren={faktoren}
+          contextMenge={p.quantity}
+          preCalcs={p.preCalcs}
+          extraTokens={formulaTokens}
+          label="EP Geräte"
+          rowId={p.id}
+          col="epGeraete"
+        />
+        <FormulaCell
+          value={epLohnCell}
+          formula={p.lohnEpFormula}
+          onCommit={(v, f) =>
+            updateRow(
+              p.id,
+              f
+                ? { lohnEp: v, lohnEpFormula: f }
+                : v === 0
+                  ? { lohnEp: undefined, lohnEpFormula: undefined }
+                  : { lohnEp: v, lohnEpFormula: undefined },
+            )
+          }
+          faktoren={faktoren}
+          contextMenge={p.quantity}
+          preCalcs={p.preCalcs}
+          extraTokens={formulaTokens}
+          label="EP Löhne"
+          rowId={p.id}
+          col="epLohn"
         />
 
         <td className="bg-slate-50/70 border-t border-slate-100 px-1 py-[10px] align-top">
@@ -1434,12 +1554,14 @@ function PositionRow({
       {/* Per-row F1..F7 Vorrechnung sub-row — only renders when the
           calculator has expanded it via the F₁₇ toggle button. Spans the
           full table width. Commits each slot individually through
-          updateRow so unmodified slots stay untouched. Round 12: colSpan
-          bumped from 14 → 15 to account for the new leading checkbox col. */}
+          updateRow so unmodified slots stay untouched. colSpan tracks the
+          full intern width: leading checkbox col + the EP-Geräte/EP-Löhne
+          columns bring it to 17. */}
       {isPreCalcExpanded && (
         <PreCalcStrip
+          rowId={p.id}
           preCalcs={p.preCalcs}
-          colSpan={15}
+          colSpan={18}
           faktoren={faktoren}
           contextMenge={p.quantity}
           positionLabel={`${(p.oz || '—').trim()} · ${p.shortText || ''}`.slice(0, 80)}
@@ -1479,7 +1601,7 @@ function PositionRow({
             </div>
           </td>
           <td className="bg-slate-50/40 border-t border-slate-100" />
-          <td colSpan={6} className="bg-slate-50/40 border-t border-slate-100" />
+          <td colSpan={9} className="bg-slate-50/40 border-t border-slate-100" />
         </tr>
       )}
     </>

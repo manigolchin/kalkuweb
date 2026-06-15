@@ -89,6 +89,7 @@ function buildInbox(over: Partial<InboxEntry> = {}): InboxEntry {
       id: 'p1',
       name: 'Sanierung Marktplatz',
       client: 'Stadt SB',
+      bidder: 'Gesellchen GmbH',
       service: 'galabau',
       versionNumber: 1,
       updatedAt: '2026-05-20T00:00:00Z',
@@ -110,6 +111,7 @@ function buildInbox(over: Partial<InboxEntry> = {}): InboxEntry {
       snapshotHash: 'h',
     },
     responses: [],
+    comments: [],
     ...over,
   };
 }

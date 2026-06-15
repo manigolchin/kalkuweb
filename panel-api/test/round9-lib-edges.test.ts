@@ -44,7 +44,7 @@ before(() => {
 const DEFAULT_PARAMS: CalcParams = {
   mittellohn: 30, verrechnungslohn: 49.9, materialZuschlag: 0.12, nuZuschlag: 0.12,
   geraeteZuschlagPct: 0.1, geraeteStundensatz: 0.5, zeitabzug: 0,
-  tagesstunden: 8, personaleinsatz: 3, mwst: 0.19,
+  tagesstunden: 8, personaleinsatz: 3, mwst: 0.19, zielAufschlag: 0,
 };
 
 function pos(o: Partial<Position> & Pick<Position, 'id'>): Position {
@@ -318,16 +318,25 @@ describe('lib/snapshot.ts edges', () => {
 
   test('SENTINEL: snapshot positions expose ONLY whitelisted fields — never internals', () => {
     // The mapper in buildShareSnapshot picks exactly:
-    //   id, oz, shortText, longText, quantity, unit, isHeader, sortOrder, ep, gp
+    //   id, oz, shortText, longText, quantity, unit, isHeader, sortOrder, ep, gp,
+    //   gpLohn, gpMaterial, gpGeraet, gpNu  ← intentional customer cost breakdown
+    //                                          (GP split, gated by showCostBreakdown)
     // Anything else (materialCost, timeMinutes, nuCost, materialFormula,
-    // internalNote, preCalcs, positionType, classification, hinweisText) is a leak.
+    // internalNote, preCalcs, positionType, classification, hinweisText, and the
+    // PER-UNIT epLohn/epMaterial/epGeraet/epNu) is a leak.
     const internalLeakFields = new Set([
-      'materialCost', 'timeMinutes', 'nuCost', 'materialFormula',
+      'materialCost', 'timeMinutes', 'nuCost', 'materialFormula', 'geraeteSatz', 'geraeteEp',
+      'geraeteEpFormula', 'lohnEp', 'lohnEpFormula',
       'internalNote', 'preCalcs', 'positionType', 'classification',
       'hinweisText', 'epLohn', 'epMaterial', 'epGeraet', 'epNu',
       'visibleToCustomer', 'aufmassFormula', 'sectionPath',
     ]);
-    const allowed = new Set(['id', 'oz', 'shortText', 'longText', 'quantity', 'unit', 'isHeader', 'sortOrder', 'ep', 'gp']);
+    const allowed = new Set([
+      'id', 'oz', 'shortText', 'longText', 'quantity', 'unit', 'isHeader', 'sortOrder', 'ep', 'gp',
+      // GESAMTPREIS split — sell-side, shown to the customer as the cost
+      // breakdown. NOT the raw cost inputs (those stay in internalLeakFields).
+      'gpLohn', 'gpMaterial', 'gpGeraet', 'gpNu',
+    ]);
 
     const leaky = pos({
       id: 'leak',
@@ -342,7 +351,10 @@ describe('lib/snapshot.ts edges', () => {
       nuCost: 12.34,        // internal
       classification: 'wagnis', // internal
       internalNote: 'Marge 30%, vorsichtig kalkulieren', // internal
-      positionType: 'wagnis', // internal
+      // This test verifies internal FIELDS never leak; it uses a 'standard' type
+      // so the row is included. Internal position TYPES (wagnis/reserve/…) are
+      // now excluded from the snapshot entirely — see leak-gate-hardening.test.ts.
+      positionType: 'standard',
       visibleToCustomer: true,
       sectionPath: 'a/b/c', // internal
     });

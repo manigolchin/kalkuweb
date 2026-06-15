@@ -1,10 +1,61 @@
-import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core';
+
+/**
+ * Panel feature-permission keys. Each maps to a gateable area of the panel
+ * sidebar. An `admin` implicitly has every key; a `user` sees an area only
+ * when its key is `true` in their `permissions` map. Dashboard + Einstellungen
+ * are always available to any active user and are deliberately NOT listed
+ * here. Mirrored verbatim on the frontend in src/lib/panelPermissions.ts.
+ */
+export const PANEL_PERMISSION_KEYS = [
+  'kalkulation',
+  'firmen',
+  'vorlagen',
+  'feedback',
+  'submissionskarte',
+  'statistik',
+] as const;
+
+export type PanelPermissionKey = (typeof PANEL_PERMISSION_KEYS)[number];
+export type PanelPermissions = Partial<Record<PanelPermissionKey, boolean>>;
+export type UserRole = 'admin' | 'user';
+
+/**
+ * Resolve a user's effective permission map. Admins are granted every key
+ * regardless of their stored `permissions`; non-admins get exactly what was
+ * assigned (missing/false → no access). Single source of truth the auth
+ * routes serialize to the client and the admin routes read.
+ */
+export function effectivePermissions(user: {
+  role: string;
+  permissions: PanelPermissions | null;
+}): Record<PanelPermissionKey, boolean> {
+  const isAdmin = user.role === 'admin';
+  const out = {} as Record<PanelPermissionKey, boolean>;
+  for (const key of PANEL_PERMISSION_KEYS) {
+    out[key] = isAdmin ? true : user.permissions?.[key] === true;
+  }
+  return out;
+}
 
 export const users = sqliteTable('users', {
   id: text('id').primaryKey(),
   email: text('email').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
   name: text('name').notNull(),
+  /** 'admin' can manage users + has every feature; 'user' is gated by
+   *  `permissions`. The seed user is an admin (see seed.ts); the migration
+   *  backfills pre-existing rows to 'admin' (they are original owners). */
+  role: text('role', { enum: ['admin', 'user'] }).notNull().default('user'),
+  /** Soft deactivate. Inactive users cannot log in and are rejected by
+   *  requireAuth. We never hard-delete (projects reference ownerId). */
+  isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  /** Per-user feature flags (PanelPermissionKey → boolean). Ignored for
+   *  admins. Stored as JSON; absent keys mean "no access". */
+  permissions: text('permissions', { mode: 'json' })
+    .notNull()
+    .$type<PanelPermissions>()
+    .$defaultFn(() => ({})),
   companyName: text('company_name').notNull().default(''),
   companyLogoUrl: text('company_logo_url').notNull().default(''),
   companyPhone: text('company_phone').notNull().default(''),
@@ -298,6 +349,66 @@ export const positionComments = sqliteTable('position_comments', {
   resolvedAt: integer('resolved_at', { mode: 'timestamp_ms' }),
 });
 
+/**
+ * Round 12 — structured customer change requests ("Änderungswünsche").
+ *
+ * Distinct from `positionComments` (free-text per-position Anmerkungen) and
+ * `shareResponses` (the legal approve/changes/reject envelope). A change
+ * request is a STRUCTURED price/quantity wish the customer expresses on the
+ * share: "Material auf 950 € statt 1.071,54 €", "Endbetrag 5 % günstiger",
+ * "Menge 8 statt 10". It carries the field, the value the customer saw
+ * (`currentValue`, lifted from the frozen snapshot so it cannot be spoofed),
+ * the value they want (`requestedValue`, optional), a direction, and a note.
+ *
+ * `scope='global'` → the whole offer (Endbetrag / Lohn-Σ / Material-Σ / …),
+ * `positionOz` null. `scope='position'` → one LV position, `positionOz` set
+ * (stable cross-snapshot key, like positionComments). The owner resolves each
+ * via `resolvedAt`, mirroring the comment workflow.
+ */
+export const CHANGE_REQUEST_FIELDS = [
+  'endbetrag',   // global only — the offer net total
+  'gesamtpreis', // position — the line GP
+  'menge',       // position — quantity
+  'material',    // Materialkosten
+  'geraete',     // Geräte / Maschinenkosten
+  'zeit',        // Arbeitszeit
+  'lohn',        // Lohnkosten
+  'sonstiges',   // free-form / catch-all
+] as const;
+export type ChangeRequestField = (typeof CHANGE_REQUEST_FIELDS)[number];
+export type ChangeRequestScope = 'global' | 'position';
+export type ChangeRequestDirection = 'lower' | 'higher' | 'exact' | 'unspecified';
+/** How `currentValue`/`requestedValue` should be formatted by the UI. */
+export type ChangeRequestUnit = 'eur' | 'min' | 'std' | 'qty' | 'pct';
+
+export const changeRequests = sqliteTable('change_requests', {
+  id: text('id').primaryKey(),
+  shareId: text('share_id').notNull().references(() => shares.id, { onDelete: 'cascade' }),
+  scope: text('scope', { enum: ['global', 'position'] }).notNull(),
+  /** Stable cross-snapshot key; null for scope='global'. */
+  positionOz: text('position_oz'),
+  field: text('field', { enum: CHANGE_REQUEST_FIELDS }).notNull(),
+  unit: text('unit', { enum: ['eur', 'min', 'std', 'qty', 'pct'] }).notNull().default('eur'),
+  /** The value the customer was shown (server-lifted from the snapshot). Nullable
+   *  for fields the share didn't display (then only the wish/note is captured). */
+  currentValue: real('current_value'),
+  /** The value the customer wants. Null when they only gave a direction + note. */
+  requestedValue: real('requested_value'),
+  direction: text('direction', {
+    enum: ['lower', 'higher', 'exact', 'unspecified'],
+  }).notNull().default('unspecified'),
+  note: text('note').notNull().default(''),
+  authorName: text('author_name'),
+  authorEmail: text('author_email'),
+  ip: text('ip'),
+  userAgent: text('user_agent'),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  /** Owner-side workflow: marks the wish as addressed so it drops out of the
+   *  unread badge. Null = open. */
+  resolvedAt: integer('resolved_at', { mode: 'timestamp_ms' }),
+});
+export type ChangeRequest = typeof changeRequests.$inferSelect;
+
 export type PositionType = 'standard' | 'wagnis' | 'reserve' | 'nu_marge' | 'lohn_puffer';
 
 export type Position = {
@@ -311,6 +422,35 @@ export type Position = {
   materialCost: number;
   timeMinutes: number;
   nuCost: number;
+  /** Per-position Geräte-Stundensatz (€/h) — Vorlage "Zulage Geräte" (col Z).
+   *  When set, overrides calcParams.geraeteStundensatz for this row. Internal. */
+  geraeteSatz?: number;
+  /** Per-position Geräte lump sum (€/unit) — Vorlage hard-coded "EP Geräte"
+   *  (col AA). When set, used flat (ignores time × rate). Internal. */
+  geraeteEp?: number;
+  /** Custom formula for EP Geräte (col AA) — cached result in geraeteEp. Internal. */
+  geraeteEpFormula?: string;
+  /** Per-position EP Löhne override (€/unit) — Vorlage "EP Löhne" (col AB) when
+   *  not the default time × Verrechnungslohn (specialist rate / custom). Internal. */
+  lohnEp?: number;
+  /** Custom formula for EP Löhne (col AB) — cached result in lohnEp. Internal. */
+  lohnEpFormula?: string;
+  /** Per-position Lohn-Faktor "W" — Vorlage per-row labor multiplier on the
+   *  Verrechnungslohn (col AB = Zeit/60 × Verrechnungslohn × W). When set, Lohn
+   *  re-prices with the global Verrechnungslohn instead of staying flat. Default 1. */
+  lohnFaktor?: number;
+  /** Per-position EP Stoffe VK override (col AJ) — flat Material VERKAUF when it
+   *  deviates from Material × (1+Zuschlag). Internal. */
+  materialEp?: number;
+  /** Per-position EP Nachunternehmer VK override (col AK) — flat NU VERKAUF when
+   *  it deviates from NU × (1+Zuschlag). Internal. */
+  nuEp?: number;
+  /** Per-position GP override (col F, the authoritative GESAMTPREIS) when the
+   *  component rebuild deviates a lot — GP pinned, EP = GP/Menge. Internal. */
+  gpOverride?: number;
+  /** Bedarfs-/Eventualposition — priced but excluded from the Angebotssumme
+   *  (Vorlage leaves col F blank). Excluded from totals, still shown. */
+  bedarfsposition?: boolean;
   isHeader: boolean;
   sortOrder: number;
   sectionPath: string;
@@ -340,6 +480,22 @@ export type CalcParams = {
   tagesstunden: number;
   personaleinsatz: number;
   mwst: number;
+  /** Global Ziel-Aufschlag — effective factor `1 + zielAufschlag` scales
+   *  every position's EP/GP so the bid hits a chosen Angebotssumme. 0 = no-op
+   *  (default for projects predating the field). Mirror of the client type. */
+  zielAufschlag: number;
+};
+
+/** Where a calculation was started from. Set once at "Kalkulation starten"
+ *  (Firma → Ausschreibung) so the panel can re-resolve upstream data later —
+ *  e.g. lazily mint the „04_Angebote" folder share link at share time instead
+ *  of only at project creation. `projectId` is preisanfrage's globally-unique
+ *  Ausschreibung id. */
+export type ProjectSourceRef = {
+  system: 'preisanfrage';
+  kind: 'managed' | 'external' | 'local' | 'directory';
+  firmaId: string | number;
+  projectId: number;
 };
 
 export type ProjectData = {
@@ -354,6 +510,13 @@ export type ProjectData = {
   calcParams: CalcParams;
   positions: Position[];
   notes?: string;
+  /** SharePoint-Link zum „04_Angebote"-Ordner der Ausschreibung. Optional;
+   *  round-trips via the projectData passthrough schema. */
+  angeboteFolderUrl?: string;
+  /** Provenance of the calc — lets the share flow re-resolve the upstream
+   *  Ausschreibung (e.g. to auto-find the Angebote-folder link). Optional;
+   *  round-trips via the projectData passthrough schema. */
+  sourceRef?: ProjectSourceRef;
 };
 
 export type ShareSettings = {
@@ -365,6 +528,23 @@ export type ShareSettings = {
   allowChangeRequests: boolean;
   showTotals: boolean;
   showMwst: boolean;
+  /** Detail level per position. `true`/absent = full Langtext shown to the
+   *  customer ("alle Details"); `false` = short version (Kurztext + Menge/Preis).
+   *  Mirror of the client type. */
+  showLongText?: boolean;
+  /** Show the per-position Material/Gerät/Zeit cost split + the VERKAUF
+   *  composition in the summary. Absent = treated as `true`. */
+  showCostBreakdown?: boolean;
+  /** Show the EINKAUF / Zuschlag / Überschuss calculation detail + project
+   *  KPIs (Mitarbeiter/Stunden/Arbeitstage/Monate) in the summary. Absent =
+   *  treated as `true`. Turn off for a margin-free "Kurzfassung". */
+  showCalculation?: boolean;
+  /** Show a button in the customer view linking to the „04_Angebote" folder.
+   *  Mirror of the client type. The URL below only reaches the customer when
+   *  this is true AND it is an http(s) URL (gated in routes/public.ts). */
+  showAngebote?: boolean;
+  /** Frozen SharePoint link to this Ausschreibung's „04_Angebote" folder. */
+  angeboteFolderUrl?: string;
   /** Bindefrist in Tagen ab Erstellungs-/Snapshot-Zeit. Default 30, per BGB §§ 145 ff. */
   bindefristDays?: number;
 };
@@ -384,6 +564,33 @@ export type ResponsePayload = {
   /** SHA-256 of the share snapshot the customer was responding to. Lets the
    *  owner prove (and the customer verify) which exact pricing was approved. */
   snapshotHash?: string;
+};
+
+/** One cost-type row in the customer-facing Kalkulations-Übersicht: the
+ *  EINKAUF (ek) / Zuschlag (zuschlagPct) / VERKAUF (vk) / DIFFERNZ split,
+ *  mirroring the calculator's internal Zuschlag-Matrix. */
+export type ShareCostType = { ek: number; vk: number; zuschlagPct: number; differnz: number };
+
+/** Aggregate calculation summary over a share's VISIBLE non-header positions.
+ *  Computed at snapshot-build time so the customer view never has to fetch the
+ *  raw cost inputs (which stay server-side). Derived purely from calc.ts math,
+ *  so `costTypes.*.vk` always reconciles with Σ position.gp = netto. */
+export type ShareSnapshotSummary = {
+  netto: number;
+  mwst: number;
+  brutto: number;
+  totalHours: number;
+  ekTotal: number;
+  ueberschuss: number;
+  costTypes: {
+    lohn: ShareCostType;
+    material: ShareCostType;
+    geraete: ShareCostType;
+    nu: ShareCostType;
+  };
+  mitarbeiter: number;
+  arbeitstage: number;
+  monate: number;
 };
 
 export type ShareSnapshot = {
@@ -409,5 +616,13 @@ export type ShareSnapshot = {
     sortOrder: number;
     ep: number;
     gp: number;
+    /** GESAMTPREIS split into Lohn/Material/Gerät/NU (each round(qty × per-unit),
+     *  so they sum to gp). Optional so legacy snapshots degrade gracefully. */
+    gpLohn?: number;
+    gpMaterial?: number;
+    gpGeraet?: number;
+    gpNu?: number;
   }>;
+  /** Aggregate calculation summary. Optional for the same back-compat reason. */
+  summary?: ShareSnapshotSummary;
 };

@@ -47,6 +47,9 @@ export function runMigrations() {
       email TEXT NOT NULL UNIQUE,
       password_hash TEXT NOT NULL,
       name TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'user',
+      is_active INTEGER NOT NULL DEFAULT 1,
+      permissions TEXT NOT NULL DEFAULT '{}',
       company_name TEXT NOT NULL DEFAULT '',
       company_logo_url TEXT NOT NULL DEFAULT '',
       must_change_password INTEGER NOT NULL DEFAULT 0,
@@ -102,6 +105,16 @@ export function runMigrations() {
   if (!usersHas('company_contact_email')) sqlite.exec("ALTER TABLE users ADD COLUMN company_contact_email TEXT NOT NULL DEFAULT ''");
   if (!usersHas('last_feedback_viewed_at')) sqlite.exec('ALTER TABLE users ADD COLUMN last_feedback_viewed_at INTEGER');
   if (!usersHas('last_digest_sent_at')) sqlite.exec('ALTER TABLE users ADD COLUMN last_digest_sent_at INTEGER');
+  // Multi-user admin panel — role / soft-deactivate / per-user feature flags.
+  if (!usersHas('role')) {
+    sqlite.exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'");
+    // One-time backfill: every row that predates the multi-user system is an
+    // original owner → grant admin so their access is unchanged. Runs only on
+    // the migration that first adds the column (guarded by !usersHas).
+    sqlite.exec("UPDATE users SET role = 'admin'");
+  }
+  if (!usersHas('is_active')) sqlite.exec('ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1');
+  if (!usersHas('permissions')) sqlite.exec("ALTER TABLE users ADD COLUMN permissions TEXT NOT NULL DEFAULT '{}'");
 
   sqlite.exec(`
 
@@ -247,5 +260,28 @@ export function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_local_aus_owner ON local_auschreibungen(owner_id);
     CREATE INDEX IF NOT EXISTS idx_local_aus_firma ON local_auschreibungen(firma_kind, firma_id);
     CREATE INDEX IF NOT EXISTS idx_local_aus_archived ON local_auschreibungen(archived_at);
+
+    -- Round 12 — structured customer change requests ("Änderungswünsche").
+    -- Per-position OR global price/quantity wishes with current→requested values.
+    CREATE TABLE IF NOT EXISTS change_requests (
+      id TEXT PRIMARY KEY,
+      share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
+      scope TEXT NOT NULL CHECK (scope IN ('global','position')),
+      position_oz TEXT,
+      field TEXT NOT NULL,
+      unit TEXT NOT NULL DEFAULT 'eur',
+      current_value REAL,
+      requested_value REAL,
+      direction TEXT NOT NULL DEFAULT 'unspecified' CHECK (direction IN ('lower','higher','exact','unspecified')),
+      note TEXT NOT NULL DEFAULT '',
+      author_name TEXT,
+      author_email TEXT,
+      ip TEXT,
+      user_agent TEXT,
+      created_at INTEGER NOT NULL,
+      resolved_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_change_requests_share ON change_requests(share_id);
+    CREATE INDEX IF NOT EXISTS idx_change_requests_share_oz ON change_requests(share_id, position_oz);
   `);
 }

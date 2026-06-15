@@ -1,13 +1,14 @@
 import type { Context, MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { db } from '../db.js';
-import { users } from '../schema.js';
+import { users, type UserRole } from '../schema.js';
 import { eq } from 'drizzle-orm';
 import { COOKIE_NAME, verifyToken } from './auth.js';
 
 export type AuthVariables = {
   userId: string;
   userEmail: string;
+  userRole: UserRole;
 };
 
 export const requireAuth: MiddlewareHandler<{ Variables: AuthVariables }> = async (c, next) => {
@@ -23,8 +24,25 @@ export const requireAuth: MiddlewareHandler<{ Variables: AuthVariables }> = asyn
   if (!user) {
     return c.json({ error: 'unauthorized' }, 401);
   }
+  // Soft-deactivated accounts keep a valid session cookie until it expires —
+  // reject them here so deactivation takes effect immediately on the next call.
+  if (!user.isActive) {
+    return c.json({ error: 'account_disabled' }, 403);
+  }
   c.set('userId', user.id);
   c.set('userEmail', user.email);
+  c.set('userRole', user.role);
+  await next();
+};
+
+/**
+ * Gate for admin-only endpoints. MUST run after requireAuth (it reads the
+ * userRole set there). Returns 403 for non-admins.
+ */
+export const requireAdmin: MiddlewareHandler<{ Variables: AuthVariables }> = async (c, next) => {
+  if (c.get('userRole') !== 'admin') {
+    return c.json({ error: 'forbidden' }, 403);
+  }
   await next();
 };
 

@@ -73,6 +73,8 @@ let mockUser: {
   id: string;
   email: string;
   name: string;
+  role: 'admin' | 'user';
+  permissions: Record<string, boolean>;
   companyName: string;
   companyLogoUrl: string;
   companyPhone: string;
@@ -97,6 +99,8 @@ function buildUser(over: Partial<NonNullable<typeof mockUser>> = {}) {
     id: 'u1',
     email: 'inhaber@firma.de',
     name: 'Max Mustermann',
+    role: 'admin' as const,
+    permissions: {} as Record<string, boolean>,
     companyName: 'Mustermann Bau GmbH',
     companyLogoUrl: '',
     companyPhone: '',

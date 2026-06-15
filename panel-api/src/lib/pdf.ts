@@ -41,6 +41,9 @@ function buildQuoteDocDef(input: {
   const isNachtrag = nachtragNumber > 0;
 
   const visiblePositions = snapshot.positions;
+  // Mirror the web view: when showLongText is false the customer gets the
+  // short version (Kurztext only). Absent flag = full detail (legacy shares).
+  const showLongText = settings.showLongText !== false;
   const netto = visiblePositions.filter((p) => !p.isHeader).reduce((t, p) => t + p.gp, 0);
   const mwstRate = snapshot.project.mwst;
   const mwst = settings.showMwst ? netto * mwstRate : 0;
@@ -73,7 +76,7 @@ function buildQuoteDocDef(input: {
     } else {
       tableBody.push([
         p.oz || '',
-        p.shortText + (p.longText ? '\n' + p.longText : ''),
+        p.shortText + (showLongText && p.longText ? '\n' + p.longText : ''),
         { text: NUM.format(p.quantity), alignment: 'right' },
         p.unit || '',
         { text: NUM.format(p.ep), alignment: 'right' },

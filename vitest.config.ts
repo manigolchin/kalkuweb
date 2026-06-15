@@ -19,6 +19,18 @@ export default defineConfig({
     environment: 'happy-dom',
     globals: true,
     css: false,
+    // The fixture-matrix audit (PositionTableV2.coverage.test.tsx) parses all
+    // 10 example LV workbooks and re-renders large tables dozens of times in a
+    // single worker, which pushes happy-dom past Node's default ~4 GB old-space
+    // ceiling on machines that have the Desktop fixtures (CI skips the matrix).
+    // The heap bump is supplied via NODE_OPTIONS in the npm test script — forks
+    // inherit it through the environment. (poolOptions.forks.execArgv is NOT a
+    // reliable channel here: vitest v4 manages the fork execArgv itself and
+    // drops custom entries, so --max-old-space-size set there is ignored.)
+    pool: 'forks',
+    // A memory-heavy worker can be slow to finalize/exit; give vitest's teardown
+    // longer than the 10 s default so it doesn't kill the worker prematurely.
+    teardownTimeout: 30000,
     include: [
       'src/**/*.test.ts',
       'src/**/*.test.tsx',

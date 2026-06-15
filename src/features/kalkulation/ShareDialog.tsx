@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  X, Eye, EyeOff, Link2, Copy, Check, Loader2, AlertTriangle, RefreshCw, ArrowRight, FilePlus, Bookmark, Save, Trash2,
+  X, Eye, EyeOff, Link2, Copy, Check, Loader2, AlertTriangle, RefreshCw, ArrowRight, FilePlus, Bookmark, Save, Trash2, FolderSearch,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
@@ -16,9 +16,65 @@ import {
 import { calcTotals, calculatePosition, formatEUR } from './calc';
 import { api } from '@/lib/api';
 
+function formatDeadline(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: 'long', year: 'numeric' });
+  } catch {
+    return iso;
+  }
+}
+
+/**
+ * Professional cover note for the calculation, modeled on the calculators'
+ * own WhatsApp/E-Mail style. The calculator inserts it with one click and then
+ * edits as needed (tone, the gelb-markiert position numbers, the Rückmeldung
+ * time). The Angebote-folder link is NOT injected here — it reaches the customer
+ * as a dedicated, toggle-gated button so the „showAngebote" setting stays the
+ * single control point (a raw URL in the free-text message would bypass it).
+ */
+function buildCoverNote(opts: {
+  projectName: string;
+  customerName?: string;
+  mitarbeiter: number;
+  deadline?: string;
+}): string {
+  const greeting = opts.customerName?.trim() ? `Hallo ${opts.customerName.trim()},` : 'Hallo,';
+  const ma = opts.mitarbeiter > 0 ? opts.mitarbeiter : 3;
+  const lines = [
+    greeting,
+    '',
+    `im Folgenden erhältst du die Kalkulation zum Projekt „${opts.projectName || 'Bauleistung'}".`,
+    '',
+    'Bitte prüfe insbesondere die markierten Positionen.',
+    '',
+    'Wir haben dir die Kalkulation mit verschiedenen Stundensätzen sowie unterschiedlichen Zuschlägen erstellt.',
+    '',
+    `Wir sind in allen Versionen von ${ma} Mitarbeitern ausgegangen.`,
+    '',
+    'Eine genaue Ausführungsfrist wurde hier nicht festgelegt.',
+    '',
+    'In der Kostenaufschlüsselung siehst du, mit welchen Materialpreisen wir je Position gerechnet haben.',
+    '',
+    'Wenn dir eine unserer Varianten zusagt, bestätige uns diese bitte als Rückmeldung.',
+    '',
+    'Solltest du einen anderen Stundensatz oder andere Zuschläge wünschen, teile uns dies gerne mit.',
+    '',
+    'Bitte gib uns deine finale Rückmeldung bis spätestens morgen früh, 09:00 Uhr.',
+  ];
+  if (opts.deadline) {
+    const d = formatDeadline(opts.deadline);
+    if (d) lines.push('', `Abgabetermin der Submission: ${d}.`);
+  }
+  return lines.join('\n');
+}
+
 type Props = {
   projectId: string;
   projectName: string;
+  /** Abgabedatum (ISO) — used by the cover-note template. */
+  deadline?: string;
+  /** SharePoint-Link zum „04_Angebote"-Ordner — appended to the template. */
+  angeboteFolderUrl?: string;
   positions: Position[];
   calcParams: import('./types').CalcParams;
   existingShares: ShareSummary[];
@@ -26,11 +82,17 @@ type Props = {
   onClose: () => void;
   onCreated: (share: ShareSummary) => void;
   onRequestNachtrag?: (parentShareId: string) => void;
+  /** Called when the dialog auto-resolves a fresh Angebote-folder link from
+   *  preisanfrage, so the parent can persist it onto the project (Stellschrauben
+   *  field + next share) through the normal save path. */
+  onAngeboteUrlResolved?: (url: string) => void;
 };
 
 export default function ShareDialog({
   projectId,
   projectName,
+  deadline,
+  angeboteFolderUrl,
   positions,
   calcParams,
   existingShares,
@@ -38,6 +100,7 @@ export default function ShareDialog({
   onClose,
   onCreated,
   onRequestNachtrag,
+  onAngeboteUrlResolved,
 }: Props) {
   const parentShare = parentShareId
     ? existingShares.find((s) => s.id === parentShareId)
@@ -80,6 +143,11 @@ export default function ShareDialog({
       allowChangeRequests: true,
       showTotals: true,
       showMwst: true,
+      showLongText: true,
+      // Default on when the project carries an Angebote-folder link (Q3). A
+      // Nachtrag inherits whatever the parent share decided.
+      showAngebote: parentShare?.settings.showAngebote ?? !!angeboteFolderUrl,
+      angeboteFolderUrl: parentShare?.settings.angeboteFolderUrl ?? angeboteFolderUrl ?? '',
     };
     if (parentShare) {
       const created = new Date(parentShare.createdAt).toLocaleDateString('de-DE', {
@@ -98,6 +166,36 @@ export default function ShareDialog({
   const [presets, setPresets] = useState<ViewPreset[]>([]);
   const [savingPreset, setSavingPreset] = useState(false);
   const [presetNameDraft, setPresetNameDraft] = useState('');
+  // Auto-find of the „04_Angebote" folder link (preisanfrage). 'idle' until we
+  // know there's nothing on the project; then loading → found/none/error.
+  const [angeboteLookup, setAngeboteLookup] =
+    useState<'idle' | 'loading' | 'found' | 'none' | 'error'>('idle');
+
+  // Whether the dialog opened with a link already in hand (project field or, for
+  // a Nachtrag, the parent share). When it didn't, we auto-resolve one below.
+  const hasInitialAngeboteUrl = !!(parentShare?.settings.angeboteFolderUrl ?? angeboteFolderUrl);
+
+  async function findAngeboteLink(opts: { refresh?: boolean; silent?: boolean } = {}) {
+    setAngeboteLookup('loading');
+    try {
+      const r = await api.projects.angeboteLink(projectId, { refresh: opts.refresh });
+      if (r.angeboteFolderUrl) {
+        const url = r.angeboteFolderUrl;
+        setSettings((prev) => ({ ...prev, angeboteFolderUrl: url, showAngebote: true }));
+        setAngeboteLookup('found');
+        onAngeboteUrlResolved?.(url);
+        if (!opts.silent) toast.success('Angebote-Ordner-Link automatisch gefunden.');
+      } else {
+        setAngeboteLookup('none');
+        if (!opts.silent) {
+          toast('Kein automatischer Link gefunden — bitte den „Jeder mit Link"-Freigabelink einfügen.');
+        }
+      }
+    } catch {
+      setAngeboteLookup('error');
+      if (!opts.silent) toast.error('Angebote-Link konnte nicht abgerufen werden.');
+    }
+  }
 
   useEffect(() => {
     let alive = true;
@@ -112,6 +210,15 @@ export default function ShareDialog({
     return () => { alive = false; };
   }, [projectId]);
 
+  // Auto-resolve the „04_Angebote" link once on open when the project doesn't
+  // already carry one — so sharing a calc surfaces the eingegangenen Angebote
+  // without the calculator hunting down the SharePoint link. Passive: no toast.
+  useEffect(() => {
+    if (hasInitialAngeboteUrl) return;
+    void findAngeboteLink({ silent: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, hasInitialAngeboteUrl]);
+
   function applyPreset(p: ViewPreset) {
     setSelected(new Set(p.visiblePositionIds.filter((id) => positions.some((pos) => pos.id === id))));
     setSettings((prev) => ({
@@ -121,6 +228,7 @@ export default function ShareDialog({
       ...(p.settings.allowChangeRequests !== undefined ? { allowChangeRequests: p.settings.allowChangeRequests } : {}),
       ...(p.settings.showTotals !== undefined ? { showTotals: p.settings.showTotals } : {}),
       ...(p.settings.showMwst !== undefined ? { showMwst: p.settings.showMwst } : {}),
+      ...(p.settings.showLongText !== undefined ? { showLongText: p.settings.showLongText } : {}),
       ...(p.settings.bindefristDays !== undefined ? { bindefristDays: p.settings.bindefristDays } : {}),
       ...(p.settings.message ? { message: p.settings.message } : {}),
     }));
@@ -143,6 +251,7 @@ export default function ShareDialog({
           allowChangeRequests: settings.allowChangeRequests,
           showTotals: settings.showTotals,
           showMwst: settings.showMwst,
+          showLongText: settings.showLongText,
           bindefristDays: settings.bindefristDays,
           message: settings.message,
         },
@@ -474,17 +583,45 @@ export default function ShareDialog({
                     />
                   </label>
                 </div>
-                <label className="block mt-3">
-                  <span className="text-xs font-medium text-slate-600">
-                    Begrüßung für den Kunden (optional)
-                  </span>
+                <div className="mt-3">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="text-xs font-medium text-slate-600">
+                      Begrüßung für den Kunden (optional)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSettings({
+                          ...settings,
+                          message: buildCoverNote({
+                            projectName,
+                            customerName: settings.customerName,
+                            mitarbeiter: calcParams.personaleinsatz,
+                            deadline,
+                          }),
+                        })
+                      }
+                      className="text-xs font-medium text-primary-600 hover:text-primary-700 inline-flex items-center gap-1"
+                      title="Professionelle Begrüßung einfügen (danach frei bearbeitbar)"
+                    >
+                      <FilePlus className="w-3.5 h-3.5" />
+                      Vorlage einfügen
+                    </button>
+                  </div>
                   <textarea
-                    className="mt-1 input min-h-[60px] resize-y"
+                    className="input min-h-[120px] resize-y"
                     placeholder="Sehr geehrte Familie Schmidt, anbei das Angebot für Ihren Umbau …"
                     value={settings.message || ''}
                     onChange={(e) => setSettings({ ...settings, message: e.target.value })}
                   />
-                </label>
+                  {!settings.angeboteFolderUrl && (
+                    <span className="text-[10px] text-slate-400 mt-1 block">
+                      Tipp: Den „04_Angebote“-Link der Ausschreibung holt sich der „Angebote-Ordner
+                      zeigen“-Schalter weiter unten automatisch aus preisanfrage — du kannst ihn dort
+                      auch manuell einfügen.
+                    </span>
+                  )}
+                </div>
               </section>
 
               <section>
@@ -514,7 +651,81 @@ export default function ShareDialog({
                     checked={settings.showMwst}
                     onChange={(v) => setSettings({ ...settings, showMwst: v })}
                   />
+                  <Toggle
+                    label="Lange Beschreibung zeigen"
+                    description="Aus = Kurzfassung: nur Kurztext, Menge & Preis je Position."
+                    checked={settings.showLongText ?? true}
+                    onChange={(v) => setSettings({ ...settings, showLongText: v })}
+                  />
+                  <Toggle
+                    label="Kostenaufschlüsselung zeigen"
+                    description="Material / Gerät / Zeit je Position + Zusammensetzung der Summe."
+                    checked={settings.showCostBreakdown ?? true}
+                    onChange={(v) => setSettings({ ...settings, showCostBreakdown: v })}
+                  />
+                  <Toggle
+                    label="Kalkulation & Überschuss zeigen"
+                    description="Einkauf, Zuschlag & Überschuss. Aus = ohne Margen-Details."
+                    checked={settings.showCalculation ?? true}
+                    onChange={(v) => setSettings({ ...settings, showCalculation: v })}
+                  />
+                  <Toggle
+                    label="Angebote-Ordner zeigen"
+                    description="Button zum „04_Angebote“-Ordner (eingegangene Lieferanten-Angebote)."
+                    checked={settings.showAngebote ?? false}
+                    onChange={(v) => setSettings({ ...settings, showAngebote: v })}
+                  />
                 </div>
+                {settings.showAngebote && (
+                  <div className="mt-3">
+                    <label className="block">
+                      <span className="text-xs font-medium text-slate-600">
+                        Angebote-Ordner-Link (für den Button)
+                      </span>
+                      <input
+                        type="url"
+                        data-testid="share-angebote-url-input"
+                        className="mt-1 input text-sm font-mono"
+                        placeholder="https://…sharepoint.com/…/04_Angebote"
+                        value={settings.angeboteFolderUrl || ''}
+                        onChange={(e) => setSettings({ ...settings, angeboteFolderUrl: e.target.value })}
+                      />
+                    </label>
+                    <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        data-testid="share-angebote-autofind"
+                        onClick={() => findAngeboteLink({ refresh: true })}
+                        disabled={angeboteLookup === 'loading'}
+                        className="inline-flex items-center gap-1.5 text-xs font-medium text-primary-600 hover:text-primary-700 disabled:opacity-50"
+                        title="Den 04_Angebote-Freigabelink dieser Ausschreibung automatisch aus preisanfrage holen"
+                      >
+                        {angeboteLookup === 'loading' ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <FolderSearch className="w-3.5 h-3.5" />
+                        )}
+                        Automatisch aus preisanfrage suchen
+                      </button>
+                      {angeboteLookup === 'found' && (
+                        <span className="text-xs text-emerald-600 inline-flex items-center gap-1">
+                          <Check className="w-3.5 h-3.5" /> automatisch gefunden
+                        </span>
+                      )}
+                      {angeboteLookup === 'none' && (
+                        <span className="text-xs text-slate-400">kein Link in preisanfrage hinterlegt</span>
+                      )}
+                      {angeboteLookup === 'error' && (
+                        <span className="text-xs text-amber-600">Abruf fehlgeschlagen</span>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-slate-400 mt-1 block">
+                      Der Kunde sieht einen Button „Eingegangene Angebote ansehen“, der diesen Link in
+                      einem neuen Tab öffnet. Es muss ein „Jeder mit dem Link“-Freigabelink sein —
+                      ein interner SharePoint-Pfad zeigt dem Kunden nur eine Anmeldeseite.
+                    </span>
+                  </div>
+                )}
               </section>
 
               {/* PART H — security & expiry */}
@@ -969,7 +1180,8 @@ function CreatedShareView({
       <p className="text-xs text-slate-400 mt-4">
         Sichtbare Positionen: {share.visiblePositionIds.length} ·
         {share.settings.allowApproval ? ' Annahme erlaubt' : ' Annahme aus'} ·
-        {share.settings.allowChangeRequests ? ' Änderungswünsche erlaubt' : ' Änderungswünsche aus'}
+        {share.settings.allowChangeRequests ? ' Änderungswünsche erlaubt' : ' Änderungswünsche aus'} ·
+        {share.settings.showLongText === false ? ' Kurzfassung' : ' alle Details'}
       </p>
 
       <button onClick={onClose} className="btn btn-secondary mt-6">

@@ -151,24 +151,58 @@ function emptyResult() {
 }
 
 async function readFileAsText(file: File): Promise<string> {
-  const utf8 = await readWithEncoding(file, 'utf-8');
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const utf8 = new TextDecoder('utf-8').decode(bytes);
+
   // Mojibake heuristic: ratio-based instead of absolute threshold.
-  // Pure UTF-8 has 0 replacement chars; cp1252 read as UTF-8 produces ~1 per 50–200 bytes.
-  // Threshold: >= 1 replacement per 500 chars (or any presence in very short files).
+  // Pure UTF-8 has 0 replacement chars; a legacy single-byte encoding read as
+  // UTF-8 produces U+FFFD for its high bytes. Threshold: >= 1 replacement per
+  // 500 chars (or any presence in very short files).
   const replacements = (utf8.match(/�/g) || []).length;
   const triggersFallback = utf8.length < 200 ? replacements >= 1 : replacements / utf8.length >= 1 / 500;
-  if (triggersFallback) {
-    return readWithEncoding(file, 'windows-1252');
-  }
-  return utf8;
+  if (!triggersFallback) return utf8;
+
+  // Not valid UTF-8 → a legacy single-byte encoding. GAEB 90 (ASCII) files come
+  // from DOS tooling and are CP437-encoded (ü=0x81, ä=0x84, ö=0x94, ß=0xE1),
+  // whereas Windows exporters use windows-1252 (ä=0xE4, …). Decoding a CP437
+  // file as windows-1252 turns „ä" into „„" and „ü" into a blank — the exact
+  // mojibake seen in GAEB 90 imports. TextDecoder has no 'cp437', so map the
+  // high half through an explicit table; pick CP437 only when its umlaut bytes
+  // clearly dominate, otherwise keep the windows-1252 fallback.
+  return looksLikeCp437(bytes)
+    ? decodeCp437(bytes)
+    : new TextDecoder('windows-1252').decode(bytes);
 }
 
-function readWithEncoding(file: File, encoding: string): Promise<string> {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ''));
-    reader.onerror = () =>
-      reject(new Error(reader.error?.message ?? 'FileReader fehlgeschlagen'));
-    reader.readAsText(file, encoding);
-  });
+// Disambiguate the two legacy codepages by counting their German-umlaut bytes.
+// 0xE1 is intentionally excluded (ß in CP437 but á in windows-1252 — ambiguous).
+function looksLikeCp437(bytes: Uint8Array): boolean {
+  let cp = 0;
+  let win = 0;
+  for (let i = 0; i < bytes.length; i++) {
+    const b = bytes[i];
+    if (b === 0x81 || b === 0x84 || b === 0x8e || b === 0x94 || b === 0x99 || b === 0x9a) cp++;
+    else if (b === 0xc4 || b === 0xd6 || b === 0xdc || b === 0xdf || b === 0xe4 || b === 0xf6 || b === 0xfc) win++;
+  }
+  return cp > win;
+}
+
+// CP437 high half (0x80–0xFF). 0x00–0x7F are identical to ASCII.
+const CP437_HIGH =
+  'ÇüéâäàåçêëèïîìÄÅ' + // 80–8F
+  'ÉæÆôöòûùÿÖÜ¢£¥₧ƒ' + // 90–9F
+  'áíóúñÑªº¿⌐¬½¼¡«»' + // A0–AF
+  '░▒▓│┤╡╢╖╕╣║╗╝╜╛┐' + // B0–BF
+  '└┴┬├─┼╞╟╚╔╩╦╠═╬╧' + // C0–CF
+  '╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀' + // D0–DF
+  'αßΓπΣσµτΦΘΩδ∞φε∩' + // E0–EF
+  '≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ '; // F0–FF
+
+function decodeCp437(bytes: Uint8Array): string {
+  const chars = new Array<string>(bytes.length);
+  for (let i = 0; i < bytes.length; i++) {
+    const b = bytes[i];
+    chars[i] = b < 0x80 ? String.fromCharCode(b) : CP437_HIGH[b - 0x80];
+  }
+  return chars.join('');
 }

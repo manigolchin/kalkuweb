@@ -1,250 +1,334 @@
 /**
- * Excel exporter that emits the canonical Kalkulation-template layout —
- * the inverse of `src/lib/kalku-xlsx/parse.ts`.
+ * Excel exporter that emits the canonical Kalkulation-template layout — the
+ * inverse of `parse.ts`, styled to match the real LV3-Vorlage
+ * (`~/Desktop/Claude/example {1-10}`) column-for-column: the dark-green
+ * EINKAUF/ZSCHLG/VERKAUF/DIFFERNZ matrix, the tan header block, AND the full
+ * set of labelled, colored helper columns to the right —
+ *   I=EP|EK Stoffe · J=Min/Einheit · K/L=Lstg./Std. · M=EP|EK NU ·
+ *   N..T=F10..F4 · U/V/W=F3/F2/F1 (Vorrechnung) · X=Stoffe-Kosten · Y=Zeit in min ·
+ *   Z=Zulage Geräte · AA=EP Geräte · AB=EP Löhne · AC=Echte Zeit ·
+ *   AE..AH=GP Löhne/Stoffe/Geräte/Nachunt. · AJ=EP Stoffe VK · AK=EP Nachu. ·
+ *   AM=Benötigte Zeit in Tagen · AN=Stunden Gesamt · AP=EP Stunden pro Einheit —
+ * plus the far-right Stellschrauben block (Geräte-Z. / Zeitwert % / Std. pro Tag).
  *
- * Output is a faithful match to the Vorlage observed in
- *   ~/Desktop/Claude/example {1-4}/*.xlsx
- * documented in `docs/v2_redesign/column_classification.md`. A file exported
- * from the panel and re-imported through ImportDialog's Kalkulation-template
- * fast-path round-trips cleanly.
- *
- * Layout reproduced:
- *   row 2:  AG / Abgabedatum / Lohnkosten / Stundensatz
- *   row 3:  EINKAUF · ZSCHLG · VERKAUF · DIFFERNZ matrix header
- *   row 4:  Leistung / Vergabenummer / Stoffe ZSCHLG row
- *   row 5:  Nachunternehmer ZSCHLG row
- *   row 6:  BV / Gerätekosten ZSCHLG row
- *   row 7:  Lohn ZSCHLG row
- *   row 8:  Bieter / Netto / Mitarbeiter / Ges. Std. / Überschuss
- *   row 9:  MwSt rate + sum / Arbeitstage / Monate / Überschuss-value
- *   row 10: Brutto sum
- *   row 11: Zeitwert
- *   row 13: column headers — Pos / Bezeichnung / Menge / EH / EP / GP / G(subtotal) / I (EP|EK Stoffe) / J (Min/Einheit) / K,L (Lstg./Std.) / M (EP|EK NU)
- *   row 14+: data
+ * exceljs (lazy) — SheetJS community cannot write fills. Every computed cell is a
+ * LIVE FORMULA with a cached result (opens correct, recalculates, round-trips via
+ * the importer's cached `.v`). ROUND(...,2) per component mirrors calc.ts so a
+ * recalc in Excel stays cent-exact with the panel.
  */
 
 import type { ProjectData } from '@/features/kalkulation/types';
 import { calcTotals, calculatePosition } from '@/features/kalkulation/calc';
-import type { WorkSheet } from 'xlsx';
+import { guardSpreadsheetFormula } from '@/lib/spreadsheetSafe';
+import type { Borders, Fill, Worksheet } from 'exceljs';
 
-type WorkbookCell = { v: string | number; t?: 's' | 'n' };
+// ── Vorlage palette (ARGB, read from example 1) ──────────────────────────────
+const C = {
+  matrix: 'FF003300', // dark green band (white text)
+  body: 'FFD1CEBA',   // tan header block
+  yellow: 'FFFFFF00',  // editable Stellschraube
+  grey: 'FFF2F2F2',
+  green: 'FFE7FFDE',  // Stoffe / Material
+  blau: 'FFE2F1FF',   // Min/Einheit, Lstg., Zeit, Löhne, Tage, Stunden
+  wblau: 'FFE3F1FF',  // W (F1)
+  nu: 'FFFFEEF9',     // NU
+  white: 'FFFFFFFF',
+  light: 'FFEFF4F8',  // Echte Zeit / EP Stunden (light blue-grey)
+  near: 'FFF9FFF9',   // GP Löhne/Stoffe/Nachunt.
+  greyc: 'FFEDF1EF',  // GP Geräte
+  tan2: 'FFF0ECD5',   // Faktoren F10..F4
+};
+const solid = (argb: string): Fill => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } });
 
-/**
- * Build the .xlsx as a Uint8Array (ready for download). Lazy-loads SheetJS
- * so the production bundle doesn't grow when the export is never used.
- */
+const NF = {
+  eur: '#,##0.00 [$€-1]',
+  ep: '[Red][<=0] #,##0.00 "€";[Black] #,##0.00 "€"',
+  num2: '#,##0.00;[Red]#,##0.00',
+  menge: '#,##0.000',
+  pct: '0.00%',
+  minfmt: '#,##0.00_ ;[Red]-#,##0.00 ',
+  lstg: '#,##0.000_ ;[Red]-#,##0.000 ',
+  int: '#,##0;[Red]#,##0',
+};
+const FONT = { name: 'Arial', size: 8 } as const;
+const FONT_B = { name: 'Arial', size: 8, bold: true } as const;
+const WHITE_B = { name: 'Arial', size: 8, bold: true, color: { argb: 'FFFFFFFF' } } as const;
+const r2 = (n: number) => Math.round(n * 100) / 100;
+
+// Helper-column metadata: [row11, row12, row13, headerFill, dataFill].
+const HELP: Record<string, [string, string, string, string, string]> = {
+  N: ['', '', 'F10', C.tan2, C.tan2], O: ['', '', 'F9', C.tan2, C.tan2], P: ['', '', 'F8', C.tan2, C.tan2],
+  Q: ['', '', 'F7', C.tan2, C.tan2], R: ['', '', 'F6', C.tan2, C.tan2], S: ['', '', 'F5', C.tan2, C.tan2],
+  T: ['', '', 'F4', C.tan2, C.tan2], U: ['', '', 'F3', C.white, C.white], V: ['', '', 'F2', C.green, C.green],
+  W: ['', '', 'F1', C.blau, C.wblau],
+  X: ['', 'Stoffe-', 'Kosten', C.green, C.green], Y: ['', 'Zeit', 'in min', C.blau, C.blau],
+  Z: ['', 'Zulage', 'Geräte ', C.white, C.white], AA: ['', 'EP', 'Geräte', C.white, C.white],
+  AB: ['', 'EP', 'Löhne', C.blau, C.blau], AC: ['', 'Echte Zeit', 'in min', C.light, C.light],
+  AE: ['', 'GP', 'Löhne', C.near, C.near], AF: ['', 'GP', 'Stoffe', C.near, C.near],
+  AG: ['', 'GP', 'Geräte', C.greyc, C.greyc], AH: ['', 'GP', 'Nachunt.', C.near, C.near],
+  AJ: ['', 'EP', 'Stoffe VK', C.green, C.green], AK: ['', 'EP', 'Nachu.', C.nu, C.nu],
+  AM: ['Benötigte', 'Zeit in', 'Tagen', C.blau, C.blau], AN: ['', 'Stunden', 'Gesamt', C.blau, C.blau],
+  AP: ['EP', 'Stunden', 'pro Einheit', C.light, C.light],
+};
+
 export async function exportToKalkulationVorlage(data: ProjectData): Promise<Uint8Array> {
-  const XLSX = await import('xlsx');
-  const { totalNetto, totalMwst, totalBrutto, totalHours, totalLohn, totalMaterial, totalGeraet, totalNu } =
-    calcTotals(data.positions, data.calcParams);
+  const ExcelJS = (await import('exceljs')).default;
+  const wb = new ExcelJS.Workbook();
+  // Force Excel to recompute every formula on open — guarantees correct numbers
+  // even where exceljs omitted a cached `0` result.
+  wb.calcProperties.fullCalcOnLoad = true;
+  const ws = wb.addWorksheet('Kalkulation');
+  const cp = data.calcParams;
+  const t = calcTotals(data.positions, cp);
 
-  // Build a sparse cell map first (cleaner than pre-allocating a 200×48 grid).
-  const cells: Record<string, WorkbookCell> = {};
-  const put = (ref: string, v: string | number) => {
-    cells[ref] = { v, t: typeof v === 'number' ? 'n' : 's' };
+  type Style = { fill?: string; font?: typeof FONT | typeof FONT_B | typeof WHITE_B; numFmt?: string; align?: 'left' | 'center' | 'right'; border?: Partial<Borders> };
+  const set = (ref: string, value: unknown, s: Style = {}) => {
+    const cell = ws.getCell(ref);
+    // Guard user/LV-sourced text against spreadsheet formula injection. Real
+    // formula cells are passed as { formula, result } objects (via F()), and
+    // numbers stay numeric — only plain strings are neutralized.
+    cell.value = (typeof value === 'string' ? guardSpreadsheetFormula(value) : value) as never;
+    cell.font = s.font ?? FONT;
+    if (s.fill) cell.fill = solid(s.fill);
+    if (s.numFmt) cell.numFmt = s.numFmt;
+    if (s.align) cell.alignment = { horizontal: s.align, vertical: 'middle' };
+    if (s.border) cell.border = s.border;
   };
+  const F = (formula: string, result: number | string) => ({ formula, result });
 
-  // ────────────────── Header block ──────────────────
-  // Row 2 — AG · Abgabedatum · Lohnkosten · Stundensatz
-  put('A2', 'AG:'); put('B2', data.client || '');
-  put('D2', 'Abgabedatum:'); put('F2', data.deadline || '');
-  put('I2', 'Lohnkosten, inkl L-NK / Std.:');
-  put('K2', data.calcParams.mittellohn);
-  put('L2', 'Stundensatz:');
-  put('M2', data.calcParams.verrechnungslohn);
+  // ── Header block (rows 2–12) ────────────────────────────────────────────────
+  set('A2', 'AG:', { font: FONT_B }); set('B2', data.client || '');
+  set('D2', 'Abgabedatum:', { font: FONT_B }); set('F2', data.deadline || '');
+  set('I2', 'Lohnkosten, inkl L-NK / Std.:', { fill: C.body, align: 'right' });
+  set('K2', cp.mittellohn, { fill: C.grey, numFmt: NF.eur, align: 'center' });
+  set('L2', 'Stundensatz:', { fill: C.body, align: 'right' });
+  set('M2', cp.verrechnungslohn, { fill: C.yellow, font: FONT_B, numFmt: NF.eur, align: 'center' });
 
-  // Row 3 — EINKAUF · ZSCHLG · VERKAUF · DIFFERNZ matrix header
-  put('I3', 'EINKAUF');
-  put('K3', 'ZSCHLG');
-  put('L3', 'VERKAUF');
-  put('M3', 'DIFFERNZ');
-
-  // Row 4 — Leistung · Vergabenummer · Stoffe (Material) row
-  put('A4', 'Leistung:'); put('B4', data.service || '');
-  put('D4', 'Vergabenummer:'); put('F4', data.tenderNumber || '');
-  put('I4', 'Stoffe:');
-  put('J4', round2(totalMaterial / (1 + data.calcParams.materialZuschlag)));
-  put('K4', data.calcParams.materialZuschlag);
-  put('L4', totalMaterial);
-  put('M4', round2(totalMaterial - totalMaterial / (1 + data.calcParams.materialZuschlag)));
-
-  // Row 5 — Nachunternehmer
-  put('I5', 'Nachuntern.:');
-  put('J5', round2(totalNu / (1 + data.calcParams.nuZuschlag)));
-  put('K5', data.calcParams.nuZuschlag);
-  put('L5', totalNu);
-  put('M5', round2(totalNu - totalNu / (1 + data.calcParams.nuZuschlag)));
-
-  // Row 6 — BV · Gerätekosten
-  put('A6', 'BV:'); put('B6', data.name || '');
-  put('I6', 'Gerätekosten:');
-  put('J6', round2(totalGeraet / (1 + data.calcParams.geraeteZuschlagPct)));
-  put('K6', data.calcParams.geraeteZuschlagPct);
-  put('L6', totalGeraet);
-  put('M6', round2(totalGeraet - totalGeraet / (1 + data.calcParams.geraeteZuschlagPct)));
-
-  // Row 7 — Lohn (special: ZSCHLG_lohn = Stundensatz/Mittellohn, not a config)
-  const lohnZschlg = data.calcParams.mittellohn > 0
-    ? data.calcParams.verrechnungslohn / data.calcParams.mittellohn
-    : 0;
-  put('I7', 'Lohn:');
-  put('J7', round2(totalHours * data.calcParams.mittellohn));
-  put('K7', round4(lohnZschlg));
-  put('L7', totalLohn);
-  put('M7', round2(totalLohn - totalHours * data.calcParams.mittellohn));
-
-  // Row 8 — Bieter · Netto · Mitarbeiter · Ges. Std. · Überschuss label
-  put('A8', 'Bieter:'); put('B8', data.bidder || '');
-  put('C8', 'Netto Angebotssumme'); put('F8', totalNetto);
-  put('I8', 'Mitarbeiter:'); put('J8', data.calcParams.personaleinsatz);
-  put('K8', 'Ges. Std.:'); put('L8', round2(totalHours));
-  put('M8', 'Überschuss:');
-
-  // Row 9 — MwSt + sum · Arbeitstage · Monate · Überschuss value
-  put('C9', 'MwSt.:'); put('D9', data.calcParams.mwst);
-  put('F9', totalMwst);
-  put('I9', 'Arbeitstage:');
-  put('J9', round2(totalHours / data.calcParams.tagesstunden));
-  put('K9', 'Monate:');
-  put('L9', round2(totalHours / data.calcParams.tagesstunden / 21.5));
-  // Überschuss = Lohn-VK - Lohn-EK (the calculator's profit on labor)
-  put('M9', round2(totalLohn - totalHours * data.calcParams.mittellohn));
-
-  // Row 10 — Brutto sum
-  put('C10', 'Brutto Angebotssumme'); put('F10', totalBrutto);
-
-  // Row 11 — Zeitwert
-  put('I11', 'Zeitwert:');
-  put('J11', data.calcParams.zeitabzug / 100);  // we store percent; sheet stores decimal
-  put('L11', 'Kontrollsmm.:');
-  put('M11', 0);
-
-  // Row 12 — Stoffe (default for blank rows)
-  put('I12', 'Stoffe');
-  put('J12', 'Bei Mitarbeiter-Einsatz:');
-  put('L12', 1);
-  put('M12', 'NU');
-
-  // ────────────────── Row 13 — column headers (canonical) ──────────────────
-  put('A13', 'Pos.');
-  put('B13', 'Bezeichnung');
-  put('C13', 'Menge');
-  // D13 stays empty (Einheit has no header in the Vorlage)
-  put('E13', 'EP');
-  put('F13', 'GP');
-  // G/H stay empty (G is the level-2 subtotal column, H is the visual gap)
-  put('I13', 'EP | EK');
-  put('J13', 'Min/Einheit');
-  put('K13', 'Lstg./Std.');
-  put('L13', 'Lstg./Std.');
-  put('M13', 'EP | EK');
-
-  // ────────────────── Row 14+ — positions ──────────────────
-  // Walk positions in sortOrder. Group rows get B (name) + C (total for
-  // level-2) or G (subtotal for level-3); position rows get the full
-  // A:F + I:M layout.
-  let rowIdx = 14;
-
-  // Pre-compute subtotals per header (sum of GP of immediately-following
-  // non-header rows until the next header).
-  const subtotals = new Map<string, number>();
-  let currentHeaderId: string | null = null;
-  let currentSubtotal = 0;
-  for (const p of data.positions) {
-    if (p.isHeader) {
-      if (currentHeaderId) subtotals.set(currentHeaderId, currentSubtotal);
-      currentHeaderId = p.id;
-      currentSubtotal = 0;
-    } else {
-      const calc = calculatePosition(p, data.calcParams);
-      currentSubtotal += calc.gp;
-    }
+  for (const [ref, label] of [['I3', 'EINKAUF'], ['K3', 'ZSCHLG'], ['L3', 'VERKAUF'], ['M3', 'DIFFERNZ']] as const) {
+    set(ref, label, { fill: C.matrix, font: WHITE_B, align: 'center' });
   }
-  if (currentHeaderId) subtotals.set(currentHeaderId, currentSubtotal);
 
-  for (const p of data.positions) {
-    if (p.isHeader) {
-      // Group row. C carries the subtotal as a number (per Vorlage convention).
-      // The Vorlage uses col C for level-1 totals AND col G for level-2 totals;
-      // we don't know the level reliably here, so we put it in C for all
-      // headers — the importer (parse.ts classifyRow) treats this correctly
-      // (group when D/E/F empty, regardless of which column holds the total).
-      if (p.oz) put(`A${rowIdx}`, p.oz);
-      put(`B${rowIdx}`, p.shortText || '');
-      const sub = subtotals.get(p.id) ?? 0;
-      if (sub > 0) put(`C${rowIdx}`, round2(sub));
-    } else {
-      const calc = calculatePosition(p, data.calcParams);
-      if (p.oz) put(`A${rowIdx}`, p.oz);
-      put(`B${rowIdx}`, p.shortText || '');
-      put(`C${rowIdx}`, p.quantity);
-      if (p.unit) put(`D${rowIdx}`, p.unit);
-      put(`E${rowIdx}`, round2(calc.ep));
-      put(`F${rowIdx}`, round2(calc.gp));
-      // Internal zone (col H stays empty as the visual gap).
-      if (p.materialCost) put(`I${rowIdx}`, round2(p.materialCost));
-      if (p.timeMinutes) put(`J${rowIdx}`, p.timeMinutes);
-      // K = Lstg./Std. (units per hour, worker 1) — derived as 60 / Min·Einheit.
-      // Faithful to the Vorlage; harmless if Min·Einheit is 0.
-      if (p.timeMinutes > 0) {
-        put(`K${rowIdx}`, round4(60 / p.timeMinutes));
-        put(`L${rowIdx}`, round4((60 / p.timeMinutes) * data.calcParams.personaleinsatz));
+  set('A4', 'Leistung:', { font: FONT_B }); set('B4', data.service || '');
+  set('D4', 'Vergabenummer:', { font: FONT_B }); set('F4', data.tenderNumber || '');
+
+  const lastRow = 13 + Math.max(1, data.positions.length) + data.positions.filter((p) => p.longText?.trim()).length + 2;
+  const matRow = (r: number, label: string, vkCol: string, vkTotal: number, z: number) => {
+    const ek = r2(vkTotal / (1 + z));
+    set(`I${r}`, label + ':', { fill: C.body, align: 'right' });
+    set(`J${r}`, F(`L${r}/(1+K${r})`, ek), { fill: C.body, numFmt: NF.eur, align: 'right' });
+    set(`K${r}`, z, { fill: r <= 5 ? C.yellow : C.body, numFmt: NF.pct, align: 'center' });
+    set(`L${r}`, F(`SUM(${vkCol}14:${vkCol}${lastRow})`, vkTotal), { fill: C.body, numFmt: NF.eur, align: 'right' });
+    set(`M${r}`, F(`L${r}-J${r}`, r2(vkTotal - ek)), { fill: C.body, numFmt: NF.eur, align: 'right' });
+  };
+  matRow(4, 'Stoffe', 'AF', t.totalMaterial, cp.materialZuschlag);
+  matRow(5, 'Nachuntern.', 'AH', t.totalNu, cp.nuZuschlag);
+  matRow(6, 'Gerätekosten', 'AG', t.totalGeraet, cp.geraeteZuschlagPct);
+  // Ges. Std = Lohn-VERKAUF ÷ Verrechnungslohn (the Vorlage's `L7/M2`), NOT the
+  // raw Σ hours — they differ by the per-component rounding. Lohn-EINKAUF then =
+  // Mittellohn × Ges.Std, so Lohn-DIFFERNZ + Überschuss match the Vorlage exactly.
+  const gesStunden = cp.verrechnungslohn > 0 ? t.totalLohn / cp.verrechnungslohn : 0;
+  // Lohn-EINKAUF = K2 × L8, where L8 (Ges.Std) is the rounded cell value — so the
+  // cached result equals what `=K2*L8` recomputes (and matches the source file).
+  const lohnEk = r2(cp.mittellohn * r2(gesStunden));
+  set('A6', 'BV:', { font: FONT_B }); set('B6', data.name || '');
+  set('I7', 'Lohn:', { fill: C.body, align: 'right' });
+  set('J7', F('K2*L8', lohnEk), { fill: C.body, numFmt: NF.eur, align: 'right' });
+  // Lohn-ZSCHLG: the Vorlage caches this to 4 decimals (e.g. 1.2633) — rounding
+  // to 2 here (1.26) was the visible gap. Format is 0.00% like K4–K6 (Excel shows
+  // 126.33%); the formula recomputes full precision on recalc.
+  const lohnZ = cp.mittellohn > 0 ? Math.round((cp.verrechnungslohn / cp.mittellohn - 1) * 10000) / 10000 : 0;
+  set('K7', F('M2/K2-1', lohnZ), { fill: C.body, numFmt: NF.pct, align: 'center' });
+  set('L7', F(`SUM(AE14:AE${lastRow})`, t.totalLohn), { fill: C.body, numFmt: NF.eur, align: 'right' });
+  set('M7', F('L7-J7', r2(t.totalLohn - lohnEk)), { fill: C.body, numFmt: NF.eur, align: 'right' });
+
+  set('A8', 'Bieter:', { font: FONT_B }); set('B8', data.bidder || '');
+  set('C8', 'Netto Angebotssumme', { align: 'left' });
+  set('F8', F(`SUM(F14:F${lastRow})`, t.totalNetto), { numFmt: NF.eur, align: 'right' });
+  set('I8', 'Mitarbeiter:', { fill: C.body, align: 'right' });
+  set('J8', cp.personaleinsatz, { font: FONT_B, numFmt: NF.int, align: 'center' });
+  set('K8', 'Ges. Std.:', { fill: C.body, align: 'right' });
+  set('L8', F('L7/M2', r2(gesStunden)), { fill: C.body, numFmt: NF.minfmt, align: 'left' });
+  set('M8', 'Überschuss:', { fill: C.matrix, font: WHITE_B, align: 'center' });
+
+  set('C9', 'MwSt.:', { align: 'left' }); set('D9', cp.mwst, { numFmt: '0%', align: 'center' });
+  set('F9', F('F8*D9', r2(t.totalMwst)), { numFmt: NF.eur, align: 'right' });
+  set('I9', 'Arbeitstage:', { fill: C.body, align: 'right' });
+  const tage = cp.personaleinsatz > 0 && cp.tagesstunden > 0 ? r2(t.totalHours / (cp.personaleinsatz * cp.tagesstunden)) : 0;
+  set('J9', F(`SUM(AM14:AM${lastRow})`, tage), { fill: C.body, numFmt: NF.minfmt, align: 'left' });
+  set('K9', 'Monate:', { fill: C.body, align: 'right' });
+  set('L9', F('J9/21.5', r2(tage / 21.5)), { fill: C.body, numFmt: NF.minfmt, align: 'left' });
+  // Überschuss stays a LIVE computation so it's internally consistent with this
+  // sheet's own Netto − ΣEINKAUF (using headerExtras here would import the
+  // source's profit, which diverges from our totals on Bedarfspositionen-LVs).
+  set('M9', F('SUM(M4:M7)', r2(t.totalNetto - matrixEk(t, cp))), { fill: C.matrix, font: WHITE_B, numFmt: NF.eur, align: 'center' });
+
+  set('C10', 'Brutto Angebotssumme', { font: FONT_B, align: 'left' });
+  set('F10', F('F8+F9', r2(t.totalBrutto)), { font: FONT_B, numFmt: NF.eur, align: 'right' });
+  // kWp row (Photovoltaik) — present in the Vorlage; "-" until a kWp value is
+  // entered in I10, matching the source's IFERROR guards.
+  set('J10', 'kWp:', { fill: C.body, align: 'right' });
+  set('K10', F('IFERROR(F8/I10,"-")', '-'), { fill: C.body, align: 'center' });
+  set('M10', F('IFERROR(K10-L10,"-")', '-'), { fill: C.body, align: 'center' });
+
+  set('I11', 'Zeitwert:', { align: 'right' });
+  set('J11', F('AP5/100', r2(cp.zeitabzug / 100)), { numFmt: NF.pct, align: 'left' });
+  set('L11', 'Kontrollsmm.:', { align: 'center' });
+  set('M11', F('SUM(L4:L7)-F8', 0), { numFmt: NF.minfmt, align: 'left' });
+
+  set('I12', 'Stoffe', { fill: C.green, align: 'center' });
+  set('J12', 'Bei Mitarbeiter-Einsatz:', { fill: C.blau, font: FONT_B, align: 'right' });
+  // L12 is the Mitarbeiter-Einsatz multiplier (Vorlage default 1), NOT the
+  // Personaleinsatz staff count — those are different cells (J8 = staff). Source
+  // L12 carries no fill.
+  set('L12', data.headerExtras?.mitarbeiterFlag ?? 1, { font: FONT_B, numFmt: NF.int, align: 'center' });
+  set('M12', 'NU', { fill: C.nu, align: 'center' });
+
+  // ── Faktoren-Bibliothek + Vorrechnung (cols N–AP, rows 2–12) ────────────────
+  // Replay the captured reference grid so the export carries the calculator's
+  // factor library AND the X–AP Vorrechnung helpers exactly like the Vorlage. We
+  // write the cached VALUES: the source cells are formulas over named ranges
+  // (e.g. `schlitz+Q2*querschnitt`) that exist only inside the working template
+  // and would resolve to #NAME? standalone — the values display identically.
+  // Runs BEFORE the Stellschrauben + column-header writes so those canonical,
+  // formatted cells win wherever they overlap this band (e.g. AP2–AP7, row 11–13).
+  if (data.faktoren?.length) {
+    for (const f of data.faktoren) {
+      if (!f.raw || f.sourceRow < 2 || f.sourceRow > 12) continue;
+      for (const [col, val] of Object.entries(f.raw)) {
+        if (val == null || val === '' || !HELP[col]) continue;
+        set(`${col}${f.sourceRow}`, val, { align: typeof val === 'number' ? 'right' : 'left' });
       }
-      if (p.nuCost) put(`M${rowIdx}`, round2(p.nuCost));
     }
-
-    if (p.longText && p.longText.trim()) {
-      // Vorlage convention: a buffer row immediately after the position
-      // carries the long description in col B with no OZ. Matches what the
-      // example files do for descriptive text.
-      rowIdx += 1;
-      put(`B${rowIdx}`, p.longText.trim());
-    }
-
-    rowIdx += 1;
   }
 
-  // ────────────────── Build the workbook ──────────────────
-  // Compute the sheet range from the populated cells (so xlsx writer knows
-  // what to emit).
-  let maxR = 13;
-  let maxC = 12; // M = 12 (0-indexed)
-  for (const ref of Object.keys(cells)) {
-    const { r, c } = XLSX.utils.decode_cell(ref);
-    if (r > maxR) maxR = r;
-    if (c > maxC) maxC = c;
+  // Far-right Stellschrauben block (matches the Vorlage).
+  set('AP2', 'Geräte-Z.:', { align: 'right' }); set('AP3', cp.geraeteStundensatz, { font: FONT_B, numFmt: NF.num2, align: 'center' });
+  set('AP4', 'Zeitwert %:', { align: 'right' }); set('AP5', cp.zeitabzug, { font: FONT_B, numFmt: NF.num2, align: 'center' });
+  set('AP6', 'Std. / Tag:', { align: 'right' }); set('AP7', cp.tagesstunden, { font: FONT_B, numFmt: NF.int, align: 'center' });
+
+  // ── Column headers (rows 11–13) ────────────────────────────────────────────
+  const med: Partial<Borders> = { top: { style: 'medium' }, bottom: { style: 'medium' } };
+  const EP_EK = 'EP |' + String.fromCharCode(160) + 'EK'; // Vorlage uses a non-breaking space before "EK"
+  set('A13', 'Pos.', { font: FONT_B, align: 'center', border: med });
+  set('B13', 'Bezeichnung', { font: FONT_B, align: 'center', border: med });
+  set('C13', 'Menge', { font: FONT_B, align: 'center', border: med });
+  set('E13', 'EP', { font: FONT_B, align: 'center', border: med });
+  set('F13', 'GP', { font: FONT_B, align: 'center', border: { ...med, right: { style: 'medium' } } });
+  set('I13', EP_EK, { fill: C.green, align: 'center', border: { bottom: { style: 'medium' }, left: { style: 'medium' } } });
+  set('J13', 'Min/Einheit', { fill: C.blau, align: 'center', border: { bottom: { style: 'medium' } } });
+  set('K13', 'Lstg./Std.', { fill: C.blau, font: FONT_B, align: 'center', border: { bottom: { style: 'medium' } } });
+  set('L13', 'Lstg./Std.', { fill: C.blau, font: FONT_B, align: 'center', border: { bottom: { style: 'medium' } } });
+  set('M13', EP_EK, { fill: C.nu, align: 'center', border: { bottom: { style: 'medium' }, left: { style: 'medium' }, right: { style: 'medium' } } });
+  // The labelled helper columns (N..AP) — two/three-row headers + tints.
+  for (const [col, [h11, h12, h13, hf]] of Object.entries(HELP)) {
+    if (h11) set(`${col}11`, h11, { fill: hf, font: FONT_B, align: 'center' });
+    if (h12) set(`${col}12`, h12, { fill: hf, font: FONT_B, align: 'center' });
+    set(`${col}13`, h13, { fill: hf, font: FONT_B, align: 'center', border: { bottom: { style: 'medium' } } });
   }
-  const ws: WorkSheet = {
-    ...cells,
-    '!ref': XLSX.utils.encode_range({ s: { c: 0, r: 0 }, e: { c: maxC, r: maxR } }),
-    // Mild column widths so the file is usable when first opened (the
-    // Vorlage has very specific widths; this approximates them).
-    '!cols': [
-      { wch: 18 }, // A — OZ
-      { wch: 36 }, // B — Bezeichnung
-      { wch: 12 }, // C — Menge
-      { wch: 6 },  // D — EH
-      { wch: 12 }, // E — EP
-      { wch: 14 }, // F — GP
-      { wch: 14 }, // G — Subtotal
-      { wch: 2 },  // H — gap
-      { wch: 12 }, // I — Material EK
-      { wch: 12 }, // J — Min/Einheit
-      { wch: 10 }, // K — Lstg./Std.
-      { wch: 10 }, // L — Lstg./Std.
-      { wch: 12 }, // M — NU EK
-    ],
+
+  // ── Positions ──────────────────────────────────────────────────────────────
+  let row = 14;
+  const groups: number[] = [];
+  const dh = (col: string, r: number, value: unknown, numFmt = NF.num2) =>
+    set(`${col}${r}`, value, { fill: HELP[col]?.[4], numFmt, align: 'right' });
+
+  for (const p of data.positions) {
+    if (p.isHeader) {
+      if (p.oz) set(`A${row}`, p.oz, { font: FONT_B });
+      set(`B${row}`, p.shortText || '', { font: FONT_B });
+      groups.push(row);
+      row += 1;
+      continue;
+    }
+    const c = calculatePosition(p, cp);
+    const gs = p.geraeteSatz ?? cp.geraeteStundensatz;
+
+    if (p.oz) set(`A${row}`, p.oz);
+    set(`B${row}`, p.shortText || '');
+    set(`C${row}`, p.quantity, { numFmt: NF.menge });
+    if (p.unit) set(`D${row}`, p.unit);
+    set(`E${row}`, F(`AA${row}+AB${row}+AJ${row}+AK${row}`, c.ep), { numFmt: NF.ep, align: 'right' });
+    set(`F${row}`, F(`ROUND(C${row}*E${row},2)`, c.gp), { numFmt: NF.eur, align: 'right' });
+
+    // Shown cost columns.
+    dh('I', row, F(`X${row}`, p.materialCost));
+    dh('J', row, F(`IF(AC${row}=0,"-",AC${row})`, adj(p.timeMinutes, cp.zeitabzug)), NF.minfmt);
+    dh('K', row, F(`IFERROR(60/AC${row}*$L$12,"-")`, lstg(p.timeMinutes, cp, 1)), NF.lstg);
+    dh('L', row, F(`IFERROR(60/AC${row}*8*$L$12,"-")`, lstg(p.timeMinutes, cp, cp.tagesstunden)), NF.lstg);
+    dh('M', row, p.nuCost || null);
+
+    // Machinery columns (labelled + colored exactly like the Vorlage).
+    dh('X', row, p.materialCost);
+    dh('Y', row, p.timeMinutes);
+    dh('Z', row, gs);
+    if (p.geraeteEp != null) dh('AA', row, r2(p.geraeteEp));
+    else dh('AA', row, F(`ROUND(AC${row}/60*Z${row},2)`, c.epGeraet));
+    if (p.lohnEp != null) dh('AB', row, r2(p.lohnEp));
+    else dh('AB', row, F(`ROUND(AC${row}/60*$M$2,2)`, c.epLohn));
+    dh('AC', row, F(`ROUND(Y${row}+Y${row}/100*$AP$5,2)`, adjNum(p.timeMinutes, cp.zeitabzug)));
+    dh('AE', row, F(`ROUND(C${row}*AB${row},2)`, c.gpLohn));
+    dh('AF', row, F(`ROUND(C${row}*AJ${row},2)`, c.gpMaterial));
+    dh('AG', row, F(`ROUND(C${row}*AA${row},2)`, c.gpGeraet));
+    dh('AH', row, F(`ROUND(C${row}*AK${row},2)`, c.gpNu));
+    dh('AJ', row, F(`ROUND(X${row}*(1+$K$4),2)`, c.epMaterial));
+    dh('AK', row, F(`ROUND(M${row}*(1+$K$5),2)`, c.epNu));
+    dh('AN', row, F(`ROUND(AC${row}*C${row}/60,2)`, c.hoursTotal)); // Stunden Gesamt
+    dh('AM', row, F(`ROUND(AN${row}/8/$L$12,4)`, r2hours(c.hoursTotal, cp.personaleinsatz)), NF.lstg); // Tage
+    dh('AP', row, F(`ROUND(AC${row}/60,4)`, r2(adjNum(p.timeMinutes, cp.zeitabzug) / 60)), NF.lstg); // EP Std./Einheit
+
+    row += 1;
+    if (p.longText?.trim()) { set(`B${row}`, p.longText.trim()); row += 1; }
+  }
+
+  // Live group subtotals.
+  const sorted = [...groups].sort((a, b) => a - b);
+  for (let h = 0; h < sorted.length; h++) {
+    const start = sorted[h] + 1;
+    const end = (sorted[h + 1] ?? row) - 1;
+    if (end >= start) set(`G${sorted[h]}`, F(`SUM(F${start}:F${end})`, sumF(ws, start, end)), { font: FONT_B, numFmt: NF.eur, align: 'right' });
+  }
+
+  // ── Column widths (Vorlage) ─────────────────────────────────────────────────
+  const W: Record<string, number> = {
+    A: 11, B: 38, C: 10, D: 5, E: 11, F: 13, G: 9, H: 0.4, I: 10, J: 10, K: 8, L: 10, M: 9,
+    N: 7, O: 7, P: 7, Q: 7, R: 7, S: 7, T: 7, U: 7, V: 7, W: 7,
+    X: 8, Y: 9, Z: 7, AA: 8.5, AB: 8.5, AC: 8.5, AD: 1, AE: 8.5, AF: 8.5, AG: 8.5, AH: 8.5, AI: 1,
+    AJ: 9, AK: 8.5, AL: 1, AM: 8.5, AN: 8.5, AO: 1, AP: 9,
   };
+  for (const [col, w] of Object.entries(W)) ws.getColumn(col).width = w;
 
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Kalkulation');
-  const out = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
-  return new Uint8Array(out);
+  // ── Header-cell merges (match the Vorlage's visual layout) ──────────────────
+  // Client/Leistung/BV span multiple columns; Abgabedatum/Vergabenummer labels
+  // and values each span two; Bieter spans three rows. Mirrors the source file.
+  for (const m of ['B2:C3', 'D2:E2', 'F2:G2', 'B4:C5', 'D4:E4', 'F4:G4', 'B6:G7', 'B8:B10',
+    'I2:J2', 'I3:J3', 'J12:K12']) {
+    try { ws.mergeCells(m); } catch { /* ignore if a range overlaps */ }
+  }
+
+  return new Uint8Array(await wb.xlsx.writeBuffer());
 }
 
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
+// ── helpers ──────────────────────────────────────────────────────────────────
+function adjNum(min: number, z: number): number { return r2(min + (min / 100) * z); }
+function adj(min: number, z: number): number | string { const a = adjNum(min, z); return a === 0 ? '-' : a; }
+function lstg(min: number, cp: ProjectData['calcParams'], factor: number): number | string {
+  const a = adjNum(min, cp.zeitabzug); if (a === 0) return '-'; return r2((60 / a) * factor * cp.personaleinsatz);
 }
-function round4(n: number): number {
-  return Math.round(n * 10_000) / 10_000;
+function r2hours(hours: number, personal: number): number {
+  return personal > 0 ? Math.round((hours / 8 / personal) * 10000) / 10000 : 0;
+}
+function matrixEk(t: ReturnType<typeof calcTotals>, cp: ProjectData['calcParams']): number {
+  // Lohn EINKAUF = Mittellohn × (Lohn-VK / Verrechnungslohn) — matches the Vorlage's
+  // Ges.Std derivation, not Σ raw hours.
+  const lohnEk = cp.verrechnungslohn > 0 ? r2(cp.mittellohn * r2(t.totalLohn / cp.verrechnungslohn)) : 0;
+  return r2(t.totalMaterial / (1 + cp.materialZuschlag) + t.totalNu / (1 + cp.nuZuschlag) + t.totalGeraet / (1 + cp.geraeteZuschlagPct) + lohnEk);
+}
+function sumF(ws: Worksheet, start: number, end: number): number {
+  let s = 0;
+  for (let r = start; r <= end; r++) {
+    const v = ws.getCell(`F${r}`).value;
+    if (v && typeof v === 'object' && 'result' in v && typeof v.result === 'number') s += v.result;
+    else if (typeof v === 'number') s += v;
+  }
+  return r2(s);
 }

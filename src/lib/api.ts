@@ -1,7 +1,10 @@
 import type {
+  AdminUser,
   AuthUser,
+  ChangeRequestInput,
   CustomerViewPayload,
   InboxEntry,
+  PanelPermissionKey,
   PositionTemplate,
   ProjectDetail,
   ProjectData,
@@ -11,6 +14,29 @@ import type {
   ShareSummary,
   ViewPreset,
 } from '@/features/kalkulation/types';
+
+/** Mutable fields the admin panel can set when creating/updating a user. */
+export type AdminUserInput = {
+  email: string;
+  name: string;
+  password?: string;
+  role: 'admin' | 'user';
+  permissions: Partial<Record<PanelPermissionKey, boolean>>;
+  companyName?: string;
+  companyPhone?: string;
+  companyContactEmail?: string;
+};
+
+export type AdminUserPatch = Partial<{
+  name: string;
+  email: string;
+  role: 'admin' | 'user';
+  permissions: Partial<Record<PanelPermissionKey, boolean>>;
+  isActive: boolean;
+  companyName: string;
+  companyPhone: string;
+  companyContactEmail: string;
+}>;
 
 const BASE = '/api/panel';
 
@@ -113,6 +139,14 @@ export const api = {
       }),
     delete: (id: string) =>
       request<{ ok: true }>(`/projects/${id}`, { method: 'DELETE' }),
+    /** Auto-resolve the „04_Angebote" folder share link for this project's
+     *  Ausschreibung (via preisanfrage). Returns `{ angeboteFolderUrl: null }`
+     *  with a reason when nothing can be resolved — never throws on a missing
+     *  link. `refresh` forces a re-fetch even if the project already has one. */
+    angeboteLink: (id: string, opts: { refresh?: boolean } = {}) =>
+      request<{ angeboteFolderUrl: string | null; source?: string; reason?: string }>(
+        `/projects/${id}/angebote-link${opts.refresh ? '?refresh=1' : ''}`,
+      ),
   },
   shares: {
     listForProject: (projectId: string) =>
@@ -220,7 +254,15 @@ export const api = {
   },
   inbox: {
     list: () =>
-      request<{ entries: InboxEntry[]; generatedAt: string }>(`/inbox`),
+      request<{ entries: InboxEntry[]; generatedAt: string; viewerLastSeenAt: string | null }>(
+        `/inbox`,
+      ),
+    /** Round 12: mark a structured change request resolved (or re-open it). */
+    resolveChangeRequest: (id: string, resolved = true) =>
+      request<{ ok: true; id: string; resolvedAt: string | null }>(
+        `/inbox/change-requests/${id}/resolve`,
+        { method: 'POST', body: JSON.stringify({ resolved }) },
+      ),
   },
   notifications: {
     unread: () => request<{ count: number }>(`/notifications/unread`),
@@ -253,7 +295,7 @@ export const api = {
     list: () =>
       request<{
         rows: Array<{
-          kind: 'managed' | 'external' | 'local';
+          kind: 'managed' | 'external' | 'local' | 'directory';
           id: number | string;
           folderName: string | null;
           displayName: string;
@@ -268,6 +310,8 @@ export const api = {
         managedCount: number;
         externalCount: number;
         localCount: number;
+        /** KT01-directory rows (baked snapshot) shown after dedup vs. live. */
+        directoryCount?: number;
         totalProjects: number;
         lastScanAt: string | null;
         generatedAt: string;
@@ -278,10 +322,10 @@ export const api = {
      *  Accepts all 3 kinds. `id` type is `number | string` since local
      *  firmas use nanoid strings. Local-Firma payloads include a `notes`
      *  string on the firma object. */
-    detail: (kind: 'managed' | 'external' | 'local', id: number | string) =>
+    detail: (kind: 'managed' | 'external' | 'local' | 'directory', id: number | string) =>
       request<{
         firma: {
-          kind: 'managed' | 'external' | 'local';
+          kind: 'managed' | 'external' | 'local' | 'directory';
           id: number | string;
           folderName: string | null;
           displayName: string;
@@ -337,7 +381,7 @@ export const api = {
      *  empty positions for local firmas / local Ausschreibungen and 404
      *  for external firmas (which only carry submission-result data). */
     projectPositions: (
-      kind: 'managed' | 'external' | 'local',
+      kind: 'managed' | 'external' | 'local' | 'directory',
       firmaId: number | string,
       projectId: number | string,
     ) =>
@@ -353,6 +397,9 @@ export const api = {
           isHeader: boolean;
           pageNumber?: number | null;
         }>;
+        /** Real "anyone-with-link" share URL to the 04_Angebote folder, minted
+         *  by preisanfrage on the detail fetch. Null/absent if unavailable. */
+        angeboteFolderShareUrl?: string | null;
       }>(`/firmen/${kind}/${firmaId}/projects/${projectId}/positions`),
     updateDefaults: (
       kind: 'managed' | 'external',
@@ -593,5 +640,46 @@ export const api = {
           headers: password ? { 'X-Share-Password': password } : undefined,
         },
       ),
+    /** Round 12: structured Änderungswünsche — batch of per-position / global
+     *  price-quantity wishes. The server lifts the "Ist" value from the frozen
+     *  snapshot; the client only sends the field, the wished value/direction
+     *  and a note. Honors the share password gate. */
+    submitChangeRequests: (
+      token: string,
+      input: { customerName?: string; customerEmail?: string; items: ChangeRequestInput[] },
+      password?: string,
+    ) =>
+      request<{ ok: true; count: number; createdAt: string }>(
+        `/share/${token}/change-requests`,
+        {
+          method: 'POST',
+          body: JSON.stringify(input),
+          headers: password ? { 'X-Share-Password': password } : undefined,
+        },
+      ),
+  },
+  admin: {
+    /** List every user with role/permissions/active state. Admin only (403). */
+    listUsers: () =>
+      request<{ users: AdminUser[]; permissionKeys: PanelPermissionKey[] }>(`/admin/users`),
+    /** Create a user. If `password` is omitted the server generates one and
+     *  returns it once in `generatedPassword`. */
+    createUser: (input: AdminUserInput) =>
+      request<{ user: AdminUser; generatedPassword?: string }>(`/admin/users`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    updateUser: (id: string, patch: AdminUserPatch) =>
+      request<{ user: AdminUser }>(`/admin/users/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      }),
+    /** Reset a user's password (forces change on next login). Omit `password`
+     *  to have the server generate one and return it once. */
+    resetPassword: (id: string, password?: string) =>
+      request<{ ok: true; generatedPassword?: string }>(`/admin/users/${id}/reset-password`, {
+        method: 'POST',
+        body: JSON.stringify(password ? { password } : {}),
+      }),
   },
 };

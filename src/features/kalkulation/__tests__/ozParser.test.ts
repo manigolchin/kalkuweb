@@ -83,6 +83,21 @@ describe('classifyRow — column-C overload', () => {
       B: 'Sicherheitsbeleuchtung',
     })).toBe('buffer');
   });
+
+  test('empty OZ but full price data → "position" (Reinigung-style text numbering)', () => {
+    // Some LVs number positions inside the Bezeichnung ("1. Gebäude 1") and
+    // leave col A blank — these are priced positions, NOT buffers. Dropping
+    // them silently voided whole bids (e.g. €121.585 / 96 % of one offer).
+    expect(classifyRow({
+      oz: '',
+      B: '1. Gebäude 1 — Unterhaltsreinigung',
+      C: 360, D: 'm²', E: 1.15, F: 414,
+    })).toBe('position');
+  });
+
+  test('empty OZ with a unit but no EP stays "buffer"', () => {
+    expect(classifyRow({ oz: '', B: 'Zwischensumme', D: 'St', E: null })).toBe('buffer');
+  });
 });
 
 describe('isErrorCell — formula-error detection', () => {

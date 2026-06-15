@@ -37,7 +37,7 @@ async function ownerCookie(userId: string, email: string): Promise<{ Cookie: str
 const PARAMS: CalcParams = {
   mittellohn: 30, verrechnungslohn: 50, materialZuschlag: 0.12, nuZuschlag: 0.12,
   geraeteZuschlagPct: 0.1, geraeteStundensatz: 0.5, zeitabzug: 0,
-  tagesstunden: 8, personaleinsatz: 3, mwst: 0.19,
+  tagesstunden: 8, personaleinsatz: 3, mwst: 0.19, zielAufschlag: 0,
 };
 
 function pos(over: Partial<Position> & { id: string }): Position {

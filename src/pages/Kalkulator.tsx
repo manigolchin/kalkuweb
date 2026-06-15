@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { canonical } from '@/lib/seo';
 import { cn } from '@/lib/utils';
+import { guardCell } from '@/lib/spreadsheetSafe';
 import { softwareApplicationSchema } from '@/lib/toolSchema';
 import AndereTools from '@/components/sections/AndereTools';
 import { submitLead, LEAD_FALLBACK_EMAIL } from '@/lib/lead';
@@ -482,7 +483,9 @@ export default function Kalkulator() {
         ...positions,
         ...schluss,
       ];
-      const ws = XLSX.utils.aoa_to_sheet(data);
+      // Neutralize spreadsheet formula injection in user-typed cells (Pos.,
+      // Beschreibung, Einheit); numeric cells pass through untouched.
+      const ws = XLSX.utils.aoa_to_sheet(data.map((row) => row.map(guardCell)));
       ws['!cols'] = [
         { wch: 10 }, { wch: 50 }, { wch: 8 }, { wch: 10 }, { wch: 8 },
         { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 14 },

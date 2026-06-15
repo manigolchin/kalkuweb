@@ -25,6 +25,7 @@ import {
   getMockManagedProjects,
   getMockOverview,
   getMockProjectPositions,
+  getMockProjectAngeboteUrl,
   isMockMode,
 } from './preisanfrage-fixture.js';
 
@@ -184,6 +185,11 @@ export function isPreisanfrageMock(): boolean {
   return isMockMode();
 }
 
+/** Bound every upstream call so a slow/stalled preisanfrage can't hang a panel
+ *  request indefinitely — without a timeout, a preisanfrage outage becomes a
+ *  panel outage. 8 s is generous for the BI aggregation endpoints. */
+const UPSTREAM_TIMEOUT_MS = 8000;
+
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const token = serviceToken();
   if (!token) {
@@ -194,6 +200,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     res = await fetch(url, {
       ...init,
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
       headers: {
         Accept: 'application/json',
         Authorization: `Bearer ${token}`,
@@ -201,8 +208,17 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
       },
     });
   } catch (e) {
-    // Network error — preisanfrage unreachable.
-    throw new PreisanfrageError(502, { error: 'upstream_unreachable' }, `preisanfrage unreachable: ${String(e)}`);
+    // Network error OR our own timeout — preisanfrage unreachable / too slow.
+    // Map both to 502 so handleUpstreamError degrades to 503 + the offline KT01
+    // fixture, instead of hanging the request or surfacing a raw 500.
+    const timedOut = e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError');
+    throw new PreisanfrageError(
+      502,
+      { error: timedOut ? 'upstream_timeout' : 'upstream_unreachable' },
+      timedOut
+        ? `preisanfrage timed out after ${UPSTREAM_TIMEOUT_MS}ms on ${path}`
+        : `preisanfrage unreachable: ${String(e)}`,
+    );
   }
   if (!res.ok) {
     let body: unknown = null;
@@ -213,7 +229,14 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new PreisanfrageError(res.status, body, `preisanfrage ${res.status} on ${path}`);
   }
-  return (await res.json()) as T;
+  try {
+    return (await res.json()) as T;
+  } catch (e) {
+    // 200 OK but a non-JSON body (proxy/CDN interstitial, truncated stream).
+    // Don't let the SyntaxError bubble up as a raw 500 — degrade like an
+    // unreachable upstream so the UI shows the offline state.
+    throw new PreisanfrageError(502, { error: 'upstream_bad_body' }, `preisanfrage 200 with non-JSON body on ${path}: ${String(e)}`);
+  }
 }
 
 /* ─── Public client API (the ONLY exports route code should use) ─── */
@@ -338,10 +361,20 @@ export async function listManagedProjects(companyId: number, opts?: {
  *  what we need to seed a kalku-website Position[] — calls upstream
  *  `GET /api/projects/{id}` (which includes positions[]) and projects
  *  the shape down to the kalku-website Position fields. */
-export async function getProjectPositions(projectId: number): Promise<PreisanfragePosition[]> {
-  if (isMockMode()) return getMockProjectPositions(projectId);
+export async function getProjectPositions(projectId: number): Promise<{
+  positions: PreisanfragePosition[];
+  /** Real "anyone-with-link" share URL to the project's 04_Angebote folder,
+   *  minted lazily by preisanfrage on this detail fetch. Null if unavailable. */
+  angeboteFolderShareUrl: string | null;
+}> {
+  if (isMockMode()) {
+    return {
+      positions: getMockProjectPositions(projectId),
+      angeboteFolderShareUrl: getMockProjectAngeboteUrl(projectId),
+    };
+  }
   const key = `positions:${projectId}`;
-  const hit = cached<PreisanfragePosition[]>(key);
+  const hit = cached<{ positions: PreisanfragePosition[]; angeboteFolderShareUrl: string | null }>(key);
   if (hit) return hit;
   type RawPos = {
     oz: string;
@@ -351,7 +384,7 @@ export async function getProjectPositions(projectId: number): Promise<Preisanfra
     unit: string;
     page_number?: number | null;
   };
-  type RawProject = { positions: RawPos[] };
+  type RawProject = { positions: RawPos[]; angebote_folder_share_url?: string | null };
   const raw = await call<RawProject>(`/api/projects/${projectId}`);
   const rows = (raw.positions ?? []).map((p) => ({
     oz: p.oz ?? '',
@@ -365,7 +398,7 @@ export async function getProjectPositions(projectId: number): Promise<Preisanfra
     isHeader: !p.quantity || !p.unit,
     pageNumber: p.page_number ?? null,
   }));
-  return cache(key, rows);
+  return cache(key, { positions: rows, angeboteFolderShareUrl: raw.angebote_folder_share_url ?? null });
 }
 
 export async function listExternalProjects(externalFirmaId: number): Promise<PreisanfrageExternalProject[]> {

@@ -3,7 +3,7 @@ import { setCookie, deleteCookie } from 'hono/cookie';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { db } from '../db.js';
-import { users } from '../schema.js';
+import { users, effectivePermissions, type User } from '../schema.js';
 import {
   COOKIE_MAX_AGE_DAYS,
   COOKIE_NAME,
@@ -32,6 +32,25 @@ const updateProfileSchema = z.object({
   companyContactEmail: z.string().max(200).optional(),
 });
 
+/** Public, self-safe projection of a user row. Includes the effective
+ *  permission map (admins → every key) so the panel can gate its nav. Never
+ *  leaks the password hash; `isActive` is omitted (the caller is, by
+ *  definition, active — requireAuth rejects deactivated sessions). */
+function serializeUser(user: User) {
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    permissions: effectivePermissions(user),
+    companyName: user.companyName,
+    companyLogoUrl: user.companyLogoUrl,
+    companyPhone: user.companyPhone,
+    companyContactEmail: user.companyContactEmail,
+    mustChangePassword: user.mustChangePassword,
+  };
+}
+
 export const authRoute = new Hono<{ Variables: AuthVariables }>()
   .post('/login', async (c) => {
     const body = await c.req.json().catch(() => null);
@@ -52,6 +71,9 @@ export const authRoute = new Hono<{ Variables: AuthVariables }>()
     if (!ok) {
       return c.json({ error: 'invalid_credentials' }, 401);
     }
+    if (!user.isActive) {
+      return c.json({ error: 'account_disabled' }, 403);
+    }
     const token = await signToken({ sub: user.id, email: user.email });
     const isProd = process.env.NODE_ENV === 'production';
     setCookie(c, COOKIE_NAME, token, {
@@ -61,18 +83,7 @@ export const authRoute = new Hono<{ Variables: AuthVariables }>()
       path: '/',
       maxAge: COOKIE_MAX_AGE_DAYS * 24 * 60 * 60,
     });
-    return c.json({
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        companyName: user.companyName,
-        companyLogoUrl: user.companyLogoUrl,
-        companyPhone: user.companyPhone,
-        companyContactEmail: user.companyContactEmail,
-        mustChangePassword: user.mustChangePassword,
-      },
-    });
+    return c.json({ user: serializeUser(user) });
   })
 
   .post('/logout', async (c) => {
@@ -84,18 +95,7 @@ export const authRoute = new Hono<{ Variables: AuthVariables }>()
     const userId = c.get('userId');
     const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
     if (!user) return c.json({ error: 'unauthorized' }, 401);
-    return c.json({
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        companyName: user.companyName,
-        companyLogoUrl: user.companyLogoUrl,
-        companyPhone: user.companyPhone,
-        companyContactEmail: user.companyContactEmail,
-        mustChangePassword: user.mustChangePassword,
-      },
-    });
+    return c.json({ user: serializeUser(user) });
   })
 
   .post('/change-password', requireAuth, async (c) => {
@@ -136,16 +136,5 @@ export const authRoute = new Hono<{ Variables: AuthVariables }>()
     await db.update(users).set(patch).where(eq(users.id, userId));
     const updated = await db.query.users.findFirst({ where: eq(users.id, userId) });
     if (!updated) return c.json({ error: 'not_found' }, 404);
-    return c.json({
-      user: {
-        id: updated.id,
-        email: updated.email,
-        name: updated.name,
-        companyName: updated.companyName,
-        companyLogoUrl: updated.companyLogoUrl,
-        companyPhone: updated.companyPhone,
-        companyContactEmail: updated.companyContactEmail,
-        mustChangePassword: updated.mustChangePassword,
-      },
-    });
+    return c.json({ user: serializeUser(updated) });
   });

@@ -20,6 +20,11 @@ import {
   Scale,
   Wrench,
   ChevronDown,
+  Target,
+  Eraser,
+  FileSpreadsheet,
+  FileCode2,
+  FileDigit,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -32,7 +37,7 @@ import type {
   ProjectDetail as ProjectDetailType,
   ShareSummary,
 } from './types';
-import { calcTotals, formatEUR, formatNum, DEFAULT_CALC_PARAMS, recalcAll } from './calc';
+import { calcTotals, formatEUR, formatNum, DEFAULT_CALC_PARAMS, recalcAll, baseNetto, solveZielAufschlag } from './calc';
 import { Breadcrumb } from '@/pages/panel/ui';
 import PositionTable from './PositionTable';
 import PositionTableV2 from './PositionTableV2';
@@ -197,6 +202,51 @@ export default function ProjectDetail() {
     setData((d) => (d ? { ...d, calcParams: { ...d.calcParams, ...patch } } : d));
   }, []);
 
+  // "Preise zurücksetzen" — wipe every non-header position's calculator inputs
+  // (Material/Zeit/NU + per-row Geräte-Satz + the inline formulas & F1..F7
+  // scratch cells) so each row falls back to "EP fehlt" / 0,00 €. Mengen, OZ,
+  // Texte, Sichtbarkeit und die globalen Stellschrauben bleiben unberührt —
+  // dies setzt nur die eingegebenen Preise zurück, nicht das LV selbst.
+  // Requires an explicit confirm because it's irreversible. recalcAll keeps the
+  // stored EP/GP consistent immediately; the debounced auto-save persists it.
+  const resetAllPrices = useCallback(() => {
+    if (!data) return;
+    const resettable = data.positions.filter((p) => !p.isHeader).length;
+    if (resettable === 0) {
+      toast('Keine Positionen zum Zurücksetzen vorhanden.');
+      return;
+    }
+    if (
+      typeof window !== 'undefined' &&
+      !window.confirm(
+        `Alle Preise von ${resettable} ${resettable === 1 ? 'Position' : 'Positionen'} auf 0 € zurücksetzen? ` +
+          'Material, Zeit, NU und Geräte-Sätze werden geleert. Mengen und Texte bleiben erhalten. ' +
+          'Diese Aktion lässt sich nicht rückgängig machen.',
+      )
+    ) {
+      return;
+    }
+    const cleared = data.positions.map((p) =>
+      p.isHeader
+        ? p
+        : {
+            ...p,
+            materialCost: 0,
+            timeMinutes: 0,
+            nuCost: 0,
+            geraeteSatz: undefined,
+            materialFormula: undefined,
+            timeMinutesFormula: undefined,
+            nuFormula: undefined,
+            preCalcs: undefined,
+          },
+    );
+    updatePositions(recalcAll(cleared, data.calcParams));
+    toast.success(
+      `Alle Preise zurückgesetzt — ${resettable} ${resettable === 1 ? 'Position' : 'Positionen'} auf 0 €.`,
+    );
+  }, [data, updatePositions]);
+
   async function snapshotVersion() {
     if (!data) return;
     try {
@@ -240,6 +290,27 @@ export default function ProjectDetail() {
     a.download = `${(data.name || 'kalkulation').replace(/[^a-zA-Z0-9_-]+/g, '_')}.xlsx`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function exportToPdf() {
+    if (!data) return;
+    try {
+      const { exportProjectPdf } = await import('./exportFormats');
+      await exportProjectPdf(data);
+    } catch {
+      toast.error('PDF-Export fehlgeschlagen.');
+    }
+  }
+
+  async function exportToGaeb(variant: 'xml' | 'd90') {
+    if (!data) return;
+    try {
+      const mod = await import('./exportFormats');
+      if (variant === 'xml') mod.exportProjectGaebXml(data);
+      else mod.exportProjectGaeb90(data);
+    } catch {
+      toast.error('GAEB-Export fehlgeschlagen.');
+    }
   }
 
   function onShareCreated(share: ShareSummary) {
@@ -341,6 +412,7 @@ export default function ProjectDetail() {
             hasMultipleSnapshots={project.shares.filter((s) => !s.revokedAt).length >= 2}
             onValidate={() => setShowSubmit(true)}
             onDiff={() => setShowDiff(true)}
+            onReset={resetAllPrices}
           />
           <button
             onClick={() => setShowImport(true)}
@@ -350,10 +422,12 @@ export default function ProjectDetail() {
             <Upload className="w-4 h-4" />
             Importieren
           </button>
-          <button onClick={exportToExcel} className="btn btn-secondary flex items-center gap-2">
-            <Download className="w-4 h-4" />
-            Excel
-          </button>
+          <ExportMenu
+            onExcel={exportToExcel}
+            onPdf={exportToPdf}
+            onGaebXml={() => exportToGaeb('xml')}
+            onGaeb90={() => exportToGaeb('d90')}
+          />
           <button
             onClick={() => setShowShare({})}
             className="btn btn-primary flex items-center gap-2"
@@ -364,8 +438,23 @@ export default function ProjectDetail() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5">
+      <div className="space-y-4">
         <div className="space-y-4 min-w-0">
+          {totals && (
+            <PriceBar
+              totals={totals}
+              positionCount={data.positions.length}
+              visibleCount={visibleCount}
+              positions={data.positions}
+              params={data.calcParams}
+              onSolveTarget={(target) =>
+                updateCalcParams({
+                  zielAufschlag: solveZielAufschlag(data.positions, data.calcParams, target),
+                })
+              }
+              onResetTarget={() => updateCalcParams({ zielAufschlag: 0 })}
+            />
+          )}
           {showSettings && (
             <SettingsPanel
               meta={data}
@@ -462,21 +551,24 @@ export default function ProjectDetail() {
           )}
         </div>
 
-        <aside className="space-y-4">
-          <TotalsCard totals={totals!} positionCount={data.positions.length} visibleCount={visibleCount} />
+        {/* Geteilte Links — unter der Tabelle (sekundär; „Mit Kunde teilen“ ist
+            oben in der Toolbar, der finale Preis ganz oben in der PriceBar). */}
+        <div className="max-w-lg">
           <SharesCard
             shares={activeShares}
             allShares={project.shares}
             projectUpdatedAt={project.updatedAt}
             onOpenShare={() => setShowShare({})}
           />
-        </aside>
+        </div>
       </div>
 
       {showShare && (
         <ShareDialog
           projectId={project.id}
           projectName={data.name}
+          deadline={data.deadline}
+          angeboteFolderUrl={data.angeboteFolderUrl}
           positions={data.positions}
           calcParams={data.calcParams}
           existingShares={project.shares}
@@ -484,6 +576,7 @@ export default function ProjectDetail() {
           onClose={() => setShowShare(false)}
           onCreated={onShareCreated}
           onRequestNachtrag={(parentShareId) => setShowShare({ parentShareId })}
+          onAngeboteUrlResolved={(url) => updateMeta({ angeboteFolderUrl: url })}
         />
       )}
 
@@ -571,11 +664,13 @@ export function ToolsMenu({
   hasMultipleSnapshots,
   onValidate,
   onDiff,
+  onReset,
 }: {
   projectId: string;
   hasMultipleSnapshots: boolean;
   onValidate: () => void;
   onDiff: () => void;
+  onReset: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -607,7 +702,7 @@ export function ToolsMenu({
           'btn btn-secondary flex items-center gap-2',
           open && 'bg-primary-50 text-primary-700 border-primary-200 dark:bg-primary-500/10 dark:text-primary-100',
         )}
-        title="EFB · Nachkalk · Preisspiegel · Validieren · Vergleichen"
+        title="EFB · Nachkalk · Preisspiegel · Validieren · Vergleichen · Preise zurücksetzen"
       >
         <Wrench className="w-4 h-4" />
         Werkzeuge
@@ -659,6 +754,105 @@ export function ToolsMenu({
               onDiff();
             }}
           />
+          <div className="border-t border-slate-100 dark:border-slate-800" />
+          <MenuButton
+            icon={Eraser}
+            label="Preise zurücksetzen"
+            sub="Alle Positionen auf 0 € — nicht umkehrbar"
+            danger
+            onClick={() => {
+              setOpen(false);
+              onReset();
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ExportMenu({
+  onExcel,
+  onPdf,
+  onGaebXml,
+  onGaeb90,
+}: {
+  onExcel: () => void;
+  onPdf: () => void;
+  onGaebXml: () => void;
+  onGaeb90: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onClickOutside);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const pick = (fn: () => void) => () => {
+    setOpen(false);
+    fn();
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((s) => !s)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={clsx(
+          'btn btn-secondary flex items-center gap-2',
+          open && 'bg-primary-50 text-primary-700 border-primary-200 dark:bg-primary-500/10 dark:text-primary-100',
+        )}
+        title="Excel · PDF · GAEB exportieren"
+      >
+        <Download className="w-4 h-4" />
+        Export
+        <ChevronDown className={clsx('w-3 h-3 transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 mt-1.5 w-64 z-40 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl overflow-hidden"
+        >
+          <MenuButton
+            icon={FileSpreadsheet}
+            label="Excel"
+            sub="Kalkulations-Vorlage (.xlsx)"
+            onClick={pick(onExcel)}
+          />
+          <MenuButton
+            icon={FileText}
+            label="PDF"
+            sub="Angebot zum Drucken & Senden"
+            onClick={pick(onPdf)}
+          />
+          <div className="border-t border-slate-100 dark:border-slate-800" />
+          <MenuButton
+            icon={FileCode2}
+            label="GAEB (DA XML)"
+            sub="Angebot .x84 — Standard-Austauschformat"
+            onClick={pick(onGaebXml)}
+          />
+          <MenuButton
+            icon={FileDigit}
+            label="GAEB 90"
+            sub="Angebot .d84 — ASCII-Altformat"
+            onClick={pick(onGaeb90)}
+          />
         </div>
       )}
     </div>
@@ -700,12 +894,14 @@ function MenuButton({
   sub,
   onClick,
   disabled,
+  danger,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   sub: string;
   onClick: () => void;
   disabled?: boolean;
+  danger?: boolean;
 }) {
   return (
     <button
@@ -713,11 +909,28 @@ function MenuButton({
       onClick={onClick}
       disabled={disabled}
       role="menuitem"
-      className="w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+      className={clsx(
+        'w-full flex items-start gap-3 px-3 py-2.5 text-left transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent',
+        danger
+          ? 'hover:bg-red-50 dark:hover:bg-red-950/30'
+          : 'hover:bg-slate-50 dark:hover:bg-slate-800',
+      )}
     >
-      <Icon className="w-4 h-4 mt-0.5 text-primary-600 dark:text-primary-300 flex-shrink-0" />
+      <Icon
+        className={clsx(
+          'w-4 h-4 mt-0.5 flex-shrink-0',
+          danger ? 'text-red-600 dark:text-red-400' : 'text-primary-600 dark:text-primary-300',
+        )}
+      />
       <div className="min-w-0">
-        <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{label}</p>
+        <p
+          className={clsx(
+            'text-sm font-semibold',
+            danger ? 'text-red-700 dark:text-red-300' : 'text-slate-800 dark:text-slate-100',
+          )}
+        >
+          {label}
+        </p>
         <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{sub}</p>
       </div>
     </button>
@@ -790,75 +1003,203 @@ function SaveIndicator({
   );
 }
 
-function TotalsCard({
+/** Horizontal price summary shown ABOVE the position table: surfaces the final
+ *  Netto/Brutto prominently and frees the full page width for the (now wide)
+ *  table. Reuses EndbetragControl (bare) for the Ziel-Endbetrag input. */
+function PriceBar({
   totals,
   positionCount,
   visibleCount,
+  positions,
+  params,
+  onSolveTarget,
+  onResetTarget,
 }: {
   totals: ReturnType<typeof calcTotals>;
   positionCount: number;
   visibleCount: number;
+  positions: Position[];
+  params: CalcParams;
+  onSolveTarget: (targetNetto: number) => void;
+  onResetTarget: () => void;
 }) {
   return (
-    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5">
-      <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Summen</h3>
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-4 sm:px-5 py-4 shadow-sm">
+      <div className="flex flex-col xl:flex-row xl:items-center gap-4 xl:gap-6">
+        {/* Kosten-Zerlegung — kompakt, horizontal */}
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+          <BreakItem label="Lohn" value={totals.totalLohn} />
+          <BreakItem label="Material" value={totals.totalMaterial} />
+          <BreakItem label="Geräte" value={totals.totalGeraet} />
+          <BreakItem label="NU" value={totals.totalNu} />
+          <span className="hidden lg:inline text-[11px] text-slate-400 dark:text-slate-500 whitespace-nowrap">
+            {positionCount} {positionCount === 1 ? 'Zeile' : 'Zeilen'} ·{' '}
+            <span className="text-emerald-700 dark:text-emerald-300 font-medium">{visibleCount} sichtbar</span> ·{' '}
+            {formatNum(totals.totalHours, 1)} h
+          </span>
+        </div>
 
-      <div className="mt-3 space-y-1.5 text-sm">
-        <Row label="Lohnanteil" value={totals.totalLohn} muted />
-        <Row label="Material" value={totals.totalMaterial} muted />
-        <Row label="Geräte" value={totals.totalGeraet} muted />
-        <Row label="Nachunternehmer" value={totals.totalNu} muted />
-      </div>
-
-      <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 space-y-1.5">
-        <Row label="Netto (gesamt)" value={totals.totalNetto} strong />
-        <Row label="MwSt 19 %" value={totals.totalMwst} muted />
-        <Row label="Brutto" value={totals.totalBrutto} strong />
-      </div>
-
-      <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
-        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-          {positionCount} {positionCount === 1 ? 'Zeile' : 'Zeilen'} insgesamt,{' '}
-          <strong className="text-emerald-700 dark:text-emerald-300">{visibleCount} für Kunde sichtbar</strong>.
-        </p>
-        <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-          Aufwand: {formatNum(totals.totalHours, 1)} h
-        </p>
+        {/* Endbetrag-Steuerung + finaler Preis — rechtsbündig & prominent */}
+        <div className="flex flex-col sm:flex-row sm:items-end gap-4 xl:ml-auto">
+          <div className="sm:w-[230px] shrink-0">
+            <EndbetragControl
+              bare
+              positions={positions}
+              params={params}
+              totalNetto={totals.totalNetto}
+              onSolve={onSolveTarget}
+              onReset={onResetTarget}
+            />
+          </div>
+          <div className="flex items-end gap-5 sm:gap-7 sm:border-l sm:border-slate-200 sm:dark:border-slate-700 sm:pl-6">
+            <PriceFigure label="Netto" value={totals.totalNetto} />
+            <PriceFigure label="Brutto · inkl. 19 % MwSt" value={totals.totalBrutto} accent />
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-function Row({
-  label,
-  value,
-  muted,
-  strong,
-}: {
-  label: string;
-  value: number;
-  muted?: boolean;
-  strong?: boolean;
-}) {
+function BreakItem({ label, value }: { label: string; value: number }) {
   return (
-    <div className="flex items-center justify-between">
-      <span
-        className={clsx(
-          'text-slate-500 dark:text-slate-400',
-          strong && 'text-slate-900 dark:text-slate-100 font-semibold',
-        )}
-      >
+    <div className="flex flex-col leading-tight">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+        {label}
+      </span>
+      <span className="text-sm tabular-nums text-slate-600 dark:text-slate-300">{formatEUR(value)}</span>
+    </div>
+  );
+}
+
+function PriceFigure({ label, value, accent = false }: { label: string; value: number; accent?: boolean }) {
+  return (
+    <div className="flex flex-col leading-tight">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 whitespace-nowrap">
         {label}
       </span>
       <span
         className={clsx(
-          'tabular-nums',
-          muted ? 'text-slate-500 dark:text-slate-400' : 'text-slate-900 dark:text-slate-100',
-          strong && 'font-semibold',
+          'text-xl sm:text-2xl font-bold tabular-nums whitespace-nowrap',
+          accent ? 'text-primary-700 dark:text-primary-300' : 'text-slate-900 dark:text-white',
         )}
       >
         {formatEUR(value)}
       </span>
+    </div>
+  );
+}
+
+/** Parse a user-typed amount using German conventions: "." groups thousands,
+ *  "," is the decimal separator. Falls back to a lone-dot-as-thousands reading
+ *  so "24.000" → 24000 (the common case from a WhatsApp "24k netto"). Returns
+ *  null for empty/garbage input. */
+function parseGermanAmount(raw: string): number | null {
+  const cleaned = raw.replace(/[^0-9.,-]/g, '').trim();
+  if (!cleaned || cleaned === '-') return null;
+  const normalized = cleaned.includes(',')
+    ? cleaned.replace(/\./g, '').replace(',', '.')
+    : cleaned.replace(/\./g, '');
+  const n = Number(normalized);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** "Endbetrag vorgeben" — type a desired net Angebotssumme; the global
+ *  Ziel-Aufschlag is back-solved (`solveZielAufschlag`) so the bid lands on
+ *  that total. Shows the resulting markup % + the raw basis it scales from. */
+function EndbetragControl({
+  positions,
+  params,
+  totalNetto,
+  onSolve,
+  onReset,
+  bare = false,
+}: {
+  positions: Position[];
+  params: CalcParams;
+  totalNetto: number;
+  onSolve: (targetNetto: number) => void;
+  onReset: () => void;
+  /** When true, drop the card's top divider/margin so the control can sit
+   *  inline in the horizontal PriceBar. */
+  bare?: boolean;
+}) {
+  const base = useMemo(() => baseNetto(positions, params), [positions, params]);
+  const ziel = params.zielAufschlag ?? 0;
+  const active = Math.abs(ziel) > 1e-9;
+  // null = not editing → field mirrors the live total; string = user's draft.
+  const [draft, setDraft] = useState<string | null>(null);
+
+  const commit = () => {
+    if (draft === null) return;
+    const parsed = parseGermanAmount(draft);
+    setDraft(null);
+    if (parsed === null || parsed <= 0) return;
+    // No-op if the target already matches the current total (within a cent) —
+    // avoids re-solving + a churned save on a focus-then-blur with no edit.
+    if (Math.abs(parsed - totalNetto) < 0.005) return;
+    onSolve(parsed);
+  };
+
+  return (
+    <div className={bare ? '' : 'mt-4 pt-3 border-t border-slate-100 dark:border-slate-800'}>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1">
+          <Target className="w-3 h-3" />
+          Endbetrag vorgeben
+        </span>
+        {active && (
+          <button
+            type="button"
+            onClick={onReset}
+            className="text-[11px] text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 underline underline-offset-2"
+          >
+            Zurücksetzen
+          </button>
+        )}
+      </div>
+      <div className="relative">
+        <input
+          type="text"
+          inputMode="decimal"
+          value={draft ?? formatNum(totalNetto, 2)}
+          onFocus={() => setDraft(formatNum(totalNetto, 2))}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') e.currentTarget.blur();
+            if (e.key === 'Escape') {
+              setDraft(null);
+              e.currentTarget.blur();
+            }
+          }}
+          aria-label="Ziel-Endbetrag netto"
+          className="input text-sm tabular-nums w-full pr-7"
+        />
+        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">
+          €
+        </span>
+      </div>
+      {active ? (
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
+          Ziel-Aufschlag{' '}
+          <strong
+            className={clsx(
+              ziel >= 0
+                ? 'text-emerald-700 dark:text-emerald-300'
+                : 'text-amber-700 dark:text-amber-300',
+            )}
+          >
+            {ziel >= 0 ? '+' : '−'}
+            {formatNum(Math.abs(ziel) * 100, 1)}&nbsp;%
+          </strong>{' '}
+          auf Kalkulationsbasis {formatEUR(base)}.
+        </p>
+      ) : (
+        <p className="text-xs text-slate-400 dark:text-slate-500 mt-1.5 leading-relaxed">
+          Netto-Zielsumme eingeben — der Aufschlag wird automatisch über alle Positionen verteilt.
+        </p>
+      )}
     </div>
   );
 }
@@ -980,6 +1321,23 @@ function SettingsPanel({
         />
       </div>
 
+      <label className="block mt-3">
+        <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
+          Angebote-Ordner (SharePoint-Link)
+        </span>
+        <input
+          type="url"
+          value={meta.angeboteFolderUrl || ''}
+          onChange={(e) => onMeta({ angeboteFolderUrl: e.target.value })}
+          placeholder="https://…sharepoint.com/…/04_Angebote"
+          className="mt-1 input text-sm font-mono"
+        />
+        <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 block">
+          Link zum „04_Angebote"-Ordner der Ausschreibung — wird über „Vorlage einfügen" in die
+          Kunden-Begrüßung übernommen, damit der Kunde die eingegangenen Angebote einsehen kann.
+        </span>
+      </label>
+
       <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 sm:grid-cols-5 gap-3">
         <NumField
           label="Mittellohn €/h"
@@ -1000,6 +1358,16 @@ function SettingsPanel({
           label="NU Zuschlag %"
           value={params.nuZuschlag * 100}
           onChange={(v) => onParams({ nuZuschlag: v / 100 })}
+        />
+        <NumField
+          label="Geräte-Satz €/h"
+          value={params.geraeteStundensatz}
+          onChange={(v) => onParams({ geraeteStundensatz: v })}
+        />
+        <NumField
+          label="Geräte Zuschlag %"
+          value={(params.geraeteZuschlagPct ?? 0) * 100}
+          onChange={(v) => onParams({ geraeteZuschlagPct: v / 100 })}
         />
         <NumField
           label="MwSt %"

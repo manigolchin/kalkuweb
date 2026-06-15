@@ -25,6 +25,55 @@ export type Position = {
   materialCost: number;
   timeMinutes: number;
   nuCost: number;
+  /** Per-position Geräte-Stundensatz (€/h) — the Vorlage's "Zulage Geräte"
+   *  (col Z), overridable per row for special equipment (crane/lift: 5–50 €/h).
+   *  When set, calc uses it for this position's Geräte cost; when absent, the
+   *  project-global `calcParams.geraeteStundensatz` applies. Internal-only —
+   *  never exposed in the customer share snapshot. */
+  geraeteSatz?: number;
+  /** Per-position Geräte lump sum (€/unit) — the Vorlage's hard-coded "EP
+   *  Geräte" (col AA) for site-setup/crane rows where equipment is a fixed cost
+   *  rather than time×rate. When set, calc uses it FLAT (ignores time and
+   *  geraeteSatz), so the import reproduces the Excel's Geräte total exactly.
+   *  Internal-only — never exposed in the customer share snapshot. */
+  geraeteEp?: number;
+  /** Custom formula for EP Geräte (col AA) — stored-formula-with-cached-value,
+   *  same pattern as materialFormula. When set, geraeteEp holds the evaluated
+   *  result and this string drives re-display + re-evaluation. Internal-only. */
+  geraeteEpFormula?: string;
+  /** Per-position EP Löhne override (€/unit) — the Vorlage's "EP Löhne" (col AB)
+   *  when it is NOT the default (Zeit/60 × Verrechnungslohn): a hard-coded labor
+   *  cost (e.g. 84,50 €/h for specialist work) or a custom rate. When set, calc
+   *  uses it FLAT for this position's Lohn. Internal-only — never in the share. */
+  lohnEp?: number;
+  /** Custom formula for EP Löhne (col AB). Same stored-formula-with-cached-value
+   *  pattern as materialFormula; lohnEp holds the evaluated result. Internal. */
+  lohnEpFormula?: string;
+  /** Per-position Lohn-Faktor "W" — the Vorlage's per-row labor multiplier on the
+   *  Verrechnungslohn (col AB = Zeit/60 × Verrechnungslohn × W). Captured at import
+   *  so this row's Lohn RE-PRICES when the global Verrechnungslohn (or the row's
+   *  Zeit) changes — unlike a flat lohnEp. Default 1 (plain Zeit × VL); a literal
+   *  specialist rate is folded in here too (W = rate ÷ (Zeit/60 × VL)) so it still
+   *  scales with VL. Internal-only — never in the customer share snapshot. */
+  lohnFaktor?: number;
+  /** Per-position EP Stoffe VK override (€/unit) — the Vorlage's "EP Stoffe VK"
+   *  (col AJ) when a hand-typed value replaces the default Material × (1+Zuschlag).
+   *  When set, calc uses it FLAT for this position's Material VERKAUF. Internal. */
+  materialEp?: number;
+  /** Per-position EP Nachunternehmer VK override (€/unit) — Vorlage "EP Nachu."
+   *  (col AK) when it deviates from NU × (1+Zuschlag). FLAT when set. Internal. */
+  nuEp?: number;
+  /** Per-position GP override (€) — the Vorlage's cached GESAMTPREIS (col F) when
+   *  our component rebuild can't reproduce it AND deviates a lot (hand-typed EP
+   *  markup, %-Zuschlag rows where F≠Menge×EP, stale EP). col F is the authoritative
+   *  offer price, so we pin it ("insert the number") and derive EP = GP/Menge. The
+   *  cost-type split stays component-derived (reconciled in the share). Internal. */
+  gpOverride?: number;
+  /** Bedarfs-/Eventualposition — priced (has an EP) but the Vorlage leaves its
+   *  GP (col F) blank so it is NOT part of the Angebotssumme. Mirrors Excel:
+   *  excluded from the project total, but still shown + editable so the user can
+   *  fold it into the offer. Set at import when E is filled but F is blank/0. */
+  bedarfsposition?: boolean;
   isHeader: boolean;
   sortOrder: number;
   sectionPath: string;
@@ -96,6 +145,23 @@ export type CalcParams = {
   tagesstunden: number;
   personaleinsatz: number;
   mwst: number;
+  /**
+   * Global Ziel-Aufschlag — a single markup factor applied on top of every
+   * position's calculated EP/GP so the calculator can hit a desired
+   * Angebotssumme ("Endbetrag vorgeben"). Stored additively: the effective
+   * factor is `1 + zielAufschlag`, so `0` is a no-op (default), `0.2` is
+   * +20 %, and a negative value is a Nachlass/discount.
+   *
+   * Because every GP scales linearly by `(1 + zielAufschlag)`, the value
+   * needed to reach a target net total is closed-form
+   * (`target / baseNetto - 1`, see `solveZielAufschlag`). Applied inside
+   * `calculatePosition`, so totals, EFB-breakdown, Excel export and the
+   * server-side share snapshot all pick it up automatically.
+   *
+   * Backwards-compat: projects created before this field have it filled in
+   * as `0` by the DEFAULT_CALC_PARAMS spread on load.
+   */
+  zielAufschlag: number;
 };
 
 /**
@@ -152,6 +218,14 @@ export type FaktorEntry = {
   raw: Record<string, number | string | null>;
 };
 
+/** Mirror of panel-api's ProjectSourceRef — where a calc was started from. */
+export type ProjectSourceRef = {
+  system: 'preisanfrage';
+  kind: 'managed' | 'external' | 'local' | 'directory';
+  firmaId: string | number;
+  projectId: number;
+};
+
 export type ProjectData = {
   name: string;
   client: string;
@@ -164,6 +238,15 @@ export type ProjectData = {
   calcParams: CalcParams;
   positions: Position[];
   notes?: string;
+  /** SharePoint-Link zum „04_Angebote"-Ordner dieser Ausschreibung (die
+   *  eingegangenen Lieferanten-/Subunternehmer-Angebote). Vom Kalkulator
+   *  eingefügt; die Share-Vorlage übernimmt ihn in die Kunden-Begrüßung,
+   *  damit der Kunde die Angebote einsehen kann. */
+  angeboteFolderUrl?: string;
+  /** Provenance of the calc — set once at „Kalkulation starten" (Firma →
+   *  Ausschreibung). Lets the share flow re-resolve the upstream Ausschreibung,
+   *  e.g. to auto-find the Angebote-folder link. */
+  sourceRef?: ProjectSourceRef;
   /** Round 4 PART P — full-fidelity capture (all optional for back-compat
    *  with projects created pre-Round-4 that don't have these fields). */
   zuschlagOriginal?: ZuschlagMatrix;
@@ -254,6 +337,29 @@ export type ShareSettings = {
   allowChangeRequests: boolean;
   showTotals: boolean;
   showMwst: boolean;
+  /** Detail level for each customer-visible position. `true` (default) shows
+   *  the full Langtext (long description) under each line — "alle Details".
+   *  `false` renders the short version: Kurztext + Menge/Einheit/Preis only.
+   *  Optional + treated as `true` when absent so shares created before this
+   *  flag existed keep showing the long text. */
+  showLongText?: boolean;
+  /** Show the per-position Material/Gerät/Zeit cost split + the VERKAUF
+   *  composition bar in the summary. Optional + treated as `true` when absent. */
+  showCostBreakdown?: boolean;
+  /** Show the EINKAUF / Zuschlag / Überschuss calculation detail + project
+   *  KPIs in the summary. Optional + treated as `true` when absent. Turn off
+   *  for a margin-free "Kurzfassung". */
+  showCalculation?: boolean;
+  /** Show a button in the customer view that opens the „04_Angebote"-Ordner
+   *  (the supplier/subcontractor offers behind the prices). Off/absent = no
+   *  button, and the server never ships `angeboteFolderUrl` to the customer. */
+  showAngebote?: boolean;
+  /** SharePoint-Link to this Ausschreibung's „04_Angebote" folder, frozen for
+   *  this share. Only reaches the customer when `showAngebote` is true AND the
+   *  value is an http(s) URL — gated server-side, never trusted from settings
+   *  alone. Must be an "anyone-with-link" share URL or the customer hits a
+   *  Microsoft login wall. */
+  angeboteFolderUrl?: string;
   bindefristDays?: number;
   /** PART H: optional plaintext password set by the calculator at share-create
    *  time. The server hashes it; the client never sees the hash back. The
@@ -296,10 +402,39 @@ export type ShareResponse = {
       positionId: string;
       type: 'modify' | 'remove' | 'comment';
       text: string;
+      /** Resolved server-side in /inbox from the frozen share snapshot so the
+       *  feedback tab can show WHICH position the request is about. */
+      oz?: string;
+      shortText?: string;
     }>;
     signature?: { name: string; timestamp: number; ip: string };
   };
   respondedAt: string;
+};
+
+/** One cost-type row in the customer-facing Kalkulations-Übersicht: EINKAUF /
+ *  Zuschlag / VERKAUF / DIFFERNZ. Mirrors the backend ShareCostType. */
+export type ShareCostType = { ek: number; vk: number; zuschlagPct: number; differnz: number };
+
+/** Aggregate calculation summary the customer sees at the top of a share.
+ *  Mirrors the backend ShareSnapshotSummary; `costTypes.*.vk` reconciles with
+ *  Σ position.gp = netto. */
+export type ShareCalcSummary = {
+  netto: number;
+  mwst: number;
+  brutto: number;
+  totalHours: number;
+  ekTotal: number;
+  ueberschuss: number;
+  costTypes: {
+    lohn: ShareCostType;
+    material: ShareCostType;
+    geraete: ShareCostType;
+    nu: ShareCostType;
+  };
+  mitarbeiter: number;
+  arbeitstage: number;
+  monate: number;
 };
 
 export type CustomerViewPayload = {
@@ -344,7 +479,16 @@ export type CustomerViewPayload = {
     sortOrder: number;
     ep: number;
     gp: number;
+    /** GESAMTPREIS split (Lohn/Material/Gerät/NU), summing to gp. Optional —
+     *  absent on legacy snapshots created before the field existed. */
+    gpLohn?: number;
+    gpMaterial?: number;
+    gpGeraet?: number;
+    gpNu?: number;
   }>;
+  /** Aggregate calculation summary over the visible positions. Null/absent on
+   *  legacy snapshots created before the field existed → summary block hidden. */
+  summary?: ShareCalcSummary | null;
   /** ISO timestamp of share creation — anchors the Bindefrist window. */
   createdAt: string;
   /** PART H: server-stripped settings flags relevant to the customer view.
@@ -363,15 +507,51 @@ export type CustomerViewPayload = {
   latestVersionNumber?: number;
 };
 
+/** Gateable panel areas. Mirrors PANEL_PERMISSION_KEYS in panel-api/src/schema.ts. */
+export type PanelPermissionKey =
+  | 'kalkulation'
+  | 'firmen'
+  | 'vorlagen'
+  | 'feedback'
+  | 'submissionskarte'
+  | 'statistik';
+
+export type UserRole = 'admin' | 'user';
+
 export type AuthUser = {
   id: string;
   email: string;
   name: string;
+  role: UserRole;
+  /** Effective permission map from the server (admins → every key true). */
+  permissions: Record<PanelPermissionKey, boolean>;
   companyName: string;
   companyLogoUrl: string;
   companyPhone: string;
   companyContactEmail: string;
   mustChangePassword: boolean;
+};
+
+/** Admin-panel view of any user (richer than AuthUser — includes isActive,
+ *  the raw assigned permission map, and project count). Mirrors
+ *  serializeAdminUser() in panel-api/src/routes/admin.ts. */
+export type AdminUser = {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  isActive: boolean;
+  /** What the admin actually assigned (raw, not admin-implies-all). */
+  permissions: Partial<Record<PanelPermissionKey, boolean>>;
+  /** What the user ends up with after the admin-implies-all rule. */
+  effectivePermissions: Record<PanelPermissionKey, boolean>;
+  companyName: string;
+  companyPhone: string;
+  companyContactEmail: string;
+  mustChangePassword: boolean;
+  projectCount: number;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type PositionTemplate = {
@@ -397,11 +577,78 @@ export type ViewPreset = {
   createdAt: string;
 };
 
+/** Round 12 — structured customer change requests ("Änderungswünsche").
+ *  Mirror of the panel-api schema unions. */
+export const CHANGE_REQUEST_FIELDS = [
+  'endbetrag',
+  'gesamtpreis',
+  'menge',
+  'material',
+  'geraete',
+  'zeit',
+  'lohn',
+  'sonstiges',
+] as const;
+export type ChangeRequestField = (typeof CHANGE_REQUEST_FIELDS)[number];
+export type ChangeRequestScope = 'global' | 'position';
+export type ChangeRequestDirection = 'lower' | 'higher' | 'exact' | 'unspecified';
+export type ChangeRequestUnit = 'eur' | 'min' | 'std' | 'qty' | 'pct';
+
+/** One change request the customer composes on the share (client → server).
+ *  `currentValue`/`unit` are NOT sent — the server lifts them from the frozen
+ *  snapshot so the "Ist" side of the diff can't be spoofed. */
+export type ChangeRequestInput = {
+  scope: ChangeRequestScope;
+  positionOz?: string;
+  field: ChangeRequestField;
+  requestedValue?: number | null;
+  direction?: ChangeRequestDirection;
+  note?: string;
+};
+
+/** One change request as the owner's Kunden-Feedback inbox sees it
+ *  (server → panel), with the position Kurztext resolved from the snapshot. */
+export type InboxChangeRequest = {
+  id: string;
+  scope: ChangeRequestScope;
+  positionOz: string | null;
+  /** Resolved from the frozen snapshot; null for global-scope wishes. */
+  shortText: string | null;
+  field: ChangeRequestField;
+  unit: ChangeRequestUnit;
+  /** What the customer was shown (server-lifted). Null when not in the snapshot. */
+  currentValue: number | null;
+  /** What the customer wants. Null when they only gave a direction + note. */
+  requestedValue: number | null;
+  direction: ChangeRequestDirection;
+  note: string;
+  authorName: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+};
+
+/** One per-position comment (positionComments table), resolved with the
+ *  position's short text from the frozen share snapshot. Surfaced in the
+ *  Kunden-Feedback tab so the calculator sees WHICH part was commented on. */
+export type InboxComment = {
+  id: string;
+  positionOz: string;
+  /** From the share snapshot; null if the position is no longer in it. */
+  shortText: string | null;
+  intent: 'accept' | 'change_menge' | 'change_fabrikat' | 'negotiate_ep' | 'other';
+  text: string;
+  authorName: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+};
+
 export type InboxEntry = {
   project: {
     id: string;
     name: string;
     client: string;
+    /** The Firma (Bauunternehmer) the offer belongs to — WHICH COMPANY. */
+    bidder: string;
     service: string;
     versionNumber: number;
     updatedAt: string;
@@ -417,4 +664,8 @@ export type InboxEntry = {
     snapshotHash: string | null;
   };
   responses: ShareResponse[];
+  comments: InboxComment[];
+  /** Round 12 — structured Änderungswünsche (current→requested value diffs).
+   *  Optional for back-compat with payloads/fixtures created before the field. */
+  changeRequests?: InboxChangeRequest[];
 };

@@ -25,6 +25,24 @@ const createShareSchema = z.object({
     allowChangeRequests: z.boolean().default(true),
     showTotals: z.boolean().default(true),
     showMwst: z.boolean().default(true),
+    // Detail level: true (default) = full Langtext per position, false = short
+    // version. Must be listed here or z.object() strips it from the stored JSON.
+    showLongText: z.boolean().default(true),
+    // Per-position Material/Gerät/Zeit split + VERKAUF composition in the summary.
+    showCostBreakdown: z.boolean().default(true),
+    // EINKAUF / Zuschlag / Überschuss + KPIs in the summary. Off = Kurzfassung.
+    showCalculation: z.boolean().default(true),
+    // Customer-view button to the „04_Angebote" folder + the frozen link it
+    // opens. The URL is constrained to http(s) HERE so a javascript:/data: URL
+    // can never be persisted and later rendered as a button href in the
+    // customer view (the public route also re-checks before exposing it).
+    showAngebote: z.boolean().optional(),
+    angeboteFolderUrl: z
+      .string()
+      .max(1000)
+      .url()
+      .refine((u) => /^https?:\/\//i.test(u), { message: 'must be http(s)' })
+      .optional(),
     bindefristDays: z.number().int().min(1).max(365).optional(),
     /** PART J: optional gate password. Plaintext over TLS, server hashes
      *  with bcrypt cost 12. Never returned to the client.
@@ -97,9 +115,13 @@ export const sharesRoute = new Hono<{ Variables: AuthVariables }>()
     }
     if (settingsToStore.expiresAt) {
       const t = new Date(settingsToStore.expiresAt);
-      if (Number.isFinite(t.getTime()) && t.getTime() > now.getTime()) {
-        expiresAtDate = t;
+      // Reject a past/invalid expiry instead of silently storing null — otherwise
+      // the customer would see an expiry date while the gate never fires (a
+      // never-expiring link). The contract is "future only".
+      if (!Number.isFinite(t.getTime()) || t.getTime() <= now.getTime()) {
+        return c.json({ error: 'invalid_input', detail: 'expiresAt must be in the future' }, 400);
       }
+      expiresAtDate = t;
       // Leave settings.expiresAt in the JSON for client display; the column
       // is the load-bearing copy.
     }

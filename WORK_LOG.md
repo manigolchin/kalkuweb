@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-06-11 12:14 — Panel logins for Sacha + Vanessa
+- Source: user "make - [ ] Sacha login and vanessa login for panel"
+- Branch: claude-auto/v2-gaps-closeout (continued)
+- Result: committed 6974f63 → pushed → deployed live (server cherry-pick b2dac79)
+- Notes: Added idempotent `ensureTeamUsers()` to the panel seed (runs on every boot + `npm run seed`), provisioning `sacha@kalku.de` and `vanessa@kalku.de` as role `user` with all 5 feature permissions (kalkulation/firmen/vorlagen/feedback/submissionskarte), `mustChangePassword=true`. Initial passwords are generated (`kalku-` + 12 random chars ≈ 72 bits) and printed to the boot log; overridable via `SACHA_PASSWORD`/`VANESSA_PASSWORD` (and `SACHA_EMAIL`/`VANESSA_EMAIL`). User rejected a human-readable temp password ("doesn't hack") → kept the strong generated one. Deployed to prod: clean cherry-pick, all 4 containers healthy, panel-api DB ok + preisanfrage enabled, both users created at boot. Verified live: `POST https://kalku.kalkus.de/api/panel/auth/login` with Vanessa's credential → HTTP 200, returns role `user` + full perms + mustChangePassword. Both must change password on first login. Defaults chosen: non-admin + full feature access; flip role or narrow access in the Benutzer tab.
+
 ## 2026-05-23 15:05 — Post-v4 audit: 8 bug fixes + Werkzeuge dropdown + Vorlagen-Bibliothek
 - Source: user "Be expert and analyse my panel and do research add more feutures if it is good for us and push to main and debug. Do your best you can use subagents"
 - Branch: claude-auto/2026-05-23-panel-bugfixes-and-vorlagen-drift → fast-forward into main → pushed → deployed

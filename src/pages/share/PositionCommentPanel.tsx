@@ -17,11 +17,20 @@
  * fields are not in the type — they cannot be rendered even by accident.
  */
 
-import { useEffect, useRef, useState } from 'react';
-import { X, MessageSquare, Trash2, HelpCircle, Pencil, Mail, User } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { X, MessageSquare, Trash2, HelpCircle, Pencil, Mail, User, SlidersHorizontal, ShoppingCart } from 'lucide-react';
 import clsx from 'clsx';
 import type { CustomerViewPayload } from '@/features/kalkulation/types';
 import { formatEUR } from '@/features/kalkulation/calc';
+import {
+  assembleChangeRequests,
+  availableFields,
+  draftsToBasketItems,
+  positionCurrentValue,
+  type ChangeRequestDraftMap,
+  type WunschBasketItem,
+} from '@/features/kalkulation/changeRequest';
+import ChangeRequestFields from './ChangeRequestFields';
 
 export type CommentDraft = {
   positionId: string;
@@ -54,6 +63,15 @@ type Props = {
     authorName?: string;
     authorEmail?: string;
   }) => Promise<void>;
+  /** Round 12: whether the share reveals the per-position cost split. Gates
+   *  the Material/Gerät/Lohn change targets (only offer figures the customer
+   *  was actually shown). Menge + Gesamtpreis are always offered. */
+  showCostBreakdown?: boolean;
+  /** Round 12d: drop structured price/quantity wishes into the Wunsch-Korb.
+   *  When provided, the "Preis oder Menge anpassen" composer is shown; on
+   *  "Übernehmen" the assembled items are added to the basket (the customer
+   *  reviews + sends them together later) and any free-text comment is posted. */
+  onAddChangeRequests?: (items: WunschBasketItem[]) => void;
 };
 
 const INTENTS: Array<{ key: CommentDraft['type']; label: string; hint: string; icon: typeof Pencil }> = [
@@ -74,9 +92,26 @@ export default function PositionCommentPanel({
   onSetCustomerName,
   onSetCustomerEmail,
   onSubmitToServer,
+  showCostBreakdown = true,
+  onAddChangeRequests,
 }: Props) {
   const [submitting, setSubmitting] = useState(false);
+  const [crDrafts, setCrDrafts] = useState<ChangeRequestDraftMap>({});
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Reset the structured drafts whenever a different position is opened.
+  useEffect(() => {
+    setCrDrafts({});
+  }, [position?.id]);
+
+  const crFields = useMemo(
+    () => availableFields('position', { showCostBreakdown, showCalculation: true, showTotals: true }),
+    [showCostBreakdown],
+  );
+  const crItems = useMemo(
+    () => assembleChangeRequests('position', (position?.oz || '').trim(), crDrafts),
+    [crDrafts, position?.oz],
+  );
 
   // Focus the textarea when the panel opens so the customer can start
   // typing immediately. Skip the auto-focus on touch devices where it
@@ -103,6 +138,8 @@ export default function PositionCommentPanel({
 
   const activeIntent: CommentDraft['type'] = draft?.type ?? 'modify';
   const hasContact = customerName.trim().length > 0;
+  const hasText = (draft?.text.trim().length ?? 0) > 0;
+  const hasContent = hasText || crItems.length > 0;
 
   return (
     <div
@@ -157,6 +194,23 @@ export default function PositionCommentPanel({
         </section>
 
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+          {/* Round 12: structured price/quantity change request → Wunsch-Korb */}
+          {onAddChangeRequests && (
+            <fieldset>
+              <legend className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1.5">
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                Preis oder Menge anpassen
+              </legend>
+              <ChangeRequestFields
+                scope="position"
+                fields={crFields}
+                currentValueFor={(f) => positionCurrentValue(f, position)}
+                drafts={crDrafts}
+                onChange={setCrDrafts}
+              />
+            </fieldset>
+          )}
+
           {/* Intent picker */}
           <fieldset>
             <legend className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">
@@ -213,8 +267,9 @@ export default function PositionCommentPanel({
             />
           </label>
 
-          {/* Identity capture — only shown if not already provided */}
-          {!hasContact && (
+          {/* Identity capture — only needed for a free-text Anmerkung (a wish
+              collects the name later in the Wunsch-Korb). */}
+          {!hasContact && hasText && (
             <section className="rounded-xl border border-amber-200 bg-amber-50/60 p-3 space-y-2">
               <p className="text-xs text-amber-900 font-medium">
                 Damit der Anbieter weiß, von wem die Anmerkung kommt:
@@ -256,11 +311,12 @@ export default function PositionCommentPanel({
 
         {/* Footer actions */}
         <footer className="flex items-center justify-between gap-3 px-4 h-14 border-t border-slate-200 bg-slate-50/40 flex-shrink-0">
-          {draft && draft.text.trim().length > 0 ? (
+          {hasContent ? (
             <button
               type="button"
               onClick={() => {
                 onClear();
+                setCrDrafts({});
                 onClose();
               }}
               className="text-xs text-slate-500 hover:text-rose-600 inline-flex items-center gap-1"
@@ -269,45 +325,66 @@ export default function PositionCommentPanel({
             </button>
           ) : (
             <span className="text-[11px] text-slate-400">
-              Wird mit anderen Anmerkungen am Ende gesendet.
+              {onAddChangeRequests ? 'Wünsche sammeln Sie im Wunsch-Korb.' : 'Wird mit anderen Anmerkungen am Ende gesendet.'}
             </span>
           )}
           <button
             type="button"
             onClick={async () => {
-              // If there's a non-empty draft AND a server handler, POST it
-              // before closing. Falls back to local-state-only behaviour
-              // when onSubmitToServer is omitted (preserves the legacy
-              // batched flow for callers that haven't opted in).
+              if (!position) {
+                onClose();
+                return;
+              }
+              if (!hasContent) {
+                onClose();
+                return;
+              }
               const text = (draft?.text ?? '').trim();
-              if (text.length > 0 && onSubmitToServer && position) {
+              const oz = (position.oz || '').trim();
+              // 1) Structured wishes → Wunsch-Korb (sync, can't fail). Clear the
+              //    drafts immediately so a comment-retry can't re-add them.
+              if (crItems.length > 0 && onAddChangeRequests) {
+                const where = oz ? `${oz} · ${position.shortText}` : position.shortText;
+                onAddChangeRequests(
+                  draftsToBasketItems('position', crDrafts, {
+                    positionOz: oz,
+                    where,
+                    currentValueFor: (f) => positionCurrentValue(f, position),
+                  }),
+                );
+                setCrDrafts({});
+              }
+              // 2) Any free-text comment (question / Streichen / remark) → posted now.
+              if (text.length > 0 && onSubmitToServer) {
                 setSubmitting(true);
                 try {
                   await onSubmitToServer({
-                    positionOz: (position.oz || '').trim(),
+                    positionOz: oz,
                     intent: draft?.type ?? 'comment',
                     text,
                     authorName: customerName.trim() || undefined,
                     authorEmail: customerEmail.trim() || undefined,
                   });
                 } catch {
-                  // Don't close on error — let the user retry.
                   setSubmitting(false);
-                  return;
+                  return; // keep open; wishes are already safely in the basket
                 }
                 setSubmitting(false);
               }
               onClose();
             }}
-            disabled={
-              submitting ||
-              (!hasContact && (draft?.text.trim().length ?? 0) > 0)
-            }
+            disabled={submitting || (!hasContact && hasText)}
             data-testid="position-comment-submit"
             className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg bg-primary-600 text-white text-sm font-semibold hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            title={!hasContact && (draft?.text.trim().length ?? 0) > 0 ? 'Bitte Namen eintragen' : undefined}
+            title={!hasContact && hasText ? 'Bitte Namen eintragen' : undefined}
           >
-            {submitting ? 'Senden…' : 'Anmerkung senden'}
+            {submitting ? 'Senden…' : crItems.length > 0 ? (
+              <>
+                <ShoppingCart className="w-3.5 h-3.5" /> In den Wunsch-Korb
+              </>
+            ) : (
+              'Anmerkung senden'
+            )}
           </button>
         </footer>
       </aside>

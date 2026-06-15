@@ -65,7 +65,7 @@ async function ownerCookie(userId: string, email: string): Promise<{ Cookie: str
 const DEFAULT_PARAMS: CalcParams = {
   mittellohn: 30, verrechnungslohn: 50, materialZuschlag: 0.12, nuZuschlag: 0.12,
   geraeteZuschlagPct: 0.1, geraeteStundensatz: 0.5, zeitabzug: 0,
-  tagesstunden: 8, personaleinsatz: 3, mwst: 0.19,
+  tagesstunden: 8, personaleinsatz: 3, mwst: 0.19, zielAufschlag: 0,
 };
 
 function fixturePos(overrides: Partial<Position> & { id: string }): Position {
@@ -410,6 +410,50 @@ describe('Round 9 — shares.ts (owner-side)', () => {
     const body = await res.json() as { id: string };
     const row = await db.query.shares.findFirst({ where: eq(schema.shares.id, body.id) });
     assert.equal(row!.settings.bindefristDays, 45);
+  });
+
+  test('POST with showLongText=false persists in settings JSON (short version)', async () => {
+    const { ownerId, projectId } = await seedOwnerOnly();
+    const res = await ownerApp.request(`/api/projects/${projectId}/shares`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await ownerCookie(ownerId, 'o@test.local')) },
+      body: JSON.stringify({
+        visiblePositionIds: ['pos1'],
+        settings: {
+          brandHeader: 'co-branded', allowApproval: true, allowChangeRequests: true,
+          showTotals: true, showMwst: true, showLongText: false,
+        },
+      }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json() as { id: string };
+    const row = await db.query.shares.findFirst({ where: eq(schema.shares.id, body.id) });
+    assert.equal(row!.settings.showLongText, false, 'short-version flag must survive the strict Zod object');
+  });
+
+  test('POST omitting showLongText defaults it to true (all details)', async () => {
+    // Guards the Zod .default(true): a share created without the flag must
+    // store true so legacy "all details" stays the implicit behaviour.
+    const { ownerId, projectId } = await seedOwnerOnly();
+    const res = await ownerApp.request(`/api/projects/${projectId}/shares`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await ownerCookie(ownerId, 'o@test.local')) },
+      body: JSON.stringify({
+        visiblePositionIds: ['pos1'],
+        settings: { brandHeader: 'co-branded', allowApproval: true, allowChangeRequests: true, showTotals: true, showMwst: true },
+      }),
+    });
+    const body = await res.json() as { id: string };
+    const row = await db.query.shares.findFirst({ where: eq(schema.shares.id, body.id) });
+    assert.equal(row!.settings.showLongText, true);
+  });
+
+  test('showLongText flows through to the customer view payload settings', async () => {
+    const { token } = await seedFull({ settings: { showLongText: false } });
+    const res = await publicApp.request(`/api/share/${token}`);
+    assert.equal(res.status, 200);
+    const body = await res.json() as { settings: { showLongText?: boolean } };
+    assert.equal(body.settings.showLongText, false);
   });
 
   test('DELETE /shares/:id sets revokedAt and returns ok', async () => {
@@ -769,6 +813,71 @@ describe('Round 9 — public.ts (customer-side)', () => {
     assert.equal(res.status, 403);
   });
 
+  // ── Regression (security): /pdf, /approve and /changes must honor the share
+  // password gate. They previously did their own inline token lookup and
+  // skipped the password check, so a password-protected share's PDF could be
+  // pulled — and a legally-binding approval / change-request submitted — with
+  // only the unguessable token. They now route through gateShare like the HTML
+  // view and /comments do.
+  test('GET /share/:token/pdf on a password-protected share WITHOUT password → 401', async () => {
+    const { token } = await seedFull({ password: 'pdfSecret1' });
+    const res = await publicApp.request(`/api/share/${token}/pdf`);
+    assert.equal(res.status, 401);
+    const body = await res.json() as { reason: string };
+    assert.equal(body.reason, 'password_required');
+  });
+
+  test('GET /share/:token/pdf on a password-protected share WITH correct password → 200 application/pdf', async () => {
+    const { token } = await seedFull({ password: 'pdfSecret1' });
+    const res = await publicApp.request(`/api/share/${token}/pdf`, { headers: { 'X-Share-Password': 'pdfSecret1' } });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'application/pdf');
+  });
+
+  test('POST /share/:token/approve on a password-protected share WITHOUT password → 401 + nothing recorded', async () => {
+    const { token, shareId } = await seedFull({ password: 'apprSecret1' });
+    const res = await publicApp.request(`/api/share/${token}/approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customerName: 'Kunde', customerEmail: 'k@example.de' }),
+    });
+    assert.equal(res.status, 401);
+    const responses = await db.select().from(schema.shareResponses).where(eq(schema.shareResponses.shareId, shareId));
+    assert.equal(responses.length, 0, 'approval must NOT be recorded when the password gate is not satisfied');
+  });
+
+  test('POST /share/:token/approve on a password-protected share WITH correct password → 200', async () => {
+    const { token } = await seedFull({ password: 'apprSecret1' });
+    const res = await publicApp.request(`/api/share/${token}/approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Share-Password': 'apprSecret1' },
+      body: JSON.stringify({ customerName: 'Kunde', customerEmail: 'k@example.de' }),
+    });
+    assert.equal(res.status, 200);
+  });
+
+  test('POST /share/:token/changes on a password-protected share WITHOUT password → 401 + nothing recorded', async () => {
+    const { token, shareId } = await seedFull({ password: 'chgSecret1' });
+    const res = await publicApp.request(`/api/share/${token}/changes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customerName: 'Kunde', changes: [{ positionId: 'pos1', type: 'modify', text: 'x' }] }),
+    });
+    assert.equal(res.status, 401);
+    const responses = await db.select().from(schema.shareResponses).where(eq(schema.shareResponses.shareId, shareId));
+    assert.equal(responses.length, 0, 'change-request must NOT be recorded when the password gate is not satisfied');
+  });
+
+  test('POST /share/:token/changes on a password-protected share WITH correct password → 200', async () => {
+    const { token } = await seedFull({ password: 'chgSecret1' });
+    const res = await publicApp.request(`/api/share/${token}/changes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Share-Password': 'chgSecret1' },
+      body: JSON.stringify({ customerName: 'Kunde', changes: [{ positionId: 'pos1', type: 'modify', text: 'x' }] }),
+    });
+    assert.equal(res.status, 200);
+  });
+
   test('Password is never echoed back in any customer-facing response body', async () => {
     const { token } = await seedFull({ password: 'TopSecretPwd99' });
     const res = await publicApp.request(`/api/share/${token}`, { headers: { 'X-Share-Password': 'TopSecretPwd99' } });
@@ -798,7 +907,9 @@ describe('Round 9 — public.ts (customer-side)', () => {
         classification: 'CLASSIFICATION_LEAK_CANARY',
       }),
     ];
-    const { token } = await seedFull({ positions });
+    // With cost breakdown + calculation hidden, NO cost data (per-position
+    // split or aggregate EINKAUF/Überschuss) may reach the customer JSON.
+    const { token } = await seedFull({ positions, settings: { showCostBreakdown: false, showCalculation: false } });
     const res = await publicApp.request(`/api/share/${token}`);
     const raw = await res.text();
     // Field-name leaks (presence of these keys in the JSON would be bad).
@@ -1232,7 +1343,8 @@ describe('Round 9 — extra coverage', () => {
   });
 
   test('Snapshot endpoint includes only stable customer fields per position', async () => {
-    const { token } = await seedFull();
+    // With cost breakdown hidden, positions carry only the minimal stable keys.
+    const { token } = await seedFull({ settings: { showCostBreakdown: false } });
     const res = await publicApp.request(`/api/share/${token}`);
     const body = await res.json() as { positions: Array<Record<string, unknown>> };
     for (const p of body.positions) {
@@ -1245,6 +1357,32 @@ describe('Round 9 — extra coverage', () => {
         );
       }
     }
+  });
+
+  test('Share payload exposes Geräte-split + summary ONLY when toggles are on (gated server-side)', async () => {
+    type ShareBody = {
+      positions: Array<Record<string, unknown>>;
+      summary: { ueberschuss: number; costTypes: { geraete: { ek: number; vk: number; zuschlagPct: number } } } | null;
+    };
+    // Geräte large enough that per-line rounding doesn't skew the ratio.
+    const bigGeraete = [fixturePos({ id: 'pb', oz: '1', materialCost: 100, timeMinutes: 600, quantity: 100 })];
+    // Toggles ON → per-position GP-split present + summary carries Geräte with
+    // EINKAUF = VERKAUF/(1+10 %), matching the Excel Vorlage (gaereteprznt).
+    const on = await seedFull({ positions: bigGeraete, settings: { showCostBreakdown: true, showCalculation: true } });
+    const onBody = (await (await publicApp.request(`/api/share/${on.token}`)).json()) as ShareBody;
+    assert.ok(onBody.positions.some((p) => 'gpGeraet' in p), 'gpGeraet present when breakdown on');
+    assert.ok(onBody.summary, 'summary present when calc on');
+    const g = onBody.summary!.costTypes.geraete;
+    assert.ok(Math.abs(g.ek - g.vk / 1.1) < 0.01, `Geräte EINKAUF should = VERKAUF/1.1 (Excel), got ek=${g.ek} vk=${g.vk}`);
+    assert.ok(g.ek < g.vk, 'Geräte EINKAUF < VERKAUF');
+    assert.ok(onBody.summary!.ueberschuss > 0, 'Überschuss present when calc on');
+
+    // Calc OFF → EINKAUF/Überschuss redacted (price-only stays).
+    const off = await seedFull({ positions: bigGeraete, settings: { showCostBreakdown: true, showCalculation: false } });
+    const offBody = (await (await publicApp.request(`/api/share/${off.token}`)).json()) as ShareBody;
+    assert.equal(offBody.summary!.ueberschuss, 0, 'Überschuss redacted when calc off');
+    assert.equal(offBody.summary!.costTypes.geraete.ek, 0, 'EINKAUF redacted when calc off');
+    assert.ok(offBody.summary!.costTypes.geraete.vk > 0, 'VERKAUF (price) still present when calc off');
   });
 
   test('parentShareId must exist (or 400 parent_not_found)', async () => {
