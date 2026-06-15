@@ -254,6 +254,18 @@ test('diffSnapshots — identical inputs report no changes', () => {
   assert.equal(d.delta, 0);
 });
 
+test('computeShareSummary: EINKAUF = VERKAUF ÷ (1+Zuschlag), like the Excel header', () => {
+  // materialEp override 200 → VERKAUF 200. EINKAUF must be 200/1.20 = 166,67
+  // (the Vorlage's J4 = stoffkosten/(1+materialzuschlag) formula), NOT the raw
+  // cost 100 — so the EINKAUF column + Überschuss match the Excel to the cent.
+  const positions: Position[] = [pos({ id: 'm1', quantity: 1, materialEp: 200, materialCost: 100, gp: 200 })];
+  const s = computeShareSummary(positions, {
+    ...DEFAULT_PARAMS, materialZuschlag: 0.20, nuZuschlag: 0, verrechnungslohn: 0, geraeteStundensatz: 0, zeitabzug: 0,
+  });
+  assert.equal(s.costTypes.material.vk, 200);
+  assert.ok(Math.abs(s.costTypes.material.ek - 166.67) < 0.01, `EK ${s.costTypes.material.ek} ≠ 166.67`);
+});
+
 // ── Regression: computeShareSummary must never emit a non-finite number ──
 // A malformed import can set geraeteZuschlagPct to -100 % (or worse), making the
 // Geräte EINKAUF divisor (1 + gPct) ≤ 0. That divided by zero → Infinity → the

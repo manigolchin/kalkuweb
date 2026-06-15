@@ -145,9 +145,20 @@ export function computeShareSummary(positions: Position[], params: CalcParams): 
   // (Überschuss = -Infinity, JSON-serialised as null). When the split is
   // undefined, fall back to EK = VK Geräte (no margin) — the same degrade the
   // Lohn ratio uses above.
-  const gFactor = 1 + gPct;
-  const ekGeraetSplit = gFactor > 0 ? ekGeraet / gFactor : ekGeraet;
-  const ek = [round(ekLohn), round(ekMaterial), round(ekGeraetSplit), round(ekNu)];
+  // EINKAUF per type, derived from the reconciled VERKAUF exactly like the
+  // Vorlage header (J4 = VK_Stoffe/(1+matZ), J6 = VK_Geräte/(1+gPct),
+  // J7 = Mittellohn × Ges.Std with Ges.Std = VK_Lohn/Verrechnungslohn) — so the
+  // EINKAUF column + Überschuss match the Excel (and the panel's captured matrix)
+  // to the cent instead of drifting from summed per-position raw costs. A
+  // non-positive divisor degrades to EK = VK (no margin) rather than Infinity.
+  const div = (vkv: number, factor: number) => (factor > 0 ? vkv / factor : vkv);
+  const vl = params.verrechnungslohn;
+  const ek = [
+    round(vl > 0 ? params.mittellohn * (vk[0] / vl) : vk[0]),
+    round(div(vk[1], 1 + (params.materialZuschlag ?? 0))),
+    round(div(vk[2], 1 + gPct)),
+    round(div(vk[3], 1 + (params.nuZuschlag ?? 0))),
+  ];
   const costType = (ekv: number, vkv: number) => ({
     ek: ekv,
     vk: vkv,
