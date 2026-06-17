@@ -95,6 +95,69 @@ function safeJson(text: string): unknown {
   }
 }
 
+/** Posteingang (incoming-email hub) — shapes returned by panel-api's
+ *  /posteingang/* proxy over preisanfrage's classified supplier emails. */
+export type PosteingangStats = {
+  angebot: number;
+  rueckfrage: number;
+  absage: number;
+  unklar: number;
+  nichtGespeichert: number;
+};
+export type PosteingangAttachment = {
+  id: number;
+  filename: string | null;
+  contentType: string | null;
+  sizeBytes: number | null;
+  sharepointUrl: string | null;
+};
+export type PosteingangEmail = {
+  id: number;
+  companyId: number;
+  messageId: string | null;
+  inReplyTo: string | null;
+  fromEmail: string | null;
+  fromName: string | null;
+  subject: string | null;
+  receivedAt: string | null;
+  bodyText: string | null;
+  classification: string | null;
+  classificationConfidence: number | null;
+  classificationReason: string | null;
+  status: string;
+  matchMethod: string | null;
+  projectId: number | null;
+  projectName: string | null;
+  supplierId: number | null;
+  supplierName: string | null;
+  sharepointSaved: boolean;
+  sharepointFolder: string | null;
+  hasAttachments: boolean;
+  attachmentCount: number;
+  attachments: PosteingangAttachment[];
+};
+export type PosteingangCompany = {
+  id: number;
+  name: string;
+  tradeType: string;
+  total: number;
+  stats: PosteingangStats;
+  needsAttention: number;
+};
+export type PosteingangOverview = {
+  enabled: boolean;
+  mock: boolean;
+  capped: boolean;
+  companies: PosteingangCompany[];
+  totals: PosteingangStats & { total: number; needsAttention: number };
+};
+export type PosteingangEmailsResponse = {
+  companyId: number;
+  total: number;
+  emails: PosteingangEmail[];
+  stats: PosteingangStats;
+};
+
 export const api = {
   auth: {
     login: (email: string, password: string) =>
@@ -537,6 +600,21 @@ export const api = {
     /** Soft-delete a local Ausschreibung. */
     archiveAuschreibung: (id: string) =>
       request<{ ok: true }>(`/firmen/local-auschreibung/${id}`, { method: 'DELETE' }),
+  },
+  /** Posteingang — cross-company supplier-email hub (read-only over
+   *  preisanfrage). The list call returns full records, so the reading pane
+   *  needs no separate detail fetch. */
+  posteingang: {
+    /** Left-rail: managed companies that have inbox activity + their tallies. */
+    overview: () => request<PosteingangOverview>(`/posteingang/overview`),
+    /** One company's emails (full records incl. body + attachments). */
+    emails: (companyId: number, opts?: { classification?: string; status?: string; limit?: number }) => {
+      const qs = new URLSearchParams({ company: String(companyId) });
+      if (opts?.classification) qs.set('classification', opts.classification);
+      if (opts?.status) qs.set('status', opts.status);
+      if (opts?.limit) qs.set('limit', String(opts.limit));
+      return request<PosteingangEmailsResponse>(`/posteingang/emails?${qs.toString()}`);
+    },
   },
   templates: {
     list: () => request<{ templates: PositionTemplate[] }>(`/templates`),

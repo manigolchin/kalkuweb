@@ -41,6 +41,7 @@ const FeedbackInbox = lazy(() => import('@/features/kalkulation/FeedbackInbox'))
 const Archiv = lazy(() => import('@/features/kalkulation/Archiv'));
 const Firmen = lazy(() => import('@/pages/panel/Firmen'));
 const Firma = lazy(() => import('@/pages/panel/Firma'));
+const Posteingang = lazy(() => import('@/pages/panel/Posteingang'));
 const Vorlagen = lazy(() => import('@/pages/panel/Vorlagen'));
 const AdminUsers = lazy(() => import('@/pages/panel/AdminUsers'));
 // Dev-only sandbox — bundled only in dev mode (tree-shaken in prod).
@@ -80,6 +81,14 @@ export default function App() {
             <Route index element={<Firmen />} />
             <Route path=":kind/:id" element={<Firma />} />
           </Route>
+          <Route
+            path="posteingang"
+            element={
+              <RequirePanelAccess permission="firmen">
+                <Posteingang />
+              </RequirePanelAccess>
+            }
+          />
           <Route
             path="kalkulation"
             element={

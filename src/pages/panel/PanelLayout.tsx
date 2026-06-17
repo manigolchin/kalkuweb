@@ -19,6 +19,7 @@ import {
   Menu,
   X,
   Building2,
+  Mail,
   Library,
   MapPin,
   List,
@@ -54,6 +55,15 @@ type NavItem = {
 const NAV: NavItem[] = [
   { to: '/panel', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/panel/firmen', label: 'Firmen', icon: Building2, permission: 'firmen' },
+  {
+    // Cross-company supplier-email hub — a read-only view onto preisanfrage's
+    // already-classified Posteingang (all firmen's mailboxes in one place).
+    // Gated by the `firmen` key: it's company-scoped data, same domain.
+    to: '/panel/posteingang',
+    label: 'Posteingang',
+    icon: Mail,
+    permission: 'firmen',
+  },
   {
     // Vergabe-Kiosk in preisanfrage = Projekte + Submissionskarte. Surface the
     // Projekte-Board here too (SSO-routed like the others) and gate it behind

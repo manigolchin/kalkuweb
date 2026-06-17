@@ -20,6 +20,9 @@ import type {
   PreisanfrageProject,
   PreisanfrageExternalProject,
   PreisanfragePosition,
+  PreisanfrageInboxEmail,
+  PreisanfrageInboxStats,
+  PreisanfrageInboxPage,
 } from './preisanfrage.js';
 
 let warned = false;
@@ -485,4 +488,155 @@ export function isMockMode(): boolean {
     typeof process.env.PREISANFRAGE_SERVICE_JWT === 'string' &&
     process.env.PREISANFRAGE_SERVICE_JWT.trim().length >= 10;
   return !inProd && !hasToken;
+}
+
+/* ─── Posteingang mock ─────────────────────────────────────────────────────
+ * A handful of realistic supplier replies for two managed mock firms so the
+ * panel's Posteingang hub renders end-to-end without a real preisanfrage JWT.
+ * Companies not listed here return an empty inbox (total 0) and therefore drop
+ * out of the left rail — exactly the live behaviour. */
+
+function mockEmail(e: Partial<PreisanfrageInboxEmail> & {
+  id: number;
+  companyId: number;
+  classification: string;
+  status: string;
+}): PreisanfrageInboxEmail {
+  return {
+    messageId: `<mock-${e.id}@kalku.de>`,
+    inReplyTo: null,
+    fromEmail: null,
+    fromName: null,
+    subject: null,
+    receivedAt: null,
+    bodyText: null,
+    classificationConfidence: null,
+    classificationReason: null,
+    matchMethod: null,
+    projectId: null,
+    projectName: null,
+    supplierId: null,
+    supplierName: null,
+    sharepointSaved: false,
+    sharepointFolder: null,
+    hasAttachments: false,
+    attachmentCount: 0,
+    attachments: [],
+    ...e,
+  };
+}
+
+const MOCK_INBOX: Record<number, PreisanfrageInboxEmail[]> = {
+  // Gesellchen GmbH (galabau)
+  5: [
+    mockEmail({
+      id: 5001, companyId: 5, classification: 'angebot', status: 'new',
+      fromEmail: 'angebote@galabau-mueller.de', fromName: 'GaLaBau Müller GmbH',
+      subject: 'AW: Anfrage 26-014 Außenanlagen Grundschule Dudweiler',
+      receivedAt: '2026-06-17T08:42:00+02:00',
+      bodyText:
+        'Sehr geehrte Damen und Herren,\n\nvielen Dank für Ihre Anfrage. Anbei erhalten Sie unser Angebot für die '
+        + 'Außenanlagen der Grundschule Dudweiler. Alle Preise verstehen sich netto zzgl. der gesetzlichen MwSt.; '
+        + 'Bindefrist 30 Tage.\n\nBei Rückfragen stehen wir gerne zur Verfügung.\n\nMit freundlichen Grüßen\nThomas Müller\nGaLaBau Müller GmbH',
+      classificationConfidence: 0.94, classificationReason: 'Angebots-PDF im Anhang, Preise genannt, Antwort auf unsere Anfrage.',
+      matchMethod: 'in_reply_to', projectId: 9014, projectName: '26-014 Außenanlagen Grundschule Dudweiler',
+      supplierName: 'GaLaBau Müller GmbH', hasAttachments: true, attachmentCount: 1,
+      attachments: [{ id: 71, filename: '26-014_Angebot_Mueller.pdf', contentType: 'application/pdf', sizeBytes: 284_512, sharepointUrl: null }],
+    }),
+    mockEmail({
+      id: 5002, companyId: 5, classification: 'angebot', status: 'saved',
+      fromEmail: 'vertrieb@pflanzenhof-saar.de', fromName: 'Pflanzenhof Saar',
+      subject: 'Angebot Pflanzlieferung 26-014',
+      receivedAt: '2026-06-16T15:08:00+02:00',
+      bodyText:
+        'Guten Tag,\n\nwie besprochen senden wir Ihnen unser Angebot für die Pflanzlieferung. Lieferzeit nach Absprache '
+        + 'ca. 3 Wochen.\n\nFreundliche Grüße\nPflanzenhof Saar',
+      classificationConfidence: 0.88, matchMethod: 'subject_and_sender',
+      projectId: 9014, projectName: '26-014 Außenanlagen Grundschule Dudweiler', supplierName: 'Pflanzenhof Saar',
+      sharepointSaved: true, sharepointFolder: '26-014_Grundschule_Dudweiler/04_Angebote/Pflanzenhof_Saar',
+      hasAttachments: true, attachmentCount: 1,
+      attachments: [{ id: 72, filename: 'Pflanzenhof_Saar_Angebot.pdf', contentType: 'application/pdf', sizeBytes: 156_900, sharepointUrl: 'https://kalku.sharepoint.com/sites/KT01/example/Pflanzenhof_Saar_Angebot.pdf' }],
+    }),
+    mockEmail({
+      id: 5003, companyId: 5, classification: 'rueckfrage', status: 'new',
+      fromEmail: 'info@erdbau-becker.de', fromName: 'Erdbau Becker',
+      subject: 'Rückfrage zu Position 03.04.120 — Anfrage 26-014',
+      receivedAt: '2026-06-17T07:15:00+02:00',
+      bodyText:
+        'Hallo,\n\nzu Position 03.04.120 (Oberboden andecken) ist die geforderte Schichtdicke nicht eindeutig. '
+        + 'Sollen wir 10 cm oder 15 cm kalkulieren? Ohne diese Angabe können wir keinen verbindlichen Preis nennen.\n\nDanke vorab\nM. Becker',
+      classificationConfidence: 0.91, classificationReason: 'Reine Rückfrage zu LV-Position, kein Preis, kein Anhang.',
+      matchMethod: 'subject_pattern', projectId: 9014, projectName: '26-014 Außenanlagen Grundschule Dudweiler',
+      supplierName: 'Erdbau Becker',
+    }),
+    mockEmail({
+      id: 5004, companyId: 5, classification: 'absage', status: 'new',
+      fromEmail: 'kontakt@natursteine-west.de', fromName: 'Natursteine West',
+      subject: 'AW: Anfrage 26-014 — leider keine Kapazität',
+      receivedAt: '2026-06-15T11:33:00+02:00',
+      bodyText: 'Sehr geehrte Damen und Herren,\n\nvielen Dank für die Anfrage. Aus Kapazitätsgründen müssen wir diesmal leider absagen.\n\nMit besten Grüßen\nNatursteine West',
+      classificationConfidence: 0.96, matchMethod: 'sender_email', supplierName: 'Natursteine West',
+    }),
+    mockEmail({
+      id: 5005, companyId: 5, classification: 'unklar', status: 'new',
+      fromEmail: 'no-reply@mailer.example', fromName: 'Mail Delivery',
+      subject: 'Automatische Antwort: Abwesenheit bis 23.06.',
+      receivedAt: '2026-06-15T09:01:00+02:00',
+      bodyText: 'Ich bin bis zum 23.06.2026 nicht im Hause und habe nur eingeschränkt Zugriff auf meine E-Mails. In dringenden Fällen wenden Sie sich bitte an das Sekretariat.',
+      classificationConfidence: 0.74, classificationReason: 'Automatische Abwesenheitsnotiz — keine Aktion erforderlich.',
+      matchMethod: 'unmatched',
+    }),
+  ],
+  // MPB Bau (leitungsbau)
+  6: [
+    mockEmail({
+      id: 6001, companyId: 6, classification: 'angebot', status: 'new',
+      fromEmail: 'angebot@rohrleitung-pfalz.de', fromName: 'Rohrleitungsbau Pfalz',
+      subject: 'Angebot 26-021 Kanalsanierung Bliesgau',
+      receivedAt: '2026-06-17T06:58:00+02:00',
+      bodyText: 'Guten Morgen,\n\nanbei unser Angebot zur Kanalsanierung. Die Hauptpositionen haben wir vollständig bepreist, zur Pos. 5.12 fehlt uns noch eine Angabe (siehe Anschreiben).\n\nMfG\nRohrleitungsbau Pfalz',
+      classificationConfidence: 0.90, matchMethod: 'in_reply_to',
+      projectId: 9021, projectName: '26-021 Kanalsanierung Bliesgau', supplierName: 'Rohrleitungsbau Pfalz',
+      hasAttachments: true, attachmentCount: 2,
+      attachments: [
+        { id: 81, filename: '26-021_Angebot_RB-Pfalz.pdf', contentType: 'application/pdf', sizeBytes: 412_300, sharepointUrl: null },
+        { id: 82, filename: 'Anschreiben.pdf', contentType: 'application/pdf', sizeBytes: 48_120, sharepointUrl: null },
+      ],
+    }),
+    mockEmail({
+      id: 6002, companyId: 6, classification: 'rueckfrage', status: 'new',
+      fromEmail: 'buero@tiefbau-merzig.de', fromName: 'Tiefbau Merzig',
+      subject: 'Nachfrage Submissionstermin 26-021',
+      receivedAt: '2026-06-16T13:20:00+02:00',
+      bodyText: 'Hallo,\n\nbis wann benötigen Sie unser Angebot? Im LV finden wir keinen eindeutigen Submissionstermin.\n\nGruß\nTiefbau Merzig',
+      classificationConfidence: 0.83, matchMethod: 'sender_email', supplierName: 'Tiefbau Merzig',
+    }),
+  ],
+};
+
+function computeMockStats(emails: PreisanfrageInboxEmail[]): PreisanfrageInboxStats {
+  const isNew = (e: PreisanfrageInboxEmail) => e.status === 'new';
+  return {
+    angebot: emails.filter((e) => e.classification === 'angebot').length,
+    rueckfrage: emails.filter((e) => e.classification === 'rueckfrage' && isNew(e)).length,
+    absage: emails.filter((e) => e.classification === 'absage' && isNew(e)).length,
+    unklar: emails.filter((e) => e.classification === 'unklar' && isNew(e)).length,
+    nichtGespeichert: emails.filter((e) => e.classification === 'angebot' && e.status === 'new' && !e.sharepointSaved).length,
+  };
+}
+
+export function getMockInbox(
+  companyId: number,
+  opts?: { classification?: string; status?: string; projectId?: number; limit?: number },
+): PreisanfrageInboxPage {
+  warnOnce();
+  const all = MOCK_INBOX[companyId] ?? [];
+  // Stats are company-wide (independent of the active filter), like upstream.
+  const stats = computeMockStats(all);
+  let emails = all;
+  if (opts?.classification) emails = emails.filter((e) => e.classification === opts.classification);
+  if (opts?.status) emails = emails.filter((e) => e.status === opts.status);
+  if (opts?.projectId) emails = emails.filter((e) => e.projectId === opts.projectId);
+  const limit = Math.min(Math.max(opts?.limit ?? 100, 1), 500);
+  return { total: all.length, emails: emails.slice(0, limit), stats };
 }

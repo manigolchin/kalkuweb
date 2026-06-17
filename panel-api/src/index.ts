@@ -15,6 +15,7 @@ import { notificationsRoute, digestRoute } from './routes/notifications.js';
 import { presetsRoute } from './routes/presets.js';
 import { templatesRoute } from './routes/templates.js';
 import { firmenRoute } from './routes/firmen.js';
+import { posteingangRoute } from './routes/posteingang.js';
 import { adminRoute } from './routes/admin.js';
 import { ssoRoute } from './routes/sso.js';
 import { rateLimit } from './lib/ratelimit.js';
@@ -125,6 +126,7 @@ app.route('/api/panel', digestRoute);
 app.route('/api/panel', presetsRoute);
 app.route('/api/panel', templatesRoute);
 app.route('/api/panel', firmenRoute);
+app.route('/api/panel', posteingangRoute);
 app.route('/api/panel', adminRoute);
 
 app.notFound((c) => c.json({ error: 'not_found', path: c.req.path }, 404));

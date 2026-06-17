@@ -26,6 +26,7 @@ import {
   getMockOverview,
   getMockProjectPositions,
   getMockProjectAngeboteUrl,
+  getMockInbox,
   isMockMode,
 } from './preisanfrage-fixture.js';
 
@@ -444,4 +445,184 @@ export async function listExternalProjects(externalFirmaId: number): Promise<Pre
       parsedAt: r.parsed_at,
     })),
   );
+}
+
+/* ─── Posteingang (incoming-email inbox) ──────────────────────────────────────
+ * A READ-ONLY window onto preisanfrage's incoming-email system. preisanfrage
+ * owns the IMAP polling, the Haiku classification and the SharePoint filing;
+ * the panel only READS, through the same admin service token — which
+ * `verify_company_access` lets see every company's inbox. Write-actions
+ * (save-to-SharePoint, re-classify) are NOT mirrored here; the UI links out to
+ * preisanfrage for those. The endpoint exposes only `body_text` (never the HTML
+ * part), so the panel renders plain text and can't be XSS'd by a supplier. */
+
+export type PreisanfrageInboxAttachment = {
+  id: number;
+  filename: string | null;
+  contentType: string | null;
+  sizeBytes: number | null;
+  /** SharePoint web URL once the mail has been filed; null while still unsaved.
+   *  We never serve raw bytes — the panel only ever links out to SharePoint. */
+  sharepointUrl: string | null;
+};
+
+/** Haiku's labels: angebot | rueckfrage | absage | unklar (open string in case
+ *  preisanfrage adds more later — the UI treats unknown values as 'unklar'). */
+export type PreisanfrageInboxClassification = 'angebot' | 'rueckfrage' | 'absage' | 'unklar' | string;
+
+export type PreisanfrageInboxEmail = {
+  id: number;
+  companyId: number;
+  messageId: string | null;
+  inReplyTo: string | null;
+  fromEmail: string | null;
+  fromName: string | null;
+  subject: string | null;
+  receivedAt: string | null;
+  /** Plain-text body only (preisanfrage's API never exposes the HTML part). */
+  bodyText: string | null;
+  classification: PreisanfrageInboxClassification | null;
+  classificationConfidence: number | null;
+  classificationReason: string | null;
+  /** new | saved | ignored | error | classification_pending | duplicate */
+  status: string;
+  matchMethod: string | null;
+  projectId: number | null;
+  projectName: string | null;
+  supplierId: number | null;
+  supplierName: string | null;
+  sharepointSaved: boolean;
+  sharepointFolder: string | null;
+  hasAttachments: boolean;
+  attachmentCount: number;
+  attachments: PreisanfrageInboxAttachment[];
+};
+
+/** Per-company tallies preisanfrage computes for the inbox. `angebot` is
+ *  all-time (saved + new); the others count only unseen items;
+ *  `nichtGespeichert` = new offers still awaiting a save (the actionable one). */
+export type PreisanfrageInboxStats = {
+  angebot: number;
+  rueckfrage: number;
+  absage: number;
+  unklar: number;
+  nichtGespeichert: number;
+};
+
+export type PreisanfrageInboxPage = {
+  total: number;
+  emails: PreisanfrageInboxEmail[];
+  stats: PreisanfrageInboxStats;
+};
+
+function mapInboxStats(s: Record<string, unknown> | null | undefined): PreisanfrageInboxStats {
+  const n = (k: string) => (typeof s?.[k] === 'number' ? (s[k] as number) : 0);
+  return {
+    angebot: n('angebot'),
+    rueckfrage: n('rueckfrage'),
+    absage: n('absage'),
+    unklar: n('unklar'),
+    nichtGespeichert: n('nicht_gespeichert'),
+  };
+}
+
+type RawInboxAttachment = {
+  id: number;
+  filename: string | null;
+  content_type: string | null;
+  size_bytes: number | null;
+  sharepoint_url: string | null;
+};
+type RawInboxEmail = {
+  id: number;
+  company_id: number;
+  message_id: string | null;
+  in_reply_to: string | null;
+  from_email: string | null;
+  from_name: string | null;
+  subject: string | null;
+  received_at: string | null;
+  body_text: string | null;
+  classification: string | null;
+  classification_confidence: number | null;
+  classification_reason: string | null;
+  status: string;
+  match_method: string | null;
+  project_id: number | null;
+  project_name: string | null;
+  supplier_id: number | null;
+  supplier_name: string | null;
+  sharepoint_saved: boolean;
+  sharepoint_folder: string | null;
+  has_attachments: boolean;
+  attachment_count: number;
+  attachments: RawInboxAttachment[] | null;
+};
+type RawInboxResp = {
+  total: number;
+  emails: RawInboxEmail[];
+  stats: Record<string, unknown>;
+};
+
+function mapInboxEmail(r: RawInboxEmail): PreisanfrageInboxEmail {
+  return {
+    id: r.id,
+    companyId: r.company_id,
+    messageId: r.message_id,
+    inReplyTo: r.in_reply_to,
+    fromEmail: r.from_email,
+    fromName: r.from_name,
+    subject: r.subject,
+    receivedAt: r.received_at,
+    bodyText: r.body_text,
+    classification: r.classification,
+    classificationConfidence: r.classification_confidence,
+    classificationReason: r.classification_reason,
+    status: r.status,
+    matchMethod: r.match_method,
+    projectId: r.project_id,
+    projectName: r.project_name,
+    supplierId: r.supplier_id,
+    supplierName: r.supplier_name,
+    sharepointSaved: r.sharepoint_saved,
+    sharepointFolder: r.sharepoint_folder,
+    hasAttachments: r.has_attachments,
+    attachmentCount: r.attachment_count,
+    attachments: (r.attachments ?? []).map((a) => ({
+      id: a.id,
+      filename: a.filename,
+      contentType: a.content_type,
+      sizeBytes: a.size_bytes,
+      sharepointUrl: a.sharepoint_url,
+    })),
+  };
+}
+
+/** List a company's incoming emails (newest first), with optional filters.
+ *  preisanfrage's list endpoint already includes `body_text` + attachments, so
+ *  the panel reading-pane needs no second fetch. Throws PreisanfrageError(403)
+ *  when posteingang is disabled for the company — callers that fan out across
+ *  companies must catch + skip that (see the overview route). */
+export async function listInboxEmails(
+  companyId: number,
+  opts?: { classification?: string; status?: string; projectId?: number; limit?: number },
+): Promise<PreisanfrageInboxPage> {
+  if (isMockMode()) return getMockInbox(companyId, opts);
+  const limit = Math.min(Math.max(opts?.limit ?? 100, 1), 500);
+  const cls = opts?.classification ?? '';
+  const st = opts?.status ?? '';
+  const pid = opts?.projectId ?? 0;
+  const key = `inbox:${companyId}:${cls}:${st}:${pid}:${limit}`;
+  const hit = cached<PreisanfrageInboxPage>(key);
+  if (hit) return hit;
+  const qs = new URLSearchParams({ company_id: String(companyId), limit: String(limit) });
+  if (cls) qs.set('classification', cls);
+  if (st) qs.set('status', st);
+  if (pid) qs.set('project_id', String(pid));
+  const raw = await call<RawInboxResp>(`/api/inbox/emails?${qs.toString()}`);
+  return cache(key, {
+    total: raw.total,
+    emails: (raw.emails ?? []).map(mapInboxEmail),
+    stats: mapInboxStats(raw.stats),
+  });
 }
