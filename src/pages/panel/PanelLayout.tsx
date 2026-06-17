@@ -6,6 +6,7 @@ import {
   LogOut,
   Settings,
   FolderClosed,
+  FolderOpen,
   Inbox,
   Lock,
   Loader2,
@@ -52,6 +53,17 @@ type NavItem = {
 const NAV: NavItem[] = [
   { to: '/panel', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/panel/firmen', label: 'Firmen', icon: Building2, permission: 'firmen' },
+  {
+    // Vergabe-Kiosk in preisanfrage = Projekte + Submissionskarte. Surface the
+    // Projekte-Board here too (SSO-routed like the others) and gate it behind
+    // the same `submissionskarte` key so the pair always appears together for
+    // whoever sees the Vergabe-Bereich.
+    to: '/api/panel/sso/preisanfrage?next=/projects',
+    label: 'Projekte',
+    icon: FolderOpen,
+    external: true,
+    permission: 'submissionskarte',
+  },
   {
     // Routed through the panel SSO handoff so a logged-in user lands in
     // preisanfrage already authenticated (falls back to manual login).
