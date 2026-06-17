@@ -37,9 +37,11 @@ Each time the `/loop` skill fires you, do exactly one work unit:
    files you created — never broad), log the failure in WORK_LOG.md, and
    move on. Do NOT commit broken code.
 
-5. **Commit.** One commit per work unit. Conventional commit style
-   (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`). Co-author line as
-   normal. Never `--no-verify`. Never `--amend` a pushed commit.
+5. **Commit, push, and deploy.** One commit per work unit. Conventional
+   commit style (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`). Co-author
+   line as normal. Never `--no-verify`. Never `--amend` a pushed commit.
+   Then push the feature branch to `origin` and deploy it to the server (see
+   the push + deploy rule below). The human reviews live, not pre-merge.
 
 6. **Update WORK_QUEUE.md.** If you completed a queue item, mark it
    `- [x]` with the commit short SHA. If you found follow-up work,
@@ -55,7 +57,13 @@ Each time the `/loop` skill fires you, do exactly one work unit:
 
 ## Hard safety rules — never break these
 
-- **Never `git push`.** The human reviews in the morning and pushes.
+- **Push + deploy when verified safe — the human does nothing.** Once
+  `npm run lint` and `npm run build` pass, push your feature branch to `origin`
+  and deploy it to the server (cherry-pick the new commit onto the deployed
+  `main`, `docker compose -f docker-compose.prod.yml up --build -d`, then
+  health-check + confirm the live bundle hash). This mirrors kalku-procurement
+  ("I do nothing"). Still NEVER force-push, NEVER `git push --force`, and NEVER
+  rewrite already-published history.
 - **Never `git reset --hard`, `git clean -fdx`, `rm -rf`, or `git branch -D`** on anything you didn't create this iteration.
 - **Never delete files you didn't create this iteration** unless the
   WORK_QUEUE item explicitly says to delete that file.
