@@ -21,6 +21,7 @@ import {
   Building2,
   Library,
   MapPin,
+  List,
   TrendingUp,
   ExternalLink,
   Users,
@@ -67,9 +68,21 @@ const NAV: NavItem[] = [
   {
     // Routed through the panel SSO handoff so a logged-in user lands in
     // preisanfrage already authenticated (falls back to manual login).
-    to: '/api/panel/sso/preisanfrage?next=/submissionskarte',
+    // Deep-links to the Karte (map) view across ALL Firmen (view=karte,
+    // mode=alle-firmen). The `next` value is URL-encoded because it carries
+    // its own query string through the SSO handoff.
+    to: '/api/panel/sso/preisanfrage?next=%2Fsubmissionskarte%3Fview%3Dkarte%26mode%3Dalle-firmen',
     label: 'Submissionskarte',
     icon: MapPin,
+    external: true,
+    permission: 'submissionskarte',
+  },
+  {
+    // Same Submissionskarte page, Liste view across ALL Firmen — the
+    // company-wide submission overview. Same permission key as the Karte link.
+    to: '/api/panel/sso/preisanfrage?next=%2Fsubmissionskarte%3Fview%3Dliste%26mode%3Dalle-firmen',
+    label: 'Submissionsliste',
+    icon: List,
     external: true,
     permission: 'submissionskarte',
   },
