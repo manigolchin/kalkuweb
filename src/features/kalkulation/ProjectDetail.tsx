@@ -38,6 +38,7 @@ import type {
   ShareSummary,
 } from './types';
 import { calcTotals, formatEUR, formatNum, DEFAULT_CALC_PARAMS, recalcAll, baseNetto, solveZielAufschlag } from './calc';
+import { fillBlankMeta } from './importMeta';
 import { Breadcrumb } from '@/pages/panel/ui';
 import PositionTable from './PositionTable';
 import PositionTableV2 from './PositionTableV2';
@@ -625,9 +626,8 @@ export default function ProjectDetail() {
           const merged = mode === 'append' ? [...data.positions, ...rows] : rows;
           // Kalkulation-template import also lifts meta + CalcParams from
           // the file. We replace those on 'replace' mode; on 'append' we
-          // keep the existing project's meta but adopt the new CalcParams
-          // if they differ (most useful when the user re-imports a freshly
-          // edited template).
+          // keep the existing project's meta but adopt the new CalcParams.
+          let adoptedName: string | undefined;
           if (mode === 'replace') {
             // Drop actuals + nuQuotes on replace — they're keyed by old
             // position ids which no longer exist after a template overwrite.
@@ -638,20 +638,30 @@ export default function ProjectDetail() {
               actuals: undefined,
               nuQuotes: undefined,
             });
+            adoptedName = parsed.project.name;
           } else {
+            // Append into an existing project: keep its meta, but if the
+            // project is still blank (the common "Neues Projekt → Excel
+            // importieren" flow) lift BV → Projektname, Bieter, AG … from the
+            // file so it lands named + in the right Firma bucket. A project
+            // that already has a real name/Bieter is left untouched.
+            const metaPatch = fillBlankMeta(data, parsed.project);
             setData({
               ...data,
+              ...metaPatch,
               positions: merged,
               calcParams: parsed.derivedCalcParams,
             });
+            adoptedName = metaPatch.name;
           }
           // Auto-flip to v2 — the user just imported a Kalkulation-template,
           // they get the new layout to enjoy it (per Round 2 spec PART F.3).
           switchTableVersion('v2');
+          const metaNote = adoptedName ? ` · »${adoptedName}«` : '';
           toast.success(
             mode === 'append'
-              ? `${rows.length} Position${rows.length === 1 ? '' : 'en'} aus Vorlage angehängt — neue Ansicht aktiviert.`
-              : `${rows.length} Position${rows.length === 1 ? '' : 'en'} aus Vorlage importiert (ersetzt) — neue Ansicht aktiviert.`,
+              ? `${rows.length} Position${rows.length === 1 ? '' : 'en'} aus Vorlage angehängt${metaNote} — neue Ansicht aktiviert.`
+              : `${rows.length} Position${rows.length === 1 ? '' : 'en'} aus Vorlage importiert (ersetzt)${metaNote} — neue Ansicht aktiviert.`,
           );
         }}
       />
