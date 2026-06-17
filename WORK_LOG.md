@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-06-17 20:15 — Posteingang: cross-company E-Mail-Hub im Panel
+- Source: user "check posteingang from preisanfrage … web email tab that shows for each firma the emails inbox and be like email provider … be creative and perfect and dont break sth"
+- Branch: claude-auto/2026-06-17-import-bv-bieter (shared) — commit 5fcbc8f
+- Result: committed 5fcbc8f → pushed → deployed live (server cherry-pick 2c14485 onto deploy-main, ff-merge, rebuild — all 4 containers healthy, panel-api db ok + preisanfrage enabled; live bundle index-DBJw3Ov4.js matches local build; Posteingang chunk HTTP 200). Verified end-to-end in the browser preview against mock data (overview, company switch, reading pane, dark mode), 0 console errors.
+- Notes: New **Posteingang** panel tab — a 3-pane webmail client (Firmen · E-Mail-Liste · Lesebereich, Gmail/Outlook-style, responsive master-detail on mobile) over the supplier emails preisanfrage has already fetched via IMAP + Haiku-classified. **READ-ONLY** by design (write-actions save-to-SharePoint / re-classify link OUT to preisanfrage) → respects prefer-linking-don't-reimplement; the *additive* value is the cross-company view (preisanfrage's own Posteingang is one-company-at-a-time). Key enabler: the existing `PREISANFRAGE_SERVICE_JWT` is an admin account, and preisanfrage's `verify_company_access` short-circuits for admins → the panel can already read every company's `/api/inbox/emails` with **no preisanfrage change**. New `panel-api/src/routes/posteingang.ts` (overview fans out one cheap stats call per managed company, capped 60, allSettled+skip-403; emails proxy) + `listInboxEmails()` client + mock fixture. Frontend `src/pages/panel/Posteingang.tsx`. Gated behind the existing **`firmen`** permission (NOT a new key — deliberately avoids the admin-users test-suite blast radius). API exposes `body_text` only (no HTML → no XSS). Concurrent-agent note: PanelLayout.tsx was briefly contended (another agent's Submissionsliste nav, committed as 2210716); committed only my 8 files by explicit pathspec once their hunk landed.
+
 ## 2026-06-17 17:55 — Import lifts BV→Projektname + Bieter into blank projects
 - Source: user "When I import one excel it should able to find the name BV and Bieter from up left … and if I open one Ausschreibung from specific Firma it has already name from Firmen tab"
 - Branch: claude-auto/2026-06-17-import-bv-bieter
