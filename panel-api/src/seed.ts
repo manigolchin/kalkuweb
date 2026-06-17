@@ -45,7 +45,7 @@ export async function ensureSeedUser(): Promise<void> {
  *  via env so a known initial password can be handed out instead of reading it
  *  from the boot log. */
 const TEAM_MEMBERS: ReadonlyArray<{ email: string; name: string; passwordEnv: string }> = [
-  { email: (process.env.SACHA_EMAIL || 'sacha@kalku.de').toLowerCase(), name: 'Sacha', passwordEnv: 'SACHA_PASSWORD' },
+  { email: (process.env.SACHA_EMAIL || 'sascha_stopp@kalku.de').toLowerCase(), name: 'Sascha Stopp', passwordEnv: 'SACHA_PASSWORD' },
   {
     email: (process.env.VANESSA_EMAIL || 'vanessa@kalku.de').toLowerCase(),
     name: 'Vanessa',
