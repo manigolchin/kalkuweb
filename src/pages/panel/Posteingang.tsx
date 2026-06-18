@@ -471,6 +471,10 @@ export default function Posteingang() {
 
       {composer && (composer.email?.companyId ?? selectedCompany) != null && (
         <Composer
+          // key forces a fresh mount (re-initialised fields) whenever the mode or
+          // target email changes — without it, switching mode while mounted would
+          // keep stale To/Subject/Body from useState.
+          key={`${composer.mode}:${composer.email?.id ?? 'new'}`}
           mode={composer.mode}
           companyId={(composer.email?.companyId ?? selectedCompany) as number}
           companyName={activeCompany?.name ?? ''}

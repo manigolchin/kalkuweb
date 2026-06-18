@@ -9,7 +9,9 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        // Defaults to the local panel-api on :3000; override with PANEL_API_URL
+        // to point a dev server at an alternate panel-api instance/port.
+        target: process.env.PANEL_API_URL || 'http://localhost:3000',
         changeOrigin: false,
       },
     },
