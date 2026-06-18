@@ -5,7 +5,11 @@ Format defined in `CLAUDE.md`.
 
 ---
 
-## 2026-06-17 20:15 — Posteingang: cross-company E-Mail-Hub im Panel
+## 2026-06-18 10:36 — Posteingang: „Jetzt abrufen" + neu/abgelegt-Chips
+- Source: user follow-up "will it show immediately?" + "have whole inbox and can also send email reply … badge for those preisanfrage classified"
+- Branch: claude-auto/2026-06-17-import-bv-bieter (shared) — commit d59d56a
+- Result: committed d59d56a → pushed → deployed (server cherry-pick ba3edce, ff-merge, rebuild — 4 containers healthy, preisanfrage enabled; live bundle index-CC2eMtHq.js matches local; prod /posteingang/poll → 401 = route live).
+- Notes: Immediacy answer — the panel shows what preisanfrage has already polled; preisanfrage auto-polls hourly (08–17) / 4-hourly at night (`main.py _get_poll_sleep_seconds`). Added **"Jetzt abrufen"** (`POST /posteingang/poll` → preisanfrage `/api/inbox/poll`, 55 s timeout, then cache-clear) for on-demand fetch, + **neu/abgelegt** status chips per row. `call()` got a `{timeoutMs}` option. **SEND/reply is the open ask** — preisanfrage has no generic reply endpoint (only RFQ/dispatch/reminder sends); needs a new `POST /inbox/emails/{id}/reply` (uses existing `email_service.send_email`), routed through preisanfrage so creds stay in one place. I can write it but CANNOT deploy to procurement (harness-blocked) — user deploys. Browser re-verify skipped: a shared panel-api on :3000 (another process) held the port; not killed (don't-break). Core UI already browser-verified last iteration.
 - Source: user "check posteingang from preisanfrage … web email tab that shows for each firma the emails inbox and be like email provider … be creative and perfect and dont break sth"
 - Branch: claude-auto/2026-06-17-import-bv-bieter (shared) — commit 5fcbc8f
 - Result: committed 5fcbc8f → pushed → deployed live (server cherry-pick 2c14485 onto deploy-main, ff-merge, rebuild — all 4 containers healthy, panel-api db ok + preisanfrage enabled; live bundle index-DBJw3Ov4.js matches local build; Posteingang chunk HTTP 200). Verified end-to-end in the browser preview against mock data (overview, company switch, reading pane, dark mode), 0 console errors.
