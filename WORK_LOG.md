@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-06-18 16:35 — Sidebar: Posteingang attention badge
+- Source: user "add more good features in kalku web panel, be professional and creative" → AskUserQuestion pick "Sidebar Posteingang badge"
+- Branch: claude-auto/2026-06-17-import-bv-bieter — commit 2a22b5a
+- Result: committed 2a22b5a → pushed → deployed (server cherry-pick onto deploy-main, all 4 healthy, bundle index-BDQHgysX.js matches live, PanelLayout-COU6iNHO.js 200).
+- Notes: PanelLayout (`src/pages/panel/PanelLayout.tsx`) — the Posteingang nav item now carries an amber open-count badge (`totals.needsAttention`, capped "99+") + a collapsed-sidebar dot, mirroring the Kunden-Feedback badge. Fetched on route change via `api.posteingang.overview()`, **gated behind the `firmen` permission**, tolerant of failure (keeps last value, never disrupts nav); overview is 60 s cached upstream so it's cheap. Passed to BOTH Sidebar usages (desktop + mobile). Browser-verified in the isolated mock stack — nav rendered "Posteingang 5" (mock needsAttention=5), screenshot confirmed amber pill, 0 console errors. Team now sees waiting supplier mail from any panel page.
+
 ## 2026-06-18 16:10 — Dashboard: Posteingang status card
 - Source: user "add more good features in kalku web panel, be professional and creative"
 - Branch: claude-auto/2026-06-17-import-bv-bieter — commit 4a6f466
