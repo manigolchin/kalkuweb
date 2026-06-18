@@ -692,6 +692,8 @@ export async function replyToEmail(
   emailId: number,
   body: string,
   subject?: string,
+  cc?: string[],
+  bcc?: string[],
 ): Promise<PreisanfrageReplyResult> {
   if (isMockMode()) {
     return { success: true, to: 'lieferant@example.de', subject: subject ?? 'AW: (Demo)', messageId: '<mock-reply@kalku.de>', error: null };
@@ -702,7 +704,7 @@ export async function replyToEmail(
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ body, subject: subject ?? null }),
+      body: JSON.stringify({ body, subject: subject ?? null, cc: cc ?? null, bcc: bcc ?? null }),
     },
     { timeoutMs: 30_000 },
   );
@@ -719,6 +721,8 @@ export async function composeEmail(
   to: string,
   subject: string,
   body: string,
+  cc?: string[],
+  bcc?: string[],
 ): Promise<PreisanfrageReplyResult> {
   if (isMockMode()) return { success: true, to, subject, messageId: '<mock-compose@kalku.de>', error: null };
   const raw = await call<RawSendResult>(
@@ -726,7 +730,7 @@ export async function composeEmail(
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ company_id: companyId, to, subject, body }),
+      body: JSON.stringify({ company_id: companyId, to, subject, body, cc: cc ?? null, bcc: bcc ?? null }),
     },
     { timeoutMs: 30_000 },
   );
@@ -740,6 +744,8 @@ export async function forwardEmail(
   emailId: number,
   to: string,
   note?: string,
+  cc?: string[],
+  bcc?: string[],
 ): Promise<PreisanfrageReplyResult> {
   if (isMockMode()) return { success: true, to, subject: 'WG: (Demo)', messageId: '<mock-fwd@kalku.de>', error: null };
   const raw = await call<RawSendResult>(
@@ -747,7 +753,7 @@ export async function forwardEmail(
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ to, note: note ?? null }),
+      body: JSON.stringify({ to, note: note ?? null, cc: cc ?? null, bcc: bcc ?? null }),
     },
     { timeoutMs: 30_000 },
   );

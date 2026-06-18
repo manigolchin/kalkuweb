@@ -1375,7 +1375,11 @@ function Composer({
   const [to, setTo] = useState(initialTo ?? (mode === 'reply' ? (email?.fromEmail ?? '') : ''));
   const [subject, setSubject] = useState(initialSubject ?? (mode === 'new' ? '' : withPrefix(email?.subject ?? '', mode)));
   const [body, setBody] = useState(initialBody ?? '');
+  const [cc, setCc] = useState('');
+  const [bcc, setBcc] = useState('');
+  const [showCcBcc, setShowCcBcc] = useState(false);
   const [sending, setSending] = useState(false);
+  const splitAddrs = (s: string) => s.split(/[,;]/).map((x) => x.trim()).filter(Boolean);
 
   const title = mode === 'new' ? 'Neue E-Mail' : mode === 'reply' ? 'Antworten' : 'Weiterleiten';
   const toEditable = mode !== 'reply';
@@ -1398,9 +1402,11 @@ function Composer({
     setSending(true);
     try {
       const recipient = to.trim();
-      if (mode === 'reply' && email) await api.posteingang.reply(email.id, companyId, body.trim());
-      else if (mode === 'forward' && email) await api.posteingang.forward(email.id, companyId, recipient, body.trim() || undefined);
-      else await api.posteingang.compose(companyId, recipient, subject.trim(), body.trim());
+      const ccArr = splitAddrs(cc);
+      const bccArr = splitAddrs(bcc);
+      if (mode === 'reply' && email) await api.posteingang.reply(email.id, companyId, body.trim(), undefined, ccArr, bccArr);
+      else if (mode === 'forward' && email) await api.posteingang.forward(email.id, companyId, recipient, body.trim() || undefined, ccArr, bccArr);
+      else await api.posteingang.compose(companyId, recipient, subject.trim(), body.trim(), ccArr, bccArr);
       toast.success(`Gesendet an ${recipient}`);
       onSent();
     } catch (e) {
@@ -1444,7 +1450,7 @@ function Composer({
 
         {/* fields */}
         <div className="px-4 py-3 space-y-2 overflow-y-auto">
-          <label className="flex items-center gap-2 text-sm border-b border-slate-100 dark:border-slate-800 pb-2">
+          <div className="flex items-center gap-2 text-sm border-b border-slate-100 dark:border-slate-800 pb-2">
             <span className="w-16 shrink-0 text-slate-400 dark:text-slate-500">An</span>
             {toEditable ? (
               <input
@@ -1461,7 +1467,36 @@ function Composer({
                 {email?.fromEmail && email?.fromName && <span className="text-slate-400 dark:text-slate-500"> &lt;{email.fromEmail}&gt;</span>}
               </span>
             )}
-          </label>
+            {!showCcBcc && (
+              <button type="button" onClick={() => setShowCcBcc(true)} className="shrink-0 text-[11px] text-primary-600 dark:text-primary-300 hover:underline">
+                Cc/Bcc
+              </button>
+            )}
+          </div>
+          {showCcBcc && (
+            <>
+              <label className="flex items-center gap-2 text-sm border-b border-slate-100 dark:border-slate-800 pb-2">
+                <span className="w-16 shrink-0 text-slate-400 dark:text-slate-500">Cc</span>
+                <input
+                  type="text"
+                  value={cc}
+                  onChange={(e) => setCc(e.target.value)}
+                  placeholder="cc@firma.de, …"
+                  className="flex-1 bg-transparent focus:outline-none text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
+                />
+              </label>
+              <label className="flex items-center gap-2 text-sm border-b border-slate-100 dark:border-slate-800 pb-2">
+                <span className="w-16 shrink-0 text-slate-400 dark:text-slate-500">Bcc</span>
+                <input
+                  type="text"
+                  value={bcc}
+                  onChange={(e) => setBcc(e.target.value)}
+                  placeholder="bcc@firma.de, …"
+                  className="flex-1 bg-transparent focus:outline-none text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
+                />
+              </label>
+            </>
+          )}
           <label className="flex items-center gap-2 text-sm border-b border-slate-100 dark:border-slate-800 pb-2">
             <span className="w-16 shrink-0 text-slate-400 dark:text-slate-500">Betreff</span>
             {subjectEditable ? (

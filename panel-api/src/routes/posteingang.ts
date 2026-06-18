@@ -102,6 +102,17 @@ function cleanLabels(raw: unknown): string[] | undefined {
   return Array.from(seen).slice(0, 20);
 }
 
+/** Parse an incoming Cc/Bcc address array (trim, drop blanks, cap). */
+function parseAddrs(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out = raw
+    .filter((s): s is string => typeof s === 'string')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 50);
+  return out.length ? out : undefined;
+}
+
 /** Hard cap on the overview fan-out. Managed companies (the ones with
  *  mailboxes) are few, but never let an unexpectedly long list turn one
  *  page-load into hundreds of upstream calls. If we hit it, `capped: true`
@@ -245,7 +256,7 @@ export const posteingangRoute = new Hono<{ Variables: AuthVariables }>()
       return c.json({ error: 'integration_disabled' }, 503);
     }
     try {
-      const res = await replyToEmail(emailId, text, subject);
+      const res = await replyToEmail(emailId, text, subject, parseAddrs((raw as { cc?: unknown }).cc), parseAddrs((raw as { bcc?: unknown }).bcc));
       if (!res.success) {
         return c.json({ error: 'send_failed', detail: res.error }, 502);
       }
@@ -278,7 +289,7 @@ export const posteingangRoute = new Hono<{ Variables: AuthVariables }>()
     if (!text.trim()) return c.json({ error: 'empty_body' }, 400);
     if (!isPreisanfrageEnabled()) return c.json({ error: 'integration_disabled' }, 503);
     try {
-      const res = await composeEmail(companyId, to, subject, text);
+      const res = await composeEmail(companyId, to, subject, text, parseAddrs((raw as { cc?: unknown }).cc), parseAddrs((raw as { bcc?: unknown }).bcc));
       if (!res.success) return c.json({ error: 'send_failed', detail: res.error }, 502);
       await recordSent({ companyId, kind: 'compose', to: res.to ?? to, subject: res.subject ?? subject, body: text, messageId: res.messageId, sentBy: c.get('userId') });
       return c.json({ ok: true, to: res.to, subject: res.subject, messageId: res.messageId });
@@ -301,7 +312,7 @@ export const posteingangRoute = new Hono<{ Variables: AuthVariables }>()
     if (!to) return c.json({ error: 'missing_recipient' }, 400);
     if (!isPreisanfrageEnabled()) return c.json({ error: 'integration_disabled' }, 503);
     try {
-      const res = await forwardEmail(emailId, to, note);
+      const res = await forwardEmail(emailId, to, note, parseAddrs((raw as { cc?: unknown }).cc), parseAddrs((raw as { bcc?: unknown }).bcc));
       if (!res.success) return c.json({ error: 'send_failed', detail: res.error }, 502);
       await recordSent({ companyId, kind: 'forward', to: res.to ?? to, subject: res.subject ?? '', body: note ?? '', inReplyToEmailId: emailId, messageId: res.messageId, sentBy: c.get('userId') });
       return c.json({ ok: true, to: res.to, subject: res.subject, messageId: res.messageId });

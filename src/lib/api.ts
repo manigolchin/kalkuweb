@@ -626,22 +626,22 @@ export const api = {
         emailsError: number;
       }>(`/posteingang/poll`, { method: 'POST', body: JSON.stringify({ company: companyId }) }),
     /** Send a plain-text reply to an incoming email (via preisanfrage's SMTP). */
-    reply: (emailId: number, companyId: number, body: string, subject?: string) =>
+    reply: (emailId: number, companyId: number, body: string, subject?: string, cc?: string[], bcc?: string[]) =>
       request<{ ok: true; to: string | null; subject: string | null; messageId: string | null }>(
         `/posteingang/reply`,
-        { method: 'POST', body: JSON.stringify({ emailId, company: companyId, body, subject }) },
+        { method: 'POST', body: JSON.stringify({ emailId, company: companyId, body, subject, cc, bcc }) },
       ),
     /** Compose + send a brand-new email from a company's mailbox. */
-    compose: (companyId: number, to: string, subject: string, body: string) =>
+    compose: (companyId: number, to: string, subject: string, body: string, cc?: string[], bcc?: string[]) =>
       request<{ ok: true; to: string | null; subject: string | null; messageId: string | null }>(
         `/posteingang/compose`,
-        { method: 'POST', body: JSON.stringify({ company: companyId, to, subject, body }) },
+        { method: 'POST', body: JSON.stringify({ company: companyId, to, subject, body, cc, bcc }) },
       ),
     /** Forward an incoming email (quoted + attachments) to a new recipient. */
-    forward: (emailId: number, companyId: number, to: string, note?: string) =>
+    forward: (emailId: number, companyId: number, to: string, note?: string, cc?: string[], bcc?: string[]) =>
       request<{ ok: true; to: string | null; subject: string | null; messageId: string | null }>(
         `/posteingang/forward`,
-        { method: 'POST', body: JSON.stringify({ emailId, company: companyId, to, note }) },
+        { method: 'POST', body: JSON.stringify({ emailId, company: companyId, to, note, cc, bcc }) },
       ),
     /** Panel-local triage flags (read/starred/archived/deleted + labels) per email. */
     state: (companyId: number) =>
