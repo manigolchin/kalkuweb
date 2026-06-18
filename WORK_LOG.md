@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-06-18 15:45 — Posteingang: Cc/Bcc (composer)
+- Source: user "yes do it [CC/BCC] but dont break features in my preisanfrage system"
+- Branch: claude-auto/2026-06-17-import-bv-bieter — commit 83e6807 (panel) + uncommitted procurement edits
+- Result: PANEL committed 83e6807 → pushed → deployed (server cherry-pick 3e861be, all healthy, bundle index-Z4TA0p4C.js matches). PREISANFRAGE cc/bcc written, NOT deployed (user).
+- Notes: Composer Cc/Bcc toggle + fields (comma/semicolon split); cc/bcc thread reply/compose/forward → panel-api (parseAddrs) → client → preisanfrage. **STRICTLY ADDITIVE in preisanfrage** (per user's "don't break"): `email_service.send_email` gained optional `cc=None,bcc=None` (when None → no header → existing RFQ/dispatch/reminder callers byte-identical; `send_message` already routes To+Cc+Bcc + strips Bcc; test-override path strips Cc/Bcc); 3 inbox schemas + endpoints gained optional cc/bcc (+29 lines, 3 files). **Safe to deploy panel first:** old preisanfrage endpoint ignores the extra cc/bcc fields (Pydantic drops unknowns) → no breakage, cc/bcc just no-op until preisanfrage deployed. Browser-verified panel side (Cc/Bcc reveal + send carries them + logs to Gesendet, 0 errors). **USER deploys procurement** (review → commit → push → server git pull --ff-only + rebuild). Email feature set now COMPLETE (reply-all intentionally skipped — preisanfrage stores no original recipients).
+
 ## 2026-06-18 15:05 — Posteingang: Labels + Drafts (Entwürfe)
 - Source: user "yes make all of them" (labels, drafts, CC/BCC, reply-all)
 - Branch: claude-auto/2026-06-17-import-bv-bieter — commit 471b793
