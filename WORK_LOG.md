@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-06-18 13:30 — Posteingang: triage layer (read/unread, star, archive)
+- Source: user (after confirming send works with a real test email) "in our panel i want to have like real email … be creative and search good in internet"
+- Branch: claude-auto/2026-06-17-import-bv-bieter — commit de38926
+- Result: committed de38926 → pushed → deployed (server cherry-pick 3873e4a, all healthy, db:ok, bundle index-UxVwhZxP.js matches, /posteingang/state → 401 live).
+- Notes: Web-researched best email-client UX (Superhuman/Spark/Gmail → triage trio + clear-from-view + keyboard). Built a **panel-local triage layer**: read/unread (auto-on-open + "Alle gelesen" bulk), star, archive (Archiv view + restore). New `posteingang_state` table (SHARED team flags, emailId PK; created via runMigrations CREATE TABLE IF NOT EXISTS) + `/posteingang/state`, `/state/:id`, `/state-bulk` routes; optimistic UI; EmailRow became a div (nested star/archive buttons). **SAFE vs preisanfrage:** archiving only hides in the panel — mailbox untouched, and preisanfrage polls by SINCE-date (not unread) so read-state never affects classification. Browser-verified end-to-end in the isolated mock stack (PANEL_API_URL→:3002): mark-all-read (5 read, button hides), star (persist), archive (leaves inbox → Archiv(1) → visible in Archiv view), 0 console errors. **NEXT:** keyboard shortcuts (j/k/e/s/r/c), labels, drafts/CC.
+
 ## 2026-06-18 12:45 — Posteingang: test + debug pass (composer remount fix)
 - Source: user "now check and test and debug"
 - Branch: claude-auto/2026-06-17-import-bv-bieter — commit 9e5da2f
