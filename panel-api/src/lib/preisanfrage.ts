@@ -27,6 +27,7 @@ import {
   getMockProjectPositions,
   getMockProjectAngeboteUrl,
   getMockInbox,
+  getMockSent,
   isMockMode,
 } from './preisanfrage-fixture.js';
 
@@ -709,6 +710,82 @@ export async function replyToEmail(
     { timeoutMs: 30_000 },
   );
   return { success: raw.success, to: raw.to, subject: raw.subject, messageId: raw.message_id, error: raw.error };
+}
+
+/** One message read straight from a mailbox's Sent/Gesendet folder. Read-only
+ *  IMAP view — for a sent message the recipient (to/cc) is the meaningful field,
+ *  the sender is always us. No DB id (these aren't persisted upstream). */
+export type PreisanfrageSentEmail = {
+  imapUid: string | null;
+  messageId: string | null;
+  inReplyTo: string | null;
+  fromEmail: string | null;
+  toAddr: string | null;
+  ccAddr: string | null;
+  subject: string | null;
+  sentAt: string | null;
+  bodyText: string | null;
+  hasAttachments: boolean;
+  attachmentCount: number;
+  attachmentNames: string[];
+};
+
+type RawSentEmail = {
+  imap_uid: string | null;
+  message_id: string | null;
+  in_reply_to: string | null;
+  from_email: string | null;
+  to_addr: string | null;
+  cc_addr: string | null;
+  subject: string | null;
+  sent_at: string | null;
+  body_text: string | null;
+  has_attachments: boolean;
+  attachment_count: number;
+  attachment_names: string[] | null;
+};
+
+function mapSentEmail(r: RawSentEmail): PreisanfrageSentEmail {
+  return {
+    imapUid: r.imap_uid,
+    messageId: r.message_id,
+    inReplyTo: r.in_reply_to,
+    fromEmail: r.from_email,
+    toAddr: r.to_addr,
+    ccAddr: r.cc_addr,
+    subject: r.subject,
+    sentAt: r.sent_at,
+    bodyText: r.body_text,
+    hasAttachments: r.has_attachments,
+    attachmentCount: r.attachment_count,
+    attachmentNames: r.attachment_names ?? [],
+  };
+}
+
+/** Read a company's real mailbox Sent/Gesendet folder (newest first), straight
+ *  from IMAP via preisanfrage. This is what lets the panel's "Gesendet" show
+ *  EVERYTHING that was sent (incl. from Outlook), not just panel-originated
+ *  mail. Read-only upstream (EXAMINE + BODY.PEEK — no flags touched). Needs
+ *  preisanfrage's `GET /inbox/sent` deployed; until then upstream 404s and this
+ *  surfaces as a clean error. Cached briefly like the inbox list; IMAP fetch is
+ *  slow so it gets the same long timeout as a send. Throws PreisanfrageError(403)
+ *  when posteingang is disabled for the company — callers must catch + skip. */
+export async function listSentEmails(
+  companyId: number,
+  opts?: { limit?: number },
+): Promise<PreisanfrageSentEmail[]> {
+  if (isMockMode()) return getMockSent(companyId, opts);
+  const limit = Math.min(Math.max(opts?.limit ?? 50, 1), 100);
+  const key = `sent:${companyId}:${limit}`;
+  const hit = cached<PreisanfrageSentEmail[]>(key);
+  if (hit) return hit;
+  type Raw = { total: number; emails: RawSentEmail[] };
+  const raw = await call<Raw>(
+    `/api/inbox/sent?company_id=${companyId}&limit=${limit}`,
+    undefined,
+    { timeoutMs: 30_000 },
+  );
+  return cache(key, (raw.emails ?? []).map(mapSentEmail));
 }
 
 type RawSendResult = { success: boolean; to: string | null; subject: string | null; message_id: string | null; error: string | null };

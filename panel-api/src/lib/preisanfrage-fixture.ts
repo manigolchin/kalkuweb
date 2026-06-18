@@ -23,6 +23,7 @@ import type {
   PreisanfrageInboxEmail,
   PreisanfrageInboxStats,
   PreisanfrageInboxPage,
+  PreisanfrageSentEmail,
 } from './preisanfrage.js';
 
 let warned = false;
@@ -639,4 +640,39 @@ export function getMockInbox(
   if (opts?.projectId) emails = emails.filter((e) => e.projectId === opts.projectId);
   const limit = Math.min(Math.max(opts?.limit ?? 100, 1), 500);
   return { total: all.length, emails: emails.slice(0, limit), stats };
+}
+
+/** Mock "Gesendet" folder: synthesize the RFQs we'd have sent to the suppliers
+ *  who later replied, so the demo Sent view mirrors the demo inbox (newest
+ *  first). Mirrors the real read-only IMAP Sent fetch's shape. */
+export function getMockSent(
+  companyId: number,
+  opts?: { limit?: number },
+): PreisanfrageSentEmail[] {
+  warnOnce();
+  const inbox = MOCK_INBOX[companyId] ?? [];
+  const sent: PreisanfrageSentEmail[] = inbox
+    .filter((e) => e.fromEmail && e.subject)
+    .map((e, i) => {
+      const subj = (e.subject ?? '').replace(/^(AW:|RE:|WG:|FWD?:)\s*/i, '').trim();
+      return {
+        imapUid: `mock-${companyId}-${i + 1}`,
+        messageId: `<mock-sent-${companyId}-${i + 1}@kalku.de>`,
+        inReplyTo: null,
+        fromEmail: `einkauf@firma-${companyId}.kalku.de`,
+        toAddr: e.fromName ? `${e.fromName} <${e.fromEmail}>` : e.fromEmail,
+        ccAddr: i === 0 ? 'projektleitung@kalku.de' : null,
+        subject: `Anfrage: ${subj}`,
+        sentAt: e.receivedAt,
+        bodyText:
+          `Sehr geehrte Damen und Herren,\n\nanbei erhalten Sie unsere Anfrage zu „${subj}". ` +
+          `Wir bitten um Ihr Angebot bis zum genannten Submissionstermin.\n\n` +
+          `Mit freundlichen Grüßen\nKALKU Einkauf`,
+        hasAttachments: true,
+        attachmentCount: 1,
+        attachmentNames: ['Leistungsverzeichnis.pdf'],
+      };
+    });
+  const limit = Math.min(Math.max(opts?.limit ?? 50, 1), 100);
+  return sent.slice(0, limit);
 }

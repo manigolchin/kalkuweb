@@ -157,6 +157,23 @@ export type PosteingangEmailsResponse = {
   emails: PosteingangEmail[];
   stats: PosteingangStats;
 };
+/** One message read straight from a mailbox's Sent/Gesendet folder (read-only
+ *  IMAP view). Unlike panel-local sends this has no DB id — the recipient
+ *  (to/cc) is the meaningful field; the sender is always us. */
+export type PosteingangMailboxSentEmail = {
+  imapUid: string | null;
+  messageId: string | null;
+  inReplyTo: string | null;
+  fromEmail: string | null;
+  toAddr: string | null;
+  ccAddr: string | null;
+  subject: string | null;
+  sentAt: string | null;
+  bodyText: string | null;
+  hasAttachments: boolean;
+  attachmentCount: number;
+  attachmentNames: string[];
+};
 
 export const api = {
   auth: {
@@ -679,10 +696,18 @@ export const api = {
           to: string;
           subject: string;
           body: string;
+          messageId: string | null;
           inReplyToEmailId: number | null;
           sentAt: string;
         }>;
       }>(`/posteingang/sent?company=${companyId}`),
+    /** Real mailbox "Gesendet" folder (read-only IMAP via preisanfrage) — shows
+     *  everything sent for this company, incl. mail sent from Outlook. */
+    mailboxSent: (companyId: number, limit = 50) =>
+      request<{
+        companyId: number;
+        emails: PosteingangMailboxSentEmail[];
+      }>(`/posteingang/mailbox-sent?company=${companyId}&limit=${limit}`),
     /** "Entwürfe" — list a company's saved drafts. */
     drafts: (companyId: number) =>
       request<{

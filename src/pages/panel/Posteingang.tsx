@@ -47,6 +47,7 @@ import {
   type PosteingangOverview,
   type PosteingangCompany,
   type PosteingangEmail,
+  type PosteingangMailboxSentEmail,
 } from '@/lib/api';
 
 /* ─── helpers ──────────────────────────────────────────────────────────── */
@@ -81,13 +82,57 @@ function labelColor(name: string): string {
 }
 type SentEmail = {
   id: string;
+  /** 'mailbox' = read from the real IMAP Sent folder (could be sent from Outlook
+   *  etc.); the others are panel-originated and carry a specific action label. */
+  kind: 'reply' | 'compose' | 'forward' | 'mailbox';
+  to: string;
+  cc?: string | null;
+  subject: string;
+  body: string;
+  messageId?: string | null;
+  inReplyToEmailId?: number | null;
+  sentAt: string;
+  attachmentNames?: string[];
+};
+
+/** Map the real mailbox Sent folder + the panel-local send log into one list. */
+function mapMailboxSent(e: PosteingangMailboxSentEmail): SentEmail {
+  return {
+    id: e.imapUid || e.messageId || `${e.sentAt ?? ''}|${e.toAddr ?? ''}|${e.subject ?? ''}`,
+    kind: 'mailbox',
+    to: e.toAddr || '(unbekannt)',
+    cc: e.ccAddr,
+    subject: e.subject ?? '',
+    body: e.bodyText ?? '',
+    messageId: e.messageId,
+    sentAt: e.sentAt ?? '',
+    attachmentNames: e.attachmentNames,
+  };
+}
+function mapPanelSent(s: {
+  id: string;
   kind: 'reply' | 'compose' | 'forward';
   to: string;
   subject: string;
   body: string;
+  messageId: string | null;
   inReplyToEmailId: number | null;
   sentAt: string;
-};
+}): SentEmail {
+  return {
+    id: s.id,
+    kind: s.kind,
+    to: s.to,
+    subject: s.subject,
+    body: s.body,
+    messageId: s.messageId,
+    inReplyToEmailId: s.inReplyToEmailId,
+    sentAt: s.sentAt,
+  };
+}
+function bySentAtDesc(a: SentEmail, b: SentEmail): number {
+  return (b.sentAt || '').localeCompare(a.sentAt || '');
+}
 const VIEW_LABELS: Record<MailView, string> = {
   inbox: 'Posteingang',
   sent: 'Gesendet',
@@ -213,6 +258,10 @@ export default function Posteingang() {
   const [sentList, setSentList] = useState<SentEmail[] | null>(null);
   const [loadingSent, setLoadingSent] = useState(false);
   const [selectedSentId, setSelectedSentId] = useState<string | null>(null);
+  /** True when the real mailbox Sent folder wasn't reachable and we're showing
+   *  only the panel-local send log (e.g. before preisanfrage's /inbox/sent is
+   *  deployed, or an IMAP hiccup) — surfaced as a subtle hint. */
+  const [sentFallback, setSentFallback] = useState(false);
   const [draftList, setDraftList] = useState<DraftEmail[] | null>(null);
   const [loadingDrafts, setLoadingDrafts] = useState(false);
   const [labelFilter, setLabelFilter] = useState<string | null>(null);
@@ -358,20 +407,43 @@ export default function Posteingang() {
     setMobilePane('list');
   }
 
-  // Lazy-load the "Gesendet" list when that folder is opened.
+  // Lazy-load the "Gesendet" list when that folder is opened. We show the REAL
+  // mailbox Sent folder (everything sent, incl. from Outlook) and merge in the
+  // panel-local send log so a mail you just sent shows instantly — deduped by
+  // Message-ID once IMAP catches up. If the mailbox folder isn't reachable yet
+  // (preisanfrage /inbox/sent not deployed, or an IMAP error) we fall back to
+  // the panel-local log alone, with a hint, so nothing regresses.
   useEffect(() => {
     if (view !== 'sent' || selectedCompany == null) return;
     let alive = true;
+    const company = selectedCompany;
     setLoadingSent(true);
-    api.posteingang
-      .sent(selectedCompany)
-      .then((res) => {
-        if (!alive) return;
-        setSentList(res.sent);
-        setSelectedSentId(res.sent[0]?.id ?? null);
-      })
-      .catch(() => alive && setSentList([]))
-      .finally(() => alive && setLoadingSent(false));
+    setSentFallback(false);
+    (async () => {
+      const panelP = api.posteingang
+        .sent(company)
+        .then((r) => r.sent.map(mapPanelSent))
+        .catch(() => [] as SentEmail[]);
+      const mailboxP = api.posteingang
+        .mailboxSent(company)
+        .then((r) => ({ ok: true, list: r.emails.map(mapMailboxSent) }) as const)
+        .catch(() => ({ ok: false, list: [] as SentEmail[] }) as const);
+      const [panel, mailbox] = await Promise.all([panelP, mailboxP]);
+      if (!alive) return;
+      let merged: SentEmail[];
+      if (mailbox.ok) {
+        const seenId = new Set(mailbox.list.map((m) => m.id));
+        const seenMsg = new Set(mailbox.list.map((m) => m.messageId).filter(Boolean) as string[]);
+        const extra = panel.filter((p) => !seenId.has(p.id) && !(p.messageId && seenMsg.has(p.messageId)));
+        merged = [...mailbox.list, ...extra].sort(bySentAtDesc);
+      } else {
+        merged = panel;
+        setSentFallback(true);
+      }
+      setSentList(merged);
+      setSelectedSentId(merged[0]?.id ?? null);
+      setLoadingSent(false);
+    })();
     return () => {
       alive = false;
     };
@@ -817,21 +889,28 @@ export default function Posteingang() {
               loadingSent ? (
                 <div className="p-2"><ListSkeleton rows={6} /></div>
               ) : !sentList || sentList.length === 0 ? (
-                <EmptyHint icon={Send} text="Noch nichts aus dem Panel gesendet." />
+                <EmptyHint icon={Send} text={sentFallback ? 'Noch nichts aus dem Panel gesendet.' : 'Keine gesendeten E-Mails in diesem Postfach.'} />
               ) : (
-                sentList
-                  .filter((s) => {
-                    const q = query.trim().toLowerCase();
-                    return !q || s.to.toLowerCase().includes(q) || s.subject.toLowerCase().includes(q) || s.body.toLowerCase().includes(q);
-                  })
-                  .map((s) => (
-                    <SentRow
-                      key={s.id}
-                      sent={s}
-                      active={s.id === selectedSentId}
-                      onClick={() => { setSelectedSentId(s.id); setMobilePane('reading'); }}
-                    />
-                  ))
+                <>
+                  {sentFallback && (
+                    <div className="m-2 mb-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-snug text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+                      Postfach-Ordner „Gesendet" nicht erreichbar — es werden nur die aus dem Panel gesendeten E-Mails angezeigt.
+                    </div>
+                  )}
+                  {sentList
+                    .filter((s) => {
+                      const q = query.trim().toLowerCase();
+                      return !q || s.to.toLowerCase().includes(q) || s.subject.toLowerCase().includes(q) || s.body.toLowerCase().includes(q);
+                    })
+                    .map((s) => (
+                      <SentRow
+                        key={s.id}
+                        sent={s}
+                        active={s.id === selectedSentId}
+                        onClick={() => { setSelectedSentId(s.id); setMobilePane('reading'); }}
+                      />
+                    ))}
+                </>
               )
             ) : view === 'drafts' ? (
               loadingDrafts ? (
@@ -1576,10 +1655,21 @@ function EmptyReading({ text }: { text: string }) {
 }
 
 function sentKindLabel(kind: SentEmail['kind']): string {
-  return kind === 'reply' ? 'Antwort' : kind === 'forward' ? 'Weitergeleitet' : 'Neu';
+  switch (kind) {
+    case 'reply':
+      return 'Antwort';
+    case 'forward':
+      return 'Weitergeleitet';
+    case 'compose':
+      return 'Neu';
+    default:
+      return ''; // 'mailbox' — a generic Sent-folder item, no panel action label
+  }
 }
 
 function SentRow({ sent, active, onClick }: { sent: SentEmail; active: boolean; onClick: () => void }) {
+  const kindLabel = sentKindLabel(sent.kind);
+  const attCount = sent.attachmentNames?.length ?? 0;
   return (
     <div
       role="button"
@@ -1597,13 +1687,16 @@ function SentRow({ sent, active, onClick }: { sent: SentEmail; active: boolean; 
     >
       <div className="flex items-center gap-2">
         <span className="flex-1 min-w-0 truncate text-sm text-slate-700 dark:text-slate-300">An: {sent.to}</span>
+        {attCount > 0 && <Paperclip className="w-3 h-3 text-slate-400 dark:text-slate-500 shrink-0" />}
         <span className="text-[11px] text-slate-400 dark:text-slate-500 shrink-0 tabular-nums">{relDate(sent.sentAt)}</span>
       </div>
       <div className="mt-0.5 truncate text-sm text-slate-600 dark:text-slate-400">{sent.subject || '(kein Betreff)'}</div>
       <div className="mt-1 flex items-center gap-1.5">
-        <span className="inline-flex items-center h-4 px-1.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-          {sentKindLabel(sent.kind)}
-        </span>
+        {kindLabel && (
+          <span className="inline-flex items-center h-4 px-1.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+            {kindLabel}
+          </span>
+        )}
         <span className="flex-1 min-w-0 truncate text-[11px] text-slate-400 dark:text-slate-500">{snippet(sent.body)}</span>
       </div>
     </div>
@@ -1611,6 +1704,8 @@ function SentRow({ sent, active, onClick }: { sent: SentEmail; active: boolean; 
 }
 
 function SentReadingPane({ sent, onBack }: { sent: SentEmail; onBack: () => void }) {
+  const kindLabel = sentKindLabel(sent.kind);
+  const atts = sent.attachmentNames ?? [];
   return (
     <>
       <header className="px-4 sm:px-6 pt-3 pb-3 border-b border-slate-200 dark:border-slate-800">
@@ -1619,7 +1714,7 @@ function SentReadingPane({ sent, onBack }: { sent: SentEmail; onBack: () => void
             <ChevronLeft className="w-4 h-4" />
           </button>
           <span className="inline-flex items-center gap-1 h-5 px-2 rounded text-[11px] font-medium bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-            <Send className="w-3 h-3" /> Gesendet · {sentKindLabel(sent.kind)}
+            <Send className="w-3 h-3" /> Gesendet{kindLabel ? ` · ${kindLabel}` : ''}
           </span>
         </div>
         <h2 className="text-base sm:text-lg font-semibold text-slate-900 dark:text-slate-100 leading-snug">{sent.subject || '(kein Betreff)'}</h2>
@@ -1628,12 +1723,30 @@ function SentReadingPane({ sent, onBack }: { sent: SentEmail; onBack: () => void
           <span className="font-medium text-slate-700 dark:text-slate-200">{sent.to}</span>
           <span className="text-slate-400 dark:text-slate-500">· {fullDate(sent.sentAt)}</span>
         </div>
+        {sent.cc && (
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-sm">
+            <span className="text-slate-500 dark:text-slate-400">Cc:</span>
+            <span className="text-slate-600 dark:text-slate-300">{sent.cc}</span>
+          </div>
+        )}
       </header>
       <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
         {sent.body ? (
           <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-slate-700 dark:text-slate-300">{sent.body}</pre>
         ) : (
           <p className="text-sm text-slate-400 dark:text-slate-500 italic">Kein Text.</p>
+        )}
+        {atts.length > 0 && (
+          <div className="mt-4 flex flex-wrap gap-1.5">
+            {atts.map((name, i) => (
+              <span
+                key={`${name}-${i}`}
+                className="inline-flex items-center gap-1 h-6 px-2 rounded border border-slate-200 dark:border-slate-700 text-[11px] text-slate-600 dark:text-slate-300"
+              >
+                <Paperclip className="w-3 h-3 shrink-0" /> {name}
+              </span>
+            ))}
+          </div>
         )}
         {sent.kind === 'forward' && (
           <p className="mt-4 text-[11px] text-slate-400 dark:text-slate-500">Die weitergeleitete Originalnachricht + Anhänge wurden mitgesendet.</p>

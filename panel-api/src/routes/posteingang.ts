@@ -23,6 +23,7 @@ import { posteingangState, posteingangSent, posteingangDraft } from '../schema.j
 import {
   listCompanies,
   listInboxEmails,
+  listSentEmails,
   pollInbox,
   replyToEmail,
   composeEmail,
@@ -444,10 +445,36 @@ export const posteingangRoute = new Hono<{ Variables: AuthVariables }>()
       to: r.toAddr,
       subject: r.subject,
       body: r.body,
+      messageId: r.messageId,
       inReplyToEmailId: r.inReplyToEmailId,
       sentAt: r.sentAt instanceof Date ? r.sentAt.toISOString() : new Date(r.sentAt as unknown as number).toISOString(),
     }));
     return c.json({ companyId, sent });
+  })
+  /** Real mailbox "Gesendet" folder — fetched read-only from IMAP via
+   *  preisanfrage, so it shows EVERYTHING sent for this company (incl. mail
+   *  sent from Outlook), not only what the panel sent. Newest first. Needs the
+   *  preisanfrage `GET /inbox/sent` endpoint deployed; until then upstream 404s
+   *  → surfaced as a clean 502 (the UI falls back to the panel-local list). */
+  .get('/posteingang/mailbox-sent', requireAuth, async (c) => {
+    const companyId = Number(c.req.query('company'));
+    if (!Number.isInteger(companyId) || companyId <= 0) {
+      return c.json({ error: 'invalid_company' }, 400);
+    }
+    if (!isPreisanfrageEnabled()) {
+      return c.json({ error: 'integration_disabled' }, 503);
+    }
+    const limit = Number(c.req.query('limit')) || 50;
+    try {
+      const emails = await listSentEmails(companyId, { limit });
+      return c.json({ companyId, emails });
+    } catch (err) {
+      if (err instanceof PreisanfrageError && err.status === 403) {
+        return c.json({ error: 'posteingang_disabled', companyId }, 403);
+      }
+      const { status, body } = handleUpstreamError(err);
+      return c.json(body, status);
+    }
   })
   /** "Entwürfe" — list a company's drafts (newest first). */
   .get('/posteingang/drafts', requireAuth, async (c) => {
