@@ -15,10 +15,12 @@ import {
   TrendingUp,
   Wrench,
   Library,
+  Mail,
 } from 'lucide-react';
 import clsx from 'clsx';
-import { api } from '@/lib/api';
+import { api, type PosteingangOverview } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { hasPanelPermission } from '@/lib/panelPermissions';
 import type { ProjectSummary, InboxEntry } from '@/features/kalkulation/types';
 import { StatusBadge, Skeleton, Kbd } from './ui';
 
@@ -34,7 +36,22 @@ export default function PanelHome() {
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   const [inbox, setInbox] = useState<InboxEntry[] | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
+  const [inboxOverview, setInboxOverview] = useState<PosteingangOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Posteingang summary — optional, gated by the `firmen` permission, and never
+  // allowed to break the dashboard (the overview fan-out is cached upstream).
+  useEffect(() => {
+    if (!hasPanelPermission(user, 'firmen')) return;
+    let alive = true;
+    api.posteingang
+      .overview()
+      .then((o) => alive && setInboxOverview(o))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [user]);
 
   useEffect(() => {
     let alive = true;
@@ -133,9 +150,14 @@ export default function PanelHome() {
 
         {/* Quick access + recent projects */}
         <div className="space-y-5">
+          {inboxOverview?.enabled && <PosteingangCard overview={inboxOverview} />}
+
           <Card title="Schnellzugriff" icon={ArrowRight}>
             <ul className="-mx-1 -my-1.5 space-y-0.5">
               <ShortcutRow to="/panel/kalkulation" icon={Calculator} label="Projekte" hint="g p" />
+              {hasPanelPermission(user, 'firmen') && (
+                <ShortcutRow to="/panel/posteingang" icon={Mail} label="Posteingang" />
+              )}
               <ShortcutRow to="/panel/vorlagen" icon={Library} label="Vorlagen-Bibliothek" />
               <ShortcutRow to="/panel/feedback" icon={Inbox} label="Kunden-Feedback" hint="g i" />
               <ShortcutRow to="/panel/einstellungen" icon={FileText} label="Profil & Logo" hint="g s" />
@@ -217,6 +239,63 @@ function ToolsCard({ project }: { project: ProjectSummary }) {
       <p className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400">
         Pro Projekt im Werkzeuge-Menü oben rechts.
       </p>
+    </Card>
+  );
+}
+
+function PosteingangCard({ overview }: { overview: PosteingangOverview }) {
+  const t = overview.totals;
+  const pills: { label: string; cls: string }[] = [];
+  if (t.nichtGespeichert > 0)
+    pills.push({ label: `${t.nichtGespeichert} Angebote`, cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' });
+  if (t.rueckfrage > 0)
+    pills.push({ label: `${t.rueckfrage} Rückfragen`, cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' });
+  if (t.unklar > 0)
+    pills.push({ label: `${t.unklar} Unklar`, cls: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' });
+  return (
+    <Card title="Posteingang" icon={Mail} action={{ label: 'Öffnen', to: '/panel/posteingang' }}>
+      {overview.companies.length === 0 ? (
+        <p className="text-sm text-slate-500 dark:text-slate-400 py-1">Keine offenen Lieferanten-E-Mails. 🎉</p>
+      ) : (
+        <>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-slate-900 dark:text-slate-100 tabular-nums">{t.needsAttention}</span>
+            <span className="text-sm text-slate-500 dark:text-slate-400">{t.needsAttention === 1 ? 'offener Vorgang' : 'offene Vorgänge'}</span>
+          </div>
+          {pills.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {pills.map((p) => (
+                <span key={p.label} className={clsx('inline-flex items-center h-5 px-2 rounded-full text-[11px] font-medium', p.cls)}>
+                  {p.label}
+                </span>
+              ))}
+            </div>
+          )}
+          <ul className="mt-3 -mx-1 space-y-0.5">
+            {[...overview.companies]
+              .sort((a, b) => b.needsAttention - a.needsAttention)
+              .slice(0, 3)
+              .map((c) => (
+                <li key={c.id}>
+                  <Link
+                    to={`/panel/posteingang?company=${c.id}`}
+                    className="group flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                  >
+                    <Mail className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                    <span className="flex-1 text-sm text-slate-700 dark:text-slate-200 truncate">{c.name}</span>
+                    {c.needsAttention > 0 ? (
+                      <span className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-amber-500 text-white text-[11px] font-bold tabular-nums">
+                        {c.needsAttention}
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-slate-300 dark:text-slate-600 tabular-nums">{c.total}</span>
+                    )}
+                  </Link>
+                </li>
+              ))}
+          </ul>
+        </>
+      )}
     </Card>
   );
 }
