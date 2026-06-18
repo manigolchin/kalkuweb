@@ -631,6 +631,18 @@ export const api = {
         `/posteingang/reply`,
         { method: 'POST', body: JSON.stringify({ emailId, body, subject }) },
       ),
+    /** Compose + send a brand-new email from a company's mailbox. */
+    compose: (companyId: number, to: string, subject: string, body: string) =>
+      request<{ ok: true; to: string | null; subject: string | null; messageId: string | null }>(
+        `/posteingang/compose`,
+        { method: 'POST', body: JSON.stringify({ company: companyId, to, subject, body }) },
+      ),
+    /** Forward an incoming email (quoted + attachments) to a new recipient. */
+    forward: (emailId: number, to: string, note?: string) =>
+      request<{ ok: true; to: string | null; subject: string | null; messageId: string | null }>(
+        `/posteingang/forward`,
+        { method: 'POST', body: JSON.stringify({ emailId, to, note }) },
+      ),
   },
   templates: {
     list: () => request<{ templates: PositionTemplate[] }>(`/templates`),

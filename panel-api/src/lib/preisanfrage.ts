@@ -708,3 +708,48 @@ export async function replyToEmail(
   );
   return { success: raw.success, to: raw.to, subject: raw.subject, messageId: raw.message_id, error: raw.error };
 }
+
+type RawSendResult = { success: boolean; to: string | null; subject: string | null; message_id: string | null; error: string | null };
+
+/** Compose + send a brand-new email from a company's address, through
+ *  preisanfrage (no SMTP creds in the panel). Needs preisanfrage's
+ *  `POST /inbox/compose` deployed. */
+export async function composeEmail(
+  companyId: number,
+  to: string,
+  subject: string,
+  body: string,
+): Promise<PreisanfrageReplyResult> {
+  if (isMockMode()) return { success: true, to, subject, messageId: '<mock-compose@kalku.de>', error: null };
+  const raw = await call<RawSendResult>(
+    '/api/inbox/compose',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company_id: companyId, to, subject, body }),
+    },
+    { timeoutMs: 30_000 },
+  );
+  return { success: raw.success, to: raw.to, subject: raw.subject, messageId: raw.message_id, error: raw.error };
+}
+
+/** Forward an incoming email (quoted + its attachments) to a new recipient,
+ *  through preisanfrage. Needs preisanfrage's `POST /inbox/emails/{id}/forward`
+ *  deployed. */
+export async function forwardEmail(
+  emailId: number,
+  to: string,
+  note?: string,
+): Promise<PreisanfrageReplyResult> {
+  if (isMockMode()) return { success: true, to, subject: 'WG: (Demo)', messageId: '<mock-fwd@kalku.de>', error: null };
+  const raw = await call<RawSendResult>(
+    `/api/inbox/emails/${emailId}/forward`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to, note: note ?? null }),
+    },
+    { timeoutMs: 30_000 },
+  );
+  return { success: raw.success, to: raw.to, subject: raw.subject, messageId: raw.message_id, error: raw.error };
+}

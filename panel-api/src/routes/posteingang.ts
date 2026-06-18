@@ -21,6 +21,8 @@ import {
   listInboxEmails,
   pollInbox,
   replyToEmail,
+  composeEmail,
+  forwardEmail,
   isPreisanfrageEnabled,
   isPreisanfrageMock,
   PreisanfrageError,
@@ -199,6 +201,49 @@ export const posteingangRoute = new Hono<{ Variables: AuthVariables }>()
         // reply endpoint not deployed on preisanfrage yet
         return c.json({ error: 'reply_unavailable' }, 502);
       }
+      const { status, body: errBody } = handleUpstreamError(err);
+      return c.json(errBody, status);
+    }
+  })
+  /** Compose + send a brand-new email from a company address (via preisanfrage). */
+  .post('/posteingang/compose', requireAuth, async (c) => {
+    const raw = await c.req.json().catch(() => ({}) as Record<string, unknown>);
+    const companyId = Number((raw as { company?: unknown }).company);
+    const to = typeof (raw as { to?: unknown }).to === 'string' ? (raw as { to: string }).to.trim() : '';
+    const subject = typeof (raw as { subject?: unknown }).subject === 'string' ? (raw as { subject: string }).subject : '';
+    const text = typeof (raw as { body?: unknown }).body === 'string' ? (raw as { body: string }).body : '';
+    if (!Number.isInteger(companyId) || companyId <= 0) return c.json({ error: 'invalid_company' }, 400);
+    if (!to) return c.json({ error: 'missing_recipient' }, 400);
+    if (!text.trim()) return c.json({ error: 'empty_body' }, 400);
+    if (!isPreisanfrageEnabled()) return c.json({ error: 'integration_disabled' }, 503);
+    try {
+      const res = await composeEmail(companyId, to, subject, text);
+      if (!res.success) return c.json({ error: 'send_failed', detail: res.error }, 502);
+      return c.json({ ok: true, to: res.to, subject: res.subject, messageId: res.messageId });
+    } catch (err) {
+      if (err instanceof PreisanfrageError && err.status === 403) return c.json({ error: 'posteingang_disabled' }, 403);
+      if (err instanceof PreisanfrageError && err.status === 400) return c.json({ error: 'cannot_send' }, 400);
+      if (err instanceof PreisanfrageError && err.status === 404) return c.json({ error: 'compose_unavailable' }, 502);
+      const { status, body: errBody } = handleUpstreamError(err);
+      return c.json(errBody, status);
+    }
+  })
+  /** Forward an incoming email (quoted + attachments) to a new recipient. */
+  .post('/posteingang/forward', requireAuth, async (c) => {
+    const raw = await c.req.json().catch(() => ({}) as Record<string, unknown>);
+    const emailId = Number((raw as { emailId?: unknown }).emailId);
+    const to = typeof (raw as { to?: unknown }).to === 'string' ? (raw as { to: string }).to.trim() : '';
+    const note = typeof (raw as { note?: unknown }).note === 'string' ? (raw as { note: string }).note : undefined;
+    if (!Number.isInteger(emailId) || emailId <= 0) return c.json({ error: 'invalid_email' }, 400);
+    if (!to) return c.json({ error: 'missing_recipient' }, 400);
+    if (!isPreisanfrageEnabled()) return c.json({ error: 'integration_disabled' }, 503);
+    try {
+      const res = await forwardEmail(emailId, to, note);
+      if (!res.success) return c.json({ error: 'send_failed', detail: res.error }, 502);
+      return c.json({ ok: true, to: res.to, subject: res.subject, messageId: res.messageId });
+    } catch (err) {
+      if (err instanceof PreisanfrageError && err.status === 403) return c.json({ error: 'posteingang_disabled' }, 403);
+      if (err instanceof PreisanfrageError && err.status === 404) return c.json({ error: 'forward_unavailable' }, 502);
       const { status, body: errBody } = handleUpstreamError(err);
       return c.json(errBody, status);
     }
