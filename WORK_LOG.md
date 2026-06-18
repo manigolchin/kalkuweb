@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-06-18 15:05 — Posteingang: Labels + Drafts (Entwürfe)
+- Source: user "yes make all of them" (labels, drafts, CC/BCC, reply-all)
+- Branch: claude-auto/2026-06-17-import-bv-bieter — commit 471b793
+- Result: committed 471b793 → pushed → deployed (server cherry-pick 621fd29, all healthy, db:ok, bundle index-BA2zAUUa.js matches, /posteingang/drafts → 401 live).
+- Notes: **Labels** — free-form team tags (JSON `labels` column on posteingang_state; setState handles array; parseLabels/cleanLabels). Chips on rows + LabelEditor (add/remove) in reading pane + a label-filter row; colour-per-label hash. **Drafts** — new `posteingang_draft` table + GET/POST(upsert)/DELETE; 'Entwürfe' folder; Composer gained initial values + `onSaveDraft` ('Entwurf' button) + draftId via key; clicking a draft reopens it prefilled; sending deletes the draft. Composer mode 'new' ↔ draft kind 'compose' mapping. Browser-verified end-to-end (label→chip+filter+persist; draft save→Entwürfe→reopen prefilled→send→removed+in Gesendet; 0 console errors). **Reply-all NOT built (by design):** preisanfrage's incoming_emails stores only the sender (no To/CC) → reply-all needs a preisanfrage data change + adds little for 1-sender supplier mail. **CC/BCC = the one remaining** (needs a small preisanfrage send_email cc/bcc change + endpoints → user deploys; panel composer fields).
+
 ## 2026-06-18 14:20 — Posteingang: Gesendet + Papierkorb folders + keyboard
 - Source: user "yes do it [keyboard] and also i cannot see gesendete email … or delete email"
 - Branch: claude-auto/2026-06-17-import-bv-bieter — commit 516b877
