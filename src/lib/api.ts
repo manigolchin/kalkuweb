@@ -615,6 +615,16 @@ export const api = {
       if (opts?.limit) qs.set('limit', String(opts.limit));
       return request<PosteingangEmailsResponse>(`/posteingang/emails?${qs.toString()}`);
     },
+    /** Trigger preisanfrage to fetch + classify new mail NOW (slow — IMAP+AI). */
+    poll: (companyId: number) =>
+      request<{
+        companyId: number;
+        emailsFound: number;
+        emailsNew: number;
+        emailsAutoSaved: number;
+        emailsDuplicate: number;
+        emailsError: number;
+      }>(`/posteingang/poll`, { method: 'POST', body: JSON.stringify({ company: companyId }) }),
   },
   templates: {
     list: () => request<{ templates: PositionTemplate[] }>(`/templates`),

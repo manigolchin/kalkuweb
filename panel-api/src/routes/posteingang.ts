@@ -19,6 +19,7 @@ import { requireAuth, type AuthVariables } from '../lib/middleware.js';
 import {
   listCompanies,
   listInboxEmails,
+  pollInbox,
   isPreisanfrageEnabled,
   isPreisanfrageMock,
   PreisanfrageError,
@@ -132,5 +133,33 @@ export const posteingangRoute = new Hono<{ Variables: AuthVariables }>()
       }
       const { status, body } = handleUpstreamError(err);
       return c.json(body, status);
+    }
+  })
+  /** On-demand poll: trigger preisanfrage to IMAP-fetch + classify NOW, so a
+   *  user doesn't wait for the hourly auto-poll. Slow (IMAP + AI) — preisanfrage
+   *  client gives it a long timeout; this proxy just forwards + invalidates the
+   *  read cache (done inside pollInbox). */
+  .post('/posteingang/poll', requireAuth, async (c) => {
+    const body = await c.req.json().catch(() => ({}) as Record<string, unknown>);
+    const companyId = Number((body as { company?: unknown }).company);
+    if (!Number.isInteger(companyId) || companyId <= 0) {
+      return c.json({ error: 'invalid_company' }, 400);
+    }
+    if (!isPreisanfrageEnabled()) {
+      return c.json({ error: 'integration_disabled' }, 503);
+    }
+    try {
+      const result = await pollInbox(companyId);
+      return c.json({ companyId, ...result });
+    } catch (err) {
+      if (err instanceof PreisanfrageError && err.status === 403) {
+        return c.json({ error: 'posteingang_disabled', companyId }, 403);
+      }
+      if (err instanceof PreisanfrageError && err.status === 400) {
+        // preisanfrage: "IMAP/SMTP nicht konfiguriert" for this company.
+        return c.json({ error: 'smtp_not_configured', companyId }, 400);
+      }
+      const { status, body: errBody } = handleUpstreamError(err);
+      return c.json(errBody, status);
     }
   });

@@ -28,6 +28,7 @@ import {
   FolderOpen,
   PlugZap,
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import {
   api,
   ApiError,
@@ -145,6 +146,7 @@ export default function Posteingang() {
   const [query, setQuery] = useState('');
   const [companyQuery, setCompanyQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [polling, setPolling] = useState(false);
 
   // Master-detail navigation on < lg. On lg the three panes show side by side.
   const [mobilePane, setMobilePane] = useState<'companies' | 'list' | 'reading'>('companies');
@@ -207,6 +209,30 @@ export default function Posteingang() {
     await loadOverview();
     if (selectedCompany != null) await loadEmails(selectedCompany);
     setRefreshing(false);
+  }
+
+  // On-demand: ask preisanfrage to IMAP-fetch + classify new mail for this firma
+  // right now (instead of waiting for the hourly auto-poll), then reload.
+  async function pollNow() {
+    if (selectedCompany == null || polling) return;
+    setPolling(true);
+    try {
+      const res = await api.posteingang.poll(selectedCompany);
+      await loadEmails(selectedCompany);
+      await loadOverview();
+      toast.success(
+        res.emailsNew > 0
+          ? `${res.emailsNew} neue E-Mail${res.emailsNew === 1 ? '' : 's'} abgerufen`
+          : 'Keine neuen E-Mails',
+      );
+    } catch (e) {
+      const code = e instanceof ApiError ? (e.body as { error?: string } | null)?.error : undefined;
+      if (code === 'smtp_not_configured') toast.error('Für diese Firma ist kein Postfach (IMAP) konfiguriert.');
+      else if (code === 'posteingang_disabled') toast.error('Posteingang ist für diese Firma deaktiviert.');
+      else toast.error('Abrufen fehlgeschlagen — bitte erneut versuchen.');
+    } finally {
+      setPolling(false);
+    }
   }
 
   function pickCompany(id: number) {
@@ -348,7 +374,16 @@ export default function Posteingang() {
               </button>
               <span className="font-semibold text-slate-900 dark:text-slate-100 truncate">{activeCompany?.name ?? 'Postfach'}</span>
               {activeCompany && (
-                <span className="ml-auto text-[11px] text-slate-400 dark:text-slate-500 tabular-nums shrink-0">{activeCompany.total} E-Mails</span>
+                <button
+                  type="button"
+                  onClick={() => void pollNow()}
+                  disabled={polling}
+                  className="ml-auto shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 px-2 h-7 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
+                  title="Neue E-Mails jetzt von preisanfrage abrufen (IMAP)"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${polling ? 'animate-spin' : ''}`} />
+                  {polling ? 'Lädt…' : 'Abrufen'}
+                </button>
               )}
             </div>
             <div className="px-2 pb-2 relative">
@@ -473,6 +508,11 @@ function EmailRow({ email, active, onClick }: { email: PosteingangEmail; active:
       </div>
       <div className="mt-1 flex items-center gap-1.5">
         <span className={`inline-flex items-center h-4 px-1.5 rounded text-[10px] font-medium ${cm.badge}`}>{cm.label}</span>
+        {email.sharepointSaved ? (
+          <span className="inline-flex items-center h-4 px-1.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300">abgelegt</span>
+        ) : email.status === 'new' ? (
+          <span className="inline-flex items-center h-4 px-1.5 rounded text-[10px] font-medium bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300">neu</span>
+        ) : null}
         {email.hasAttachments && (
           <span className="inline-flex items-center gap-0.5 text-[10px] text-slate-400 dark:text-slate-500">
             <Paperclip className="w-3 h-3" />

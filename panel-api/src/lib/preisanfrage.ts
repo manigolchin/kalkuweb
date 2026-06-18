@@ -191,7 +191,7 @@ export function isPreisanfrageMock(): boolean {
  *  panel outage. 8 s is generous for the BI aggregation endpoints. */
 const UPSTREAM_TIMEOUT_MS = 8000;
 
-async function call<T>(path: string, init?: RequestInit): Promise<T> {
+async function call<T>(path: string, init?: RequestInit, opts?: { timeoutMs?: number }): Promise<T> {
   const token = serviceToken();
   if (!token) {
     throw new PreisanfrageError(503, { error: 'integration_disabled' }, 'PREISANFRAGE_SERVICE_JWT not configured');
@@ -201,7 +201,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     res = await fetch(url, {
       ...init,
-      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+      signal: AbortSignal.timeout(opts?.timeoutMs ?? UPSTREAM_TIMEOUT_MS),
       headers: {
         Accept: 'application/json',
         Authorization: `Bearer ${token}`,
@@ -625,4 +625,52 @@ export async function listInboxEmails(
     emails: (raw.emails ?? []).map(mapInboxEmail),
     stats: mapInboxStats(raw.stats),
   });
+}
+
+export type PreisanfrageInboxPollResult = {
+  emailsFound: number;
+  emailsNew: number;
+  emailsAutoSaved: number;
+  emailsDuplicate: number;
+  emailsError: number;
+};
+
+/** Trigger an immediate IMAP poll for one company (preisanfrage fetches unseen
+ *  mail since `sinceDays` and Haiku-classifies it). This is the on-demand
+ *  equivalent of preisanfrage's hourly auto-poll — used by the "Jetzt abrufen"
+ *  button so a user doesn't wait for the cycle. A poll is slow (IMAP + AI), so
+ *  it gets a much longer timeout than read calls. It mutates upstream state, so
+ *  we invalidate our read cache afterwards. Requires SMTP configured upstream
+ *  (else preisanfrage 400s) + posteingang_enabled (else 403). */
+export async function pollInbox(
+  companyId: number,
+  opts?: { sinceDays?: number },
+): Promise<PreisanfrageInboxPollResult> {
+  if (isMockMode()) {
+    return { emailsFound: 0, emailsNew: 0, emailsAutoSaved: 0, emailsDuplicate: 0, emailsError: 0 };
+  }
+  type Raw = {
+    emails_found: number;
+    emails_new: number;
+    emails_auto_saved: number;
+    emails_duplicate: number;
+    emails_error: number;
+  };
+  const raw = await call<Raw>(
+    '/api/inbox/poll',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company_id: companyId, since_days: opts?.sinceDays ?? 3, folder: 'INBOX' }),
+    },
+    { timeoutMs: 55_000 },
+  );
+  _clearPreisanfrageCache(); // a poll changed upstream state → our cached reads are stale
+  return {
+    emailsFound: raw.emails_found,
+    emailsNew: raw.emails_new,
+    emailsAutoSaved: raw.emails_auto_saved,
+    emailsDuplicate: raw.emails_duplicate,
+    emailsError: raw.emails_error,
+  };
 }
