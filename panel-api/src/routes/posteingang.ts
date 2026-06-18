@@ -15,10 +15,11 @@
  * See lib/preisanfrage.ts (listInboxEmails) + src/pages/panel/Posteingang.tsx.
  */
 import { Hono } from 'hono';
-import { eq } from 'drizzle-orm';
+import { eq, desc } from 'drizzle-orm';
+import { nanoid } from 'nanoid';
 import { requireAuth, type AuthVariables } from '../lib/middleware.js';
 import { db } from '../db.js';
-import { posteingangState } from '../schema.js';
+import { posteingangState, posteingangSent } from '../schema.js';
 import {
   listCompanies,
   listInboxEmails,
@@ -44,6 +45,38 @@ function handleUpstreamError(err: unknown): {
     return { status, body: { error: 'upstream_error', upstreamStatus: err.status, detail: err.body } };
   }
   return { status: 500, body: { error: 'internal', detail: String(err) } };
+}
+
+/** Best-effort log of an email the panel just sent (for the "Gesendet" folder).
+ *  A failure here must NEVER fail the actual send, so it swallows errors. */
+async function recordSent(opts: {
+  companyId: number;
+  kind: 'reply' | 'compose' | 'forward';
+  to: string;
+  subject: string;
+  body: string;
+  inReplyToEmailId?: number | null;
+  messageId?: string | null;
+  sentBy?: string | null;
+}): Promise<void> {
+  if (!Number.isInteger(opts.companyId) || opts.companyId <= 0 || !opts.to) return;
+  try {
+    await db.insert(posteingangSent).values({
+      id: nanoid(),
+      companyId: opts.companyId,
+      kind: opts.kind,
+      toAddr: opts.to,
+      subject: opts.subject || '',
+      body: opts.body || '',
+      inReplyToEmailId: opts.inReplyToEmailId ?? null,
+      messageId: opts.messageId ?? null,
+      sentBy: opts.sentBy ?? null,
+      sentByName: '',
+      sentAt: new Date(),
+    });
+  } catch (e) {
+    console.warn('[posteingang] failed to record sent email:', e);
+  }
 }
 
 /** Hard cap on the overview fan-out. Managed companies (the ones with
@@ -175,6 +208,7 @@ export const posteingangRoute = new Hono<{ Variables: AuthVariables }>()
   .post('/posteingang/reply', requireAuth, async (c) => {
     const raw = await c.req.json().catch(() => ({}) as Record<string, unknown>);
     const emailId = Number((raw as { emailId?: unknown }).emailId);
+    const companyId = Number((raw as { company?: unknown }).company);
     const text = typeof (raw as { body?: unknown }).body === 'string' ? ((raw as { body: string }).body) : '';
     const subjRaw = (raw as { subject?: unknown }).subject;
     const subject = typeof subjRaw === 'string' && subjRaw.trim() ? subjRaw.trim() : undefined;
@@ -192,6 +226,7 @@ export const posteingangRoute = new Hono<{ Variables: AuthVariables }>()
       if (!res.success) {
         return c.json({ error: 'send_failed', detail: res.error }, 502);
       }
+      await recordSent({ companyId, kind: 'reply', to: res.to ?? '', subject: res.subject ?? '', body: text, inReplyToEmailId: emailId, messageId: res.messageId, sentBy: c.get('userId') });
       return c.json({ ok: true, to: res.to, subject: res.subject, messageId: res.messageId });
     } catch (err) {
       if (err instanceof PreisanfrageError && err.status === 403) {
@@ -222,6 +257,7 @@ export const posteingangRoute = new Hono<{ Variables: AuthVariables }>()
     try {
       const res = await composeEmail(companyId, to, subject, text);
       if (!res.success) return c.json({ error: 'send_failed', detail: res.error }, 502);
+      await recordSent({ companyId, kind: 'compose', to: res.to ?? to, subject: res.subject ?? subject, body: text, messageId: res.messageId, sentBy: c.get('userId') });
       return c.json({ ok: true, to: res.to, subject: res.subject, messageId: res.messageId });
     } catch (err) {
       if (err instanceof PreisanfrageError && err.status === 403) return c.json({ error: 'posteingang_disabled' }, 403);
@@ -235,6 +271,7 @@ export const posteingangRoute = new Hono<{ Variables: AuthVariables }>()
   .post('/posteingang/forward', requireAuth, async (c) => {
     const raw = await c.req.json().catch(() => ({}) as Record<string, unknown>);
     const emailId = Number((raw as { emailId?: unknown }).emailId);
+    const companyId = Number((raw as { company?: unknown }).company);
     const to = typeof (raw as { to?: unknown }).to === 'string' ? (raw as { to: string }).to.trim() : '';
     const note = typeof (raw as { note?: unknown }).note === 'string' ? (raw as { note: string }).note : undefined;
     if (!Number.isInteger(emailId) || emailId <= 0) return c.json({ error: 'invalid_email' }, 400);
@@ -243,6 +280,7 @@ export const posteingangRoute = new Hono<{ Variables: AuthVariables }>()
     try {
       const res = await forwardEmail(emailId, to, note);
       if (!res.success) return c.json({ error: 'send_failed', detail: res.error }, 502);
+      await recordSent({ companyId, kind: 'forward', to: res.to ?? to, subject: res.subject ?? '', body: note ?? '', inReplyToEmailId: emailId, messageId: res.messageId, sentBy: c.get('userId') });
       return c.json({ ok: true, to: res.to, subject: res.subject, messageId: res.messageId });
     } catch (err) {
       if (err instanceof PreisanfrageError && err.status === 403) return c.json({ error: 'posteingang_disabled' }, 403);
@@ -258,8 +296,8 @@ export const posteingangRoute = new Hono<{ Variables: AuthVariables }>()
     const companyId = Number(c.req.query('company'));
     if (!Number.isInteger(companyId) || companyId <= 0) return c.json({ error: 'invalid_company' }, 400);
     const rows = await db.select().from(posteingangState).where(eq(posteingangState.companyId, companyId));
-    const state: Record<number, { read: boolean; starred: boolean; archived: boolean }> = {};
-    for (const r of rows) state[r.emailId] = { read: r.read, starred: r.starred, archived: r.archived };
+    const state: Record<number, { read: boolean; starred: boolean; archived: boolean; deleted: boolean }> = {};
+    for (const r of rows) state[r.emailId] = { read: r.read, starred: r.starred, archived: r.archived, deleted: r.deleted };
     return c.json({ companyId, state });
   })
   /** Toggle read/starred/archived for ONE email (upsert). */
@@ -274,7 +312,8 @@ export const posteingangRoute = new Hono<{ Variables: AuthVariables }>()
     const read = bool('read');
     const starred = bool('starred');
     const archived = bool('archived');
-    if (read === undefined && starred === undefined && archived === undefined) {
+    const deleted = bool('deleted');
+    if (read === undefined && starred === undefined && archived === undefined && deleted === undefined) {
       return c.json({ error: 'no_change' }, 400);
     }
     const userId = c.get('userId');
@@ -287,6 +326,7 @@ export const posteingangRoute = new Hono<{ Variables: AuthVariables }>()
         read: read ?? false,
         starred: starred ?? false,
         archived: archived ?? false,
+        deleted: deleted ?? false,
         updatedBy: userId,
         updatedAt: now,
       })
@@ -296,12 +336,13 @@ export const posteingangRoute = new Hono<{ Variables: AuthVariables }>()
           ...(read !== undefined ? { read } : {}),
           ...(starred !== undefined ? { starred } : {}),
           ...(archived !== undefined ? { archived } : {}),
+          ...(deleted !== undefined ? { deleted } : {}),
           updatedBy: userId,
           updatedAt: now,
         },
       });
     const row = await db.query.posteingangState.findFirst({ where: eq(posteingangState.emailId, emailId) });
-    return c.json({ ok: true, emailId, read: !!row?.read, starred: !!row?.starred, archived: !!row?.archived });
+    return c.json({ ok: true, emailId, read: !!row?.read, starred: !!row?.starred, archived: !!row?.archived, deleted: !!row?.deleted });
   })
   /** Bulk-set one flag on many emails (e.g. "alle als gelesen markieren"). */
   .post('/posteingang/state-bulk', requireAuth, async (c) => {
@@ -317,7 +358,8 @@ export const posteingangRoute = new Hono<{ Variables: AuthVariables }>()
     const read = bool('read');
     const archived = bool('archived');
     const starred = bool('starred');
-    if (!ids.length || (read === undefined && archived === undefined && starred === undefined)) {
+    const deleted = bool('deleted');
+    if (!ids.length || (read === undefined && archived === undefined && starred === undefined && deleted === undefined)) {
       return c.json({ ok: true, updated: 0 });
     }
     const userId = c.get('userId');
@@ -331,6 +373,7 @@ export const posteingangRoute = new Hono<{ Variables: AuthVariables }>()
           read: read ?? false,
           starred: starred ?? false,
           archived: archived ?? false,
+          deleted: deleted ?? false,
           updatedBy: userId,
           updatedAt: now,
         })
@@ -340,10 +383,32 @@ export const posteingangRoute = new Hono<{ Variables: AuthVariables }>()
             ...(read !== undefined ? { read } : {}),
             ...(starred !== undefined ? { starred } : {}),
             ...(archived !== undefined ? { archived } : {}),
+            ...(deleted !== undefined ? { deleted } : {}),
             updatedBy: userId,
             updatedAt: now,
           },
         });
     }
     return c.json({ ok: true, updated: ids.length });
+  })
+  /** "Gesendet" folder — emails the panel sent for this company (newest first). */
+  .get('/posteingang/sent', requireAuth, async (c) => {
+    const companyId = Number(c.req.query('company'));
+    if (!Number.isInteger(companyId) || companyId <= 0) return c.json({ error: 'invalid_company' }, 400);
+    const rows = await db
+      .select()
+      .from(posteingangSent)
+      .where(eq(posteingangSent.companyId, companyId))
+      .orderBy(desc(posteingangSent.sentAt))
+      .limit(200);
+    const sent = rows.map((r) => ({
+      id: r.id,
+      kind: r.kind,
+      to: r.toAddr,
+      subject: r.subject,
+      body: r.body,
+      inReplyToEmailId: r.inReplyToEmailId,
+      sentAt: r.sentAt instanceof Date ? r.sentAt.toISOString() : new Date(r.sentAt as unknown as number).toISOString(),
+    }));
+    return c.json({ companyId, sent });
   });

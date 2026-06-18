@@ -423,10 +423,34 @@ export const posteingangState = sqliteTable('posteingang_state', {
   read: integer('read', { mode: 'boolean' }).notNull().default(false),
   starred: integer('starred', { mode: 'boolean' }).notNull().default(false),
   archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
+  /** Soft-delete → Papierkorb. Panel-local; never touches the mailbox. */
+  deleted: integer('deleted', { mode: 'boolean' }).notNull().default(false),
   updatedBy: text('updated_by').references(() => users.id),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
 });
 export type PosteingangState = typeof posteingangState.$inferSelect;
+
+/**
+ * Posteingang SENT log — records every email the panel sends (reply / compose /
+ * forward), so the panel has a "Gesendet" folder. preisanfrage's SMTP engine
+ * already drops a copy in the mailbox's Sent folder; this is the panel's own
+ * view of what was sent FROM the panel. Shared across the team.
+ */
+export const posteingangSent = sqliteTable('posteingang_sent', {
+  id: text('id').primaryKey(),
+  companyId: integer('company_id').notNull(),
+  kind: text('kind', { enum: ['reply', 'compose', 'forward'] }).notNull(),
+  toAddr: text('to_addr').notNull(),
+  subject: text('subject').notNull().default(''),
+  body: text('body').notNull().default(''),
+  /** For reply/forward: the incoming email this was sent in response to. */
+  inReplyToEmailId: integer('in_reply_to_email_id'),
+  messageId: text('message_id'),
+  sentBy: text('sent_by').references(() => users.id),
+  sentByName: text('sent_by_name').notNull().default(''),
+  sentAt: integer('sent_at', { mode: 'timestamp_ms' }).notNull(),
+});
+export type PosteingangSent = typeof posteingangSent.$inferSelect;
 
 export type PositionType = 'standard' | 'wagnis' | 'reserve' | 'nu_marge' | 'lohn_puffer';
 

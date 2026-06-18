@@ -626,10 +626,10 @@ export const api = {
         emailsError: number;
       }>(`/posteingang/poll`, { method: 'POST', body: JSON.stringify({ company: companyId }) }),
     /** Send a plain-text reply to an incoming email (via preisanfrage's SMTP). */
-    reply: (emailId: number, body: string, subject?: string) =>
+    reply: (emailId: number, companyId: number, body: string, subject?: string) =>
       request<{ ok: true; to: string | null; subject: string | null; messageId: string | null }>(
         `/posteingang/reply`,
-        { method: 'POST', body: JSON.stringify({ emailId, body, subject }) },
+        { method: 'POST', body: JSON.stringify({ emailId, company: companyId, body, subject }) },
       ),
     /** Compose + send a brand-new email from a company's mailbox. */
     compose: (companyId: number, to: string, subject: string, body: string) =>
@@ -638,23 +638,24 @@ export const api = {
         { method: 'POST', body: JSON.stringify({ company: companyId, to, subject, body }) },
       ),
     /** Forward an incoming email (quoted + attachments) to a new recipient. */
-    forward: (emailId: number, to: string, note?: string) =>
+    forward: (emailId: number, companyId: number, to: string, note?: string) =>
       request<{ ok: true; to: string | null; subject: string | null; messageId: string | null }>(
         `/posteingang/forward`,
-        { method: 'POST', body: JSON.stringify({ emailId, to, note }) },
+        { method: 'POST', body: JSON.stringify({ emailId, company: companyId, to, note }) },
       ),
-    /** Panel-local triage flags (read/starred/archived) for a company's emails. */
+    /** Panel-local triage flags (read/starred/archived/deleted) per email. */
     state: (companyId: number) =>
-      request<{ companyId: number; state: Record<number, { read: boolean; starred: boolean; archived: boolean }> }>(
-        `/posteingang/state?company=${companyId}`,
-      ),
-    /** Toggle read/starred/archived for one email. */
+      request<{
+        companyId: number;
+        state: Record<number, { read: boolean; starred: boolean; archived: boolean; deleted: boolean }>;
+      }>(`/posteingang/state?company=${companyId}`),
+    /** Toggle a triage flag for one email. */
     setState: (
       emailId: number,
       companyId: number,
-      patch: { read?: boolean; starred?: boolean; archived?: boolean },
+      patch: { read?: boolean; starred?: boolean; archived?: boolean; deleted?: boolean },
     ) =>
-      request<{ ok: true; emailId: number; read: boolean; starred: boolean; archived: boolean }>(
+      request<{ ok: true; emailId: number; read: boolean; starred: boolean; archived: boolean; deleted: boolean }>(
         `/posteingang/state/${emailId}`,
         { method: 'POST', body: JSON.stringify({ company: companyId, ...patch }) },
       ),
@@ -662,12 +663,26 @@ export const api = {
     setStateBulk: (
       companyId: number,
       emailIds: number[],
-      patch: { read?: boolean; starred?: boolean; archived?: boolean },
+      patch: { read?: boolean; starred?: boolean; archived?: boolean; deleted?: boolean },
     ) =>
       request<{ ok: true; updated: number }>(`/posteingang/state-bulk`, {
         method: 'POST',
         body: JSON.stringify({ company: companyId, emailIds, ...patch }),
       }),
+    /** "Gesendet" — emails sent from the panel for this company (newest first). */
+    sent: (companyId: number) =>
+      request<{
+        companyId: number;
+        sent: Array<{
+          id: string;
+          kind: 'reply' | 'compose' | 'forward';
+          to: string;
+          subject: string;
+          body: string;
+          inReplyToEmailId: number | null;
+          sentAt: string;
+        }>;
+      }>(`/posteingang/sent?company=${companyId}`),
   },
   templates: {
     list: () => request<{ templates: PositionTemplate[] }>(`/templates`),

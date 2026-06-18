@@ -35,6 +35,7 @@ import {
   Archive,
   ArchiveRestore,
   CheckCheck,
+  Trash2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
@@ -49,8 +50,24 @@ import {
 
 type ClassFilter = 'all' | 'angebot' | 'rueckfrage' | 'absage' | 'unklar';
 type ComposerMode = 'reply' | 'forward' | 'new';
-type EmailState = { read: boolean; starred: boolean; archived: boolean };
-const EMPTY_STATE: EmailState = { read: false, starred: false, archived: false };
+type EmailState = { read: boolean; starred: boolean; archived: boolean; deleted: boolean };
+const EMPTY_STATE: EmailState = { read: false, starred: false, archived: false, deleted: false };
+type MailView = 'inbox' | 'sent' | 'archived' | 'trash';
+type SentEmail = {
+  id: string;
+  kind: 'reply' | 'compose' | 'forward';
+  to: string;
+  subject: string;
+  body: string;
+  inReplyToEmailId: number | null;
+  sentAt: string;
+};
+const VIEW_LABELS: Record<MailView, string> = {
+  inbox: 'Posteingang',
+  sent: 'Gesendet',
+  archived: 'Archiv',
+  trash: 'Papierkorb',
+};
 
 const CLASS_FILTERS: { key: ClassFilter; label: string }[] = [
   { key: 'all', label: 'Alle' },
@@ -156,9 +173,12 @@ export default function Posteingang() {
   const [refreshing, setRefreshing] = useState(false);
   const [polling, setPolling] = useState(false);
   const [composer, setComposer] = useState<{ mode: ComposerMode; email: PosteingangEmail | null } | null>(null);
-  // Panel-local triage flags (read/starred/archived), keyed by email id.
+  // Panel-local triage flags (read/starred/archived/deleted), keyed by email id.
   const [stateMap, setStateMap] = useState<Record<number, EmailState>>({});
-  const [showArchived, setShowArchived] = useState(false);
+  const [view, setView] = useState<MailView>('inbox');
+  const [sentList, setSentList] = useState<SentEmail[] | null>(null);
+  const [loadingSent, setLoadingSent] = useState(false);
+  const [selectedSentId, setSelectedSentId] = useState<string | null>(null);
 
   // Master-detail navigation on < lg. On lg the three panes show side by side.
   const [mobilePane, setMobilePane] = useState<'companies' | 'list' | 'reading'>('companies');
@@ -296,9 +316,28 @@ export default function Posteingang() {
     setSelectedCompany(id);
     setClassFilter('all');
     setQuery('');
-    setShowArchived(false);
+    setView('inbox');
     setMobilePane('list');
   }
+
+  // Lazy-load the "Gesendet" list when that folder is opened.
+  useEffect(() => {
+    if (view !== 'sent' || selectedCompany == null) return;
+    let alive = true;
+    setLoadingSent(true);
+    api.posteingang
+      .sent(selectedCompany)
+      .then((res) => {
+        if (!alive) return;
+        setSentList(res.sent);
+        setSelectedSentId(res.sent[0]?.id ?? null);
+      })
+      .catch(() => alive && setSentList([]))
+      .finally(() => alive && setLoadingSent(false));
+    return () => {
+      alive = false;
+    };
+  }, [view, selectedCompany]);
   function pickEmail(id: number) {
     setSelectedEmailId(id);
     setMobilePane('reading');
@@ -314,9 +353,20 @@ export default function Posteingang() {
 
   const activeCompany = companies.find((c) => c.id === selectedCompany) ?? null;
 
+  // Does an incoming email belong in the currently-open folder?
+  const matchesView = useCallback(
+    (id: number): boolean => {
+      const s = stateMap[id] ?? EMPTY_STATE;
+      if (view === 'trash') return s.deleted;
+      if (s.deleted) return false; // inbox + archiv hide trashed mail
+      return view === 'archived' ? s.archived : !s.archived;
+    },
+    [stateMap, view],
+  );
+
   const filteredEmails = useMemo(() => {
-    // Archive view: show only archived; default view: hide archived.
-    let list = (emails ?? []).filter((e) => (stateMap[e.id]?.archived ?? false) === showArchived);
+    if (view === 'sent') return [];
+    let list = (emails ?? []).filter((e) => matchesView(e.id));
     if (classFilter !== 'all') list = list.filter((e) => (e.classification ?? 'unklar') === classFilter);
     const q = query.trim().toLowerCase();
     if (q) {
@@ -329,31 +379,121 @@ export default function Posteingang() {
       );
     }
     return list;
-  }, [emails, classFilter, query, stateMap, showArchived]);
+  }, [emails, classFilter, query, view, matchesView]);
 
-  // Counts for the filter chips — scoped to the current (inbox vs archive) view.
+  // Filter-chip counts — scoped to the current folder.
   const classCounts = useMemo(() => {
     const c: Record<ClassFilter, number> = { all: 0, angebot: 0, rueckfrage: 0, absage: 0, unklar: 0 };
+    if (view === 'sent') return c;
     for (const e of emails ?? []) {
-      if ((stateMap[e.id]?.archived ?? false) !== showArchived) continue;
+      if (!matchesView(e.id)) continue;
       c.all++;
       const k = (e.classification ?? 'unklar') as ClassFilter;
       if (k in c) c[k]++;
       else c.unklar++;
     }
     return c;
-  }, [emails, stateMap, showArchived]);
+  }, [emails, view, matchesView]);
 
-  const unreadCount = useMemo(
-    () => (emails ?? []).filter((e) => !stateMap[e.id]?.read && !stateMap[e.id]?.archived).length,
-    [emails, stateMap],
-  );
-  const archivedCount = useMemo(
-    () => (emails ?? []).filter((e) => stateMap[e.id]?.archived).length,
-    [emails, stateMap],
-  );
+  // Per-folder totals for the folder tabs + the unread badge.
+  const folderCounts = useMemo(() => {
+    let inbox = 0;
+    let archived = 0;
+    let trash = 0;
+    let unread = 0;
+    for (const e of emails ?? []) {
+      const s = stateMap[e.id] ?? EMPTY_STATE;
+      if (s.deleted) {
+        trash++;
+        continue;
+      }
+      if (s.archived) {
+        archived++;
+        continue;
+      }
+      inbox++;
+      if (!s.read) unread++;
+    }
+    return { inbox, archived, trash, unread };
+  }, [emails, stateMap]);
 
   const selectedEmail = (emails ?? []).find((e) => e.id === selectedEmailId) ?? null;
+  const selectedSent = (sentList ?? []).find((s) => s.id === selectedSentId) ?? null;
+
+  // Keep the selection valid as folder/filters change — and advance to the next
+  // mail after the open one is archived/deleted (Gmail-style).
+  useEffect(() => {
+    if (view === 'sent') return;
+    if (selectedEmailId != null && filteredEmails.some((e) => e.id === selectedEmailId)) return;
+    setSelectedEmailId(filteredEmails[0]?.id ?? null);
+  }, [filteredEmails, view, selectedEmailId]);
+
+  // Keyboard shortcuts (Superhuman-style). Scoped to this page; ignores typing
+  // and when a composer is open. Uses keys that don't clash with PanelLayout's
+  // global c / g / "/" hotkeys.  j/k move · e archive · s star · u unread ·
+  // r reply · f forward · n new · ⌫ delete.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (composer) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) return;
+      const k = e.key.toLowerCase();
+
+      if (k === 'n') {
+        if (selectedCompany != null) {
+          e.preventDefault();
+          setComposer({ mode: 'new', email: null });
+        }
+        return;
+      }
+
+      // j/k navigation within the current list (incoming or sent)
+      if (k === 'j' || k === 'k') {
+        const ids: (number | string)[] =
+          view === 'sent' ? (sentList ?? []).map((s) => s.id) : filteredEmails.map((x) => x.id);
+        if (!ids.length) return;
+        e.preventDefault();
+        const curId = view === 'sent' ? selectedSentId : selectedEmailId;
+        const idx = ids.findIndex((id) => id === curId);
+        const nextIdx = idx < 0 ? 0 : k === 'j' ? Math.min(ids.length - 1, idx + 1) : Math.max(0, idx - 1);
+        const nextId = ids[nextIdx];
+        if (view === 'sent') {
+          setSelectedSentId(nextId as string);
+        } else {
+          setSelectedEmailId(nextId as number);
+          if (!emState(nextId as number).read) void toggleState(nextId as number, { read: true });
+        }
+        return;
+      }
+
+      if (view === 'sent') return; // remaining actions are incoming-only
+      const sel = filteredEmails.find((x) => x.id === selectedEmailId);
+      if (!sel) return;
+      if (k === 'e') {
+        e.preventDefault();
+        void toggleState(sel.id, { archived: !emState(sel.id).archived });
+      } else if (k === 's') {
+        e.preventDefault();
+        void toggleState(sel.id, { starred: !emState(sel.id).starred });
+      } else if (k === 'u') {
+        e.preventDefault();
+        void toggleState(sel.id, { read: !emState(sel.id).read });
+      } else if (k === 'r') {
+        e.preventDefault();
+        setComposer({ mode: 'reply', email: sel });
+      } else if (k === 'f') {
+        e.preventDefault();
+        setComposer({ mode: 'forward', email: sel });
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        void toggleState(sel.id, { deleted: !emState(sel.id).deleted });
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [composer, view, filteredEmails, sentList, selectedEmailId, selectedSentId, selectedCompany, toggleState, emState]);
 
   /* ── integration disabled / hard error states ── */
   if (!loadingOverview && overview && !overview.enabled) {
@@ -466,69 +606,113 @@ export default function Posteingang() {
                 </button>
               )}
             </div>
+            {/* folder tabs */}
+            <div className="flex items-center gap-1 px-2 pb-2 overflow-x-auto">
+              {(['inbox', 'sent', 'archived', 'trash'] as MailView[]).map((v) => {
+                const Icon = v === 'inbox' ? Inbox : v === 'sent' ? Send : v === 'archived' ? Archive : Trash2;
+                const count = v === 'inbox' ? folderCounts.inbox : v === 'archived' ? folderCounts.archived : v === 'trash' ? folderCounts.trash : null;
+                return (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => { setView(v); setClassFilter('all'); }}
+                    className={`shrink-0 inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg text-xs font-medium transition-colors ${
+                      view === v
+                        ? 'bg-primary-600 text-white'
+                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" /> {VIEW_LABELS[v]}
+                    {count != null && count > 0 && (
+                      <span className={`tabular-nums ${view === v ? 'text-white/80' : 'text-slate-400 dark:text-slate-500'}`}>{count}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
             <div className="px-2 pb-2 relative">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="In E-Mails suchen…"
+                placeholder={view === 'sent' ? 'Gesendete suchen…' : 'In E-Mails suchen…'}
                 className="w-full h-8 pl-8 pr-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300 dark:focus:ring-primary-500/40"
                 aria-label="In E-Mails suchen"
               />
             </div>
-            <div className="flex items-center gap-1 px-2 pb-2 overflow-x-auto">
-              {CLASS_FILTERS.map((f) => (
-                <button
-                  key={f.key}
-                  type="button"
-                  onClick={() => setClassFilter(f.key)}
-                  className={`shrink-0 inline-flex items-center gap-1 h-7 px-2.5 rounded-full text-xs font-medium transition-colors ${
-                    classFilter === f.key
-                      ? 'bg-primary-600 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
-                  }`}
-                >
-                  {f.label}
-                  <span className={`tabular-nums ${classFilter === f.key ? 'text-white/80' : 'text-slate-400 dark:text-slate-500'}`}>
-                    {classCounts[f.key]}
-                  </span>
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-2 px-3 pb-2">
-              <button
-                type="button"
-                onClick={() => setShowArchived((v) => !v)}
-                className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg text-xs font-medium transition-colors ${
-                  showArchived
-                    ? 'bg-slate-700 text-white dark:bg-slate-600'
-                    : 'border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-                title={showArchived ? 'Posteingang anzeigen' : 'Archiv anzeigen'}
-              >
-                {showArchived ? <Inbox className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
-                {showArchived ? 'Posteingang' : `Archiv${archivedCount ? ` (${archivedCount})` : ''}`}
-              </button>
-              {!showArchived && unreadCount > 0 && (
+            {view !== 'sent' && (
+              <div className="flex items-center gap-1 px-2 pb-2 overflow-x-auto">
+                {CLASS_FILTERS.map((f) => (
+                  <button
+                    key={f.key}
+                    type="button"
+                    onClick={() => setClassFilter(f.key)}
+                    className={`shrink-0 inline-flex items-center gap-1 h-7 px-2.5 rounded-full text-xs font-medium transition-colors ${
+                      classFilter === f.key
+                        ? 'bg-primary-600 text-white'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    {f.label}
+                    <span className={`tabular-nums ${classFilter === f.key ? 'text-white/80' : 'text-slate-400 dark:text-slate-500'}`}>
+                      {classCounts[f.key]}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {view === 'inbox' && folderCounts.unread > 0 && (
+              <div className="flex items-center px-3 pb-2">
                 <button
                   type="button"
                   onClick={() => void markAllRead()}
                   className="ml-auto inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg text-xs font-medium border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
                   title="Alle sichtbaren E-Mails als gelesen markieren"
                 >
-                  <CheckCheck className="w-3.5 h-3.5" /> Alle gelesen ({unreadCount})
+                  <CheckCheck className="w-3.5 h-3.5" /> Alle gelesen ({folderCounts.unread})
                 </button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
           {/* list body */}
           <div className="flex-1 overflow-y-auto">
-            {loadingEmails ? (
+            {view === 'sent' ? (
+              loadingSent ? (
+                <div className="p-2"><ListSkeleton rows={6} /></div>
+              ) : !sentList || sentList.length === 0 ? (
+                <EmptyHint icon={Send} text="Noch nichts aus dem Panel gesendet." />
+              ) : (
+                sentList
+                  .filter((s) => {
+                    const q = query.trim().toLowerCase();
+                    return !q || s.to.toLowerCase().includes(q) || s.subject.toLowerCase().includes(q) || s.body.toLowerCase().includes(q);
+                  })
+                  .map((s) => (
+                    <SentRow
+                      key={s.id}
+                      sent={s}
+                      active={s.id === selectedSentId}
+                      onClick={() => { setSelectedSentId(s.id); setMobilePane('reading'); }}
+                    />
+                  ))
+              )
+            ) : loadingEmails ? (
               <div className="p-2"><ListSkeleton rows={7} /></div>
             ) : emailsError ? (
               <ErrorBlock message={emailsError} onRetry={() => selectedCompany != null && void loadEmails(selectedCompany)} />
             ) : filteredEmails.length === 0 ? (
-              <EmptyHint icon={Inbox} text={(emails?.length ?? 0) === 0 ? 'Keine E-Mails in diesem Postfach.' : 'Keine E-Mail passt zum Filter.'} />
+              <EmptyHint
+                icon={view === 'trash' ? Trash2 : view === 'archived' ? Archive : Inbox}
+                text={
+                  (emails?.length ?? 0) === 0
+                    ? 'Keine E-Mails in diesem Postfach.'
+                    : view === 'trash'
+                      ? 'Papierkorb ist leer.'
+                      : view === 'archived'
+                        ? 'Kein archiviertes E-Mail.'
+                        : 'Keine E-Mail passt zum Filter.'
+                }
+              />
             ) : (
               filteredEmails.map((e) => (
                 <EmailRow
@@ -539,6 +723,7 @@ export default function Posteingang() {
                   onClick={() => pickEmail(e.id)}
                   onToggleStar={() => void toggleState(e.id, { starred: !emState(e.id).starred })}
                   onToggleArchive={() => void toggleState(e.id, { archived: !emState(e.id).archived })}
+                  onToggleDelete={() => void toggleState(e.id, { deleted: !emState(e.id).deleted })}
                 />
               ))
             )}
@@ -547,7 +732,13 @@ export default function Posteingang() {
 
         {/* ── pane 3: reading ── */}
         <article className={`${mobilePane === 'reading' ? 'flex' : 'hidden'} lg:flex flex-col flex-1 min-w-0`}>
-          {selectedEmail ? (
+          {view === 'sent' ? (
+            selectedSent ? (
+              <SentReadingPane sent={selectedSent} onBack={() => setMobilePane('list')} />
+            ) : (
+              <EmptyReading text="Wählen Sie eine gesendete E-Mail." />
+            )
+          ) : selectedEmail ? (
             <ReadingPane
               email={selectedEmail}
               state={emState(selectedEmail.id)}
@@ -558,14 +749,10 @@ export default function Posteingang() {
               onToggleStar={() => void toggleState(selectedEmail.id, { starred: !emState(selectedEmail.id).starred })}
               onToggleArchive={() => void toggleState(selectedEmail.id, { archived: !emState(selectedEmail.id).archived })}
               onToggleRead={() => void toggleState(selectedEmail.id, { read: !emState(selectedEmail.id).read })}
+              onToggleDelete={() => void toggleState(selectedEmail.id, { deleted: !emState(selectedEmail.id).deleted })}
             />
           ) : (
-            <div className="flex-1 grid place-items-center p-8 text-center">
-              <div>
-                <Mail className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-600" />
-                <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">Wählen Sie eine E-Mail, um sie zu lesen.</p>
-              </div>
-            </div>
+            <EmptyReading text="Wählen Sie eine E-Mail, um sie zu lesen." />
           )}
         </article>
       </div>
@@ -626,6 +813,7 @@ function EmailRow({
   onClick,
   onToggleStar,
   onToggleArchive,
+  onToggleDelete,
 }: {
   email: PosteingangEmail;
   state: EmailState;
@@ -633,6 +821,7 @@ function EmailRow({
   onClick: () => void;
   onToggleStar: () => void;
   onToggleArchive: () => void;
+  onToggleDelete: () => void;
 }) {
   const cm = classMeta(email.classification);
   const unread = !state.read;
@@ -664,6 +853,15 @@ function EmailRow({
           aria-label={state.archived ? 'Wiederherstellen' : 'Archivieren'}
         >
           {state.archived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
+        </button>
+        <button
+          type="button"
+          onClick={(ev) => { ev.stopPropagation(); onToggleDelete(); }}
+          className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity p-0.5 rounded text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 shrink-0"
+          title={state.deleted ? 'Wiederherstellen' : 'In den Papierkorb'}
+          aria-label={state.deleted ? 'Wiederherstellen' : 'In den Papierkorb'}
+        >
+          {state.deleted ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Trash2 className="w-3.5 h-3.5" />}
         </button>
         <button
           type="button"
@@ -706,6 +904,7 @@ function ReadingPane({
   onToggleStar,
   onToggleArchive,
   onToggleRead,
+  onToggleDelete,
 }: {
   email: PosteingangEmail;
   state: EmailState;
@@ -716,6 +915,7 @@ function ReadingPane({
   onToggleStar: () => void;
   onToggleArchive: () => void;
   onToggleRead: () => void;
+  onToggleDelete: () => void;
 }) {
   const cm = classMeta(email.classification);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -778,6 +978,15 @@ function ReadingPane({
               aria-label={state.archived ? 'Wiederherstellen' : 'Archivieren'}
             >
               {state.archived ? <ArchiveRestore className="w-4 h-4" /> : <Archive className="w-4 h-4" />}
+            </button>
+            <button
+              type="button"
+              onClick={onToggleDelete}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+              title={state.deleted ? 'Wiederherstellen' : 'In den Papierkorb'}
+              aria-label={state.deleted ? 'Wiederherstellen' : 'In den Papierkorb'}
+            >
+              {state.deleted ? <ArchiveRestore className="w-4 h-4" /> : <Trash2 className="w-4 h-4" />}
             </button>
           </div>
         </div>
@@ -1012,8 +1221,8 @@ function Composer({
     setSending(true);
     try {
       const recipient = to.trim();
-      if (mode === 'reply' && email) await api.posteingang.reply(email.id, body.trim());
-      else if (mode === 'forward' && email) await api.posteingang.forward(email.id, recipient, body.trim() || undefined);
+      if (mode === 'reply' && email) await api.posteingang.reply(email.id, companyId, body.trim());
+      else if (mode === 'forward' && email) await api.posteingang.forward(email.id, companyId, recipient, body.trim() || undefined);
       else await api.posteingang.compose(companyId, recipient, subject.trim(), body.trim());
       toast.success(`Gesendet an ${recipient}`);
       onSent();
@@ -1129,5 +1338,86 @@ function Composer({
         </div>
       </div>
     </div>
+  );
+}
+
+/* ─── Gesendet (sent) folder ────────────────────────────────────────────── */
+
+function EmptyReading({ text }: { text: string }) {
+  return (
+    <div className="flex-1 grid place-items-center p-8 text-center">
+      <div>
+        <Mail className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-600" />
+        <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">{text}</p>
+      </div>
+    </div>
+  );
+}
+
+function sentKindLabel(kind: SentEmail['kind']): string {
+  return kind === 'reply' ? 'Antwort' : kind === 'forward' ? 'Weitergeleitet' : 'Neu';
+}
+
+function SentRow({ sent, active, onClick }: { sent: SentEmail; active: boolean; onClick: () => void }) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(ev) => {
+        if (ev.key === 'Enter' || ev.key === ' ') {
+          ev.preventDefault();
+          onClick();
+        }
+      }}
+      className={`w-full cursor-pointer text-left px-3 py-2.5 border-b border-slate-100 dark:border-slate-800/70 transition-colors focus:outline-none focus-visible:bg-primary-50 dark:focus-visible:bg-primary-500/15 ${
+        active ? 'bg-primary-50 dark:bg-primary-500/15' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <span className="flex-1 min-w-0 truncate text-sm text-slate-700 dark:text-slate-300">An: {sent.to}</span>
+        <span className="text-[11px] text-slate-400 dark:text-slate-500 shrink-0 tabular-nums">{relDate(sent.sentAt)}</span>
+      </div>
+      <div className="mt-0.5 truncate text-sm text-slate-600 dark:text-slate-400">{sent.subject || '(kein Betreff)'}</div>
+      <div className="mt-1 flex items-center gap-1.5">
+        <span className="inline-flex items-center h-4 px-1.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+          {sentKindLabel(sent.kind)}
+        </span>
+        <span className="flex-1 min-w-0 truncate text-[11px] text-slate-400 dark:text-slate-500">{snippet(sent.body)}</span>
+      </div>
+    </div>
+  );
+}
+
+function SentReadingPane({ sent, onBack }: { sent: SentEmail; onBack: () => void }) {
+  return (
+    <>
+      <header className="px-4 sm:px-6 pt-3 pb-3 border-b border-slate-200 dark:border-slate-800">
+        <div className="flex items-center gap-2 mb-2">
+          <button type="button" onClick={onBack} className="lg:hidden -ml-1 p-1 rounded text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Zurück zur Liste">
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <span className="inline-flex items-center gap-1 h-5 px-2 rounded text-[11px] font-medium bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+            <Send className="w-3 h-3" /> Gesendet · {sentKindLabel(sent.kind)}
+          </span>
+        </div>
+        <h2 className="text-base sm:text-lg font-semibold text-slate-900 dark:text-slate-100 leading-snug">{sent.subject || '(kein Betreff)'}</h2>
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
+          <span className="text-slate-500 dark:text-slate-400">An:</span>
+          <span className="font-medium text-slate-700 dark:text-slate-200">{sent.to}</span>
+          <span className="text-slate-400 dark:text-slate-500">· {fullDate(sent.sentAt)}</span>
+        </div>
+      </header>
+      <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
+        {sent.body ? (
+          <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-slate-700 dark:text-slate-300">{sent.body}</pre>
+        ) : (
+          <p className="text-sm text-slate-400 dark:text-slate-500 italic">Kein Text.</p>
+        )}
+        {sent.kind === 'forward' && (
+          <p className="mt-4 text-[11px] text-slate-400 dark:text-slate-500">Die weitergeleitete Originalnachricht + Anhänge wurden mitgesendet.</p>
+        )}
+      </div>
+    </>
   );
 }

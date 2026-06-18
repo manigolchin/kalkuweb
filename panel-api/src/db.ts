@@ -293,9 +293,32 @@ export function runMigrations() {
       read INTEGER NOT NULL DEFAULT 0,
       starred INTEGER NOT NULL DEFAULT 0,
       archived INTEGER NOT NULL DEFAULT 0,
+      deleted INTEGER NOT NULL DEFAULT 0,
       updated_by TEXT REFERENCES users(id),
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_posteingang_state_company ON posteingang_state(company_id);
+
+    -- Panel's own "Gesendet" log — one row per email sent FROM the panel.
+    CREATE TABLE IF NOT EXISTS posteingang_sent (
+      id TEXT PRIMARY KEY,
+      company_id INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      to_addr TEXT NOT NULL,
+      subject TEXT NOT NULL DEFAULT '',
+      body TEXT NOT NULL DEFAULT '',
+      in_reply_to_email_id INTEGER,
+      message_id TEXT,
+      sent_by TEXT REFERENCES users(id),
+      sent_by_name TEXT NOT NULL DEFAULT '',
+      sent_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_posteingang_sent_company ON posteingang_sent(company_id, sent_at);
   `);
+
+  // Idempotent column-add: 'deleted' (Papierkorb) for DBs that predate it.
+  const peCols = sqlite.prepare('PRAGMA table_info(posteingang_state)').all() as Array<{ name: string }>;
+  if (!peCols.some((c) => c.name === 'deleted')) {
+    sqlite.exec('ALTER TABLE posteingang_state ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0');
+  }
 }
