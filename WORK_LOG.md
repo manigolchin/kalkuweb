@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-06-18 14:20 — Posteingang: Gesendet + Papierkorb folders + keyboard
+- Source: user "yes do it [keyboard] and also i cannot see gesendete email … or delete email"
+- Branch: claude-auto/2026-06-17-import-bv-bieter — commit 516b877
+- Result: committed 516b877 → pushed → deployed (server cherry-pick 9da7bff, all healthy, db:ok, bundle index-CdL8VgZi.js matches, /posteingang/sent → 401 live).
+- Notes: Folder model — tabs Posteingang/Gesendet/Archiv/Papierkorb (replaces the old archive toggle; `view` state). **Gesendet:** new `posteingang_sent` table; reply/compose/forward `recordSent()` on success (best-effort, never fails the send); GET /posteingang/sent; dedicated SentRow + SentReadingPane; companyId now threads through reply/forward. **Papierkorb:** new `deleted` flag on posteingang_state (idempotent ALTER), soft-delete + restore, panel-local (mailbox untouched). **Keyboard:** j/k move · e archive · s star · u unread · r reply · f forward · n new · ⌫ delete — scoped to the page, ignores inputs + open composer, avoids PanelLayout's global c/g/'/'; auto-advance to next after archive/delete. Browser-verified end-to-end in the isolated mock stack (Gesendet compose→shown, Papierkorb delete→shown, keyboard j/s/e/⌫ persist, folder counts correct, 0 console errors). **Limitation:** Gesendet only shows mail sent FROM the panel (not Outlook-sent — those live in the mailbox Sent folder, not visible without IMAP). **NEXT ideas:** labels, drafts, CC/BCC, reply-all.
+
 ## 2026-06-18 13:30 — Posteingang: triage layer (read/unread, star, archive)
 - Source: user (after confirming send works with a real test email) "in our panel i want to have like real email … be creative and search good in internet"
 - Branch: claude-auto/2026-06-17-import-bv-bieter — commit de38926
