@@ -383,7 +383,7 @@ export default function Posteingang() {
                   title="Neue E-Mails jetzt von preisanfrage abrufen (IMAP)"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${polling ? 'animate-spin' : ''}`} />
-                  {polling ? 'Lädt…' : 'Abrufen'}
+                  {polling ? 'Lädt…' : 'Jetzt abrufen'}
                 </button>
               )}
             </div>
