@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-06-18 17:25 — Posteingang: real mailbox "Gesendet" view (IMAP Sent folder)
+- Source: user (screenshot of empty Gesendet) "it doesnt show the emails that i sent from everywhere?" → AskUserQuestion pick "Build real Sent view"
+- Branch: claude-auto/2026-06-17-import-bv-bieter — commit 4d39fbb (panel) + uncommitted procurement edits
+- Result: PANEL committed 4d39fbb → pushed → deployed (server cherry-pick 46117c8, all 4 healthy, bundle index-DVAHUj_1.js matches, Posteingang-Ct_ffUmV.js 200). PREISANFRAGE Sent endpoint written, NOT deployed (user).
+- Notes: The Gesendet tab showed only panel-originated mail (panel-local `posteingang_sent`). Now it shows the company's REAL mailbox Sent/Gesendet folder — everything sent incl. from Outlook. **preisanfrage (additive, read-only):** new `GET /api/inbox/sent?company_id=&limit=` → `InboxService.fetch_sent_emails` (reuses `_connect_imap` + new `_find_sent_folder`, `imap.select(readonly=True)` EXAMINE + `BODY.PEEK` so NO mailbox flags change, no DB write, no classification) + `_parse_sent_email` (To/Cc/subject/date/body + attachment NAMES only) + `InboxSentEmail`/`InboxSentResponse` schemas — touches none of the inbound poll path. **panel:** `listSentEmails` + `getMockSent` (fixture) in panel-api; `GET /posteingang/mailbox-sent` route; `api.posteingang.mailboxSent`; Posteingang.tsx Gesendet merges mailbox-sent + panel-local (dedup by Message-ID, so a just-sent panel mail shows instantly), reading pane gains To/Cc + attachment chips. **Graceful fallback:** mailbox unreachable (preisanfrage endpoint not deployed yet, or IMAP error) → panel-local log + amber hint, so deploying panel first never regresses. Browser-verified in isolated mock stack (5 sent rows, To/Cc/attachment in reading pane, 0 console errors). **USER deploys procurement** (3 files; local main synced → clean push + ff-only). Until then prod Gesendet shows the fallback.
+
 ## 2026-06-18 16:35 — Sidebar: Posteingang attention badge
 - Source: user "add more good features in kalku web panel, be professional and creative" → AskUserQuestion pick "Sidebar Posteingang badge"
 - Branch: claude-auto/2026-06-17-import-bv-bieter — commit 2a22b5a
