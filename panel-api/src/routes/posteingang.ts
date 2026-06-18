@@ -15,7 +15,10 @@
  * See lib/preisanfrage.ts (listInboxEmails) + src/pages/panel/Posteingang.tsx.
  */
 import { Hono } from 'hono';
+import { eq } from 'drizzle-orm';
 import { requireAuth, type AuthVariables } from '../lib/middleware.js';
+import { db } from '../db.js';
+import { posteingangState } from '../schema.js';
 import {
   listCompanies,
   listInboxEmails,
@@ -247,4 +250,100 @@ export const posteingangRoute = new Hono<{ Variables: AuthVariables }>()
       const { status, body: errBody } = handleUpstreamError(err);
       return c.json(errBody, status);
     }
+  })
+  /** Triage state (read/starred/archived) for a company's emails — panel-local,
+   *  SHARED across the team. The mailbox is NEVER touched, so preisanfrage's
+   *  classification/polling is unaffected. */
+  .get('/posteingang/state', requireAuth, async (c) => {
+    const companyId = Number(c.req.query('company'));
+    if (!Number.isInteger(companyId) || companyId <= 0) return c.json({ error: 'invalid_company' }, 400);
+    const rows = await db.select().from(posteingangState).where(eq(posteingangState.companyId, companyId));
+    const state: Record<number, { read: boolean; starred: boolean; archived: boolean }> = {};
+    for (const r of rows) state[r.emailId] = { read: r.read, starred: r.starred, archived: r.archived };
+    return c.json({ companyId, state });
+  })
+  /** Toggle read/starred/archived for ONE email (upsert). */
+  .post('/posteingang/state/:emailId', requireAuth, async (c) => {
+    const emailId = Number(c.req.param('emailId'));
+    if (!Number.isInteger(emailId) || emailId <= 0) return c.json({ error: 'invalid_email' }, 400);
+    const raw = await c.req.json().catch(() => ({}) as Record<string, unknown>);
+    const companyId = Number((raw as { company?: unknown }).company);
+    if (!Number.isInteger(companyId) || companyId <= 0) return c.json({ error: 'invalid_company' }, 400);
+    const bool = (k: string): boolean | undefined =>
+      typeof (raw as Record<string, unknown>)[k] === 'boolean' ? ((raw as Record<string, boolean>)[k]) : undefined;
+    const read = bool('read');
+    const starred = bool('starred');
+    const archived = bool('archived');
+    if (read === undefined && starred === undefined && archived === undefined) {
+      return c.json({ error: 'no_change' }, 400);
+    }
+    const userId = c.get('userId');
+    const now = new Date();
+    await db
+      .insert(posteingangState)
+      .values({
+        emailId,
+        companyId,
+        read: read ?? false,
+        starred: starred ?? false,
+        archived: archived ?? false,
+        updatedBy: userId,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: posteingangState.emailId,
+        set: {
+          ...(read !== undefined ? { read } : {}),
+          ...(starred !== undefined ? { starred } : {}),
+          ...(archived !== undefined ? { archived } : {}),
+          updatedBy: userId,
+          updatedAt: now,
+        },
+      });
+    const row = await db.query.posteingangState.findFirst({ where: eq(posteingangState.emailId, emailId) });
+    return c.json({ ok: true, emailId, read: !!row?.read, starred: !!row?.starred, archived: !!row?.archived });
+  })
+  /** Bulk-set one flag on many emails (e.g. "alle als gelesen markieren"). */
+  .post('/posteingang/state-bulk', requireAuth, async (c) => {
+    const raw = await c.req.json().catch(() => ({}) as Record<string, unknown>);
+    const companyId = Number((raw as { company?: unknown }).company);
+    if (!Number.isInteger(companyId) || companyId <= 0) return c.json({ error: 'invalid_company' }, 400);
+    const idsRaw = (raw as { emailIds?: unknown }).emailIds;
+    const ids = Array.isArray(idsRaw)
+      ? idsRaw.map(Number).filter((n) => Number.isInteger(n) && n > 0).slice(0, 1000)
+      : [];
+    const bool = (k: string): boolean | undefined =>
+      typeof (raw as Record<string, unknown>)[k] === 'boolean' ? ((raw as Record<string, boolean>)[k]) : undefined;
+    const read = bool('read');
+    const archived = bool('archived');
+    const starred = bool('starred');
+    if (!ids.length || (read === undefined && archived === undefined && starred === undefined)) {
+      return c.json({ ok: true, updated: 0 });
+    }
+    const userId = c.get('userId');
+    const now = new Date();
+    for (const emailId of ids) {
+      await db
+        .insert(posteingangState)
+        .values({
+          emailId,
+          companyId,
+          read: read ?? false,
+          starred: starred ?? false,
+          archived: archived ?? false,
+          updatedBy: userId,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: posteingangState.emailId,
+          set: {
+            ...(read !== undefined ? { read } : {}),
+            ...(starred !== undefined ? { starred } : {}),
+            ...(archived !== undefined ? { archived } : {}),
+            updatedBy: userId,
+            updatedAt: now,
+          },
+        });
+    }
+    return c.json({ ok: true, updated: ids.length });
   });

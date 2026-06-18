@@ -409,6 +409,25 @@ export const changeRequests = sqliteTable('change_requests', {
 });
 export type ChangeRequest = typeof changeRequests.$inferSelect;
 
+/**
+ * Posteingang triage state — panel-LOCAL per-email flags (read / starred /
+ * archived) over preisanfrage's incoming emails. SHARED across the team (one
+ * row per preisanfrage email id). Crucially this NEVER touches the mailbox:
+ * "archived" only hides the mail in the panel view, so preisanfrage keeps
+ * polling + classifying it untouched. emailId = preisanfrage incoming_emails.id
+ * (globally unique), so no company scoping is needed for the key.
+ */
+export const posteingangState = sqliteTable('posteingang_state', {
+  emailId: integer('email_id').primaryKey(),
+  companyId: integer('company_id').notNull(),
+  read: integer('read', { mode: 'boolean' }).notNull().default(false),
+  starred: integer('starred', { mode: 'boolean' }).notNull().default(false),
+  archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
+  updatedBy: text('updated_by').references(() => users.id),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+});
+export type PosteingangState = typeof posteingangState.$inferSelect;
+
 export type PositionType = 'standard' | 'wagnis' | 'reserve' | 'nu_marge' | 'lohn_puffer';
 
 export type Position = {

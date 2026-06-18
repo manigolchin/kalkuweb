@@ -643,6 +643,31 @@ export const api = {
         `/posteingang/forward`,
         { method: 'POST', body: JSON.stringify({ emailId, to, note }) },
       ),
+    /** Panel-local triage flags (read/starred/archived) for a company's emails. */
+    state: (companyId: number) =>
+      request<{ companyId: number; state: Record<number, { read: boolean; starred: boolean; archived: boolean }> }>(
+        `/posteingang/state?company=${companyId}`,
+      ),
+    /** Toggle read/starred/archived for one email. */
+    setState: (
+      emailId: number,
+      companyId: number,
+      patch: { read?: boolean; starred?: boolean; archived?: boolean },
+    ) =>
+      request<{ ok: true; emailId: number; read: boolean; starred: boolean; archived: boolean }>(
+        `/posteingang/state/${emailId}`,
+        { method: 'POST', body: JSON.stringify({ company: companyId, ...patch }) },
+      ),
+    /** Bulk-set a flag on many emails (e.g. mark all read). */
+    setStateBulk: (
+      companyId: number,
+      emailIds: number[],
+      patch: { read?: boolean; starred?: boolean; archived?: boolean },
+    ) =>
+      request<{ ok: true; updated: number }>(`/posteingang/state-bulk`, {
+        method: 'POST',
+        body: JSON.stringify({ company: companyId, emailIds, ...patch }),
+      }),
   },
   templates: {
     list: () => request<{ templates: PositionTemplate[] }>(`/templates`),

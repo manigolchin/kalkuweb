@@ -283,5 +283,19 @@ export function runMigrations() {
     );
     CREATE INDEX IF NOT EXISTS idx_change_requests_share ON change_requests(share_id);
     CREATE INDEX IF NOT EXISTS idx_change_requests_share_oz ON change_requests(share_id, position_oz);
+
+    -- Posteingang triage — panel-local per-email flags over preisanfrage emails.
+    -- SHARED team state; "archived" only hides in the panel (mailbox untouched,
+    -- so preisanfrage keeps classifying). email_id = preisanfrage email id.
+    CREATE TABLE IF NOT EXISTS posteingang_state (
+      email_id INTEGER PRIMARY KEY,
+      company_id INTEGER NOT NULL,
+      read INTEGER NOT NULL DEFAULT 0,
+      starred INTEGER NOT NULL DEFAULT 0,
+      archived INTEGER NOT NULL DEFAULT 0,
+      updated_by TEXT REFERENCES users(id),
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_posteingang_state_company ON posteingang_state(company_id);
   `);
 }
