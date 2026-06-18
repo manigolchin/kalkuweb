@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-06-18 12:05 — Posteingang: complete email client (compose + forward)
+- Source: user "add new tab and work exactly like complete email like gmail … will not conflict with angebots/absage?" → then "be professional, do your best, be creative". Also corrected my wrong conflict claim (preisanfrage searches by SINCE date, not UNSEEN — reading is safe).
+- Branch: claude-auto/2026-06-17-import-bv-bieter (shared) — commit f6445d9 (panel) + uncommitted procurement edits
+- Result: PANEL committed f6445d9 → pushed → deployed (server cherry-pick 42f9f2c, 4 containers healthy, bundle index-B8j6XrFa.js matches, /posteingang/compose + /posteingang/forward → 401 live). PREISANFRAGE compose+forward WRITTEN, NOT deployed (user). Reply endpoint already committed+deployed by user (138ea06).
+- Notes: Unified reply/forward/compose into ONE Gmail-style modal `Composer` (replaced inline reply; also renamed poll button → "Jetzt abrufen" earlier in 02a3ac4). "Neue E-Mail" (top bar, per firma) + "Weiterleiten" (reading-pane). All sends route THROUGH preisanfrage (no SMTP creds in panel): panel-api `POST /posteingang/{compose,forward}` → preisanfrage `POST /inbox/compose` + `/inbox/emails/{id}/forward` (reuse email_service.send_email; forward quotes original + re-attaches on-disk attachments, "WG:" subject). **preisanfrage compose+forward uncommitted in ~/projects/kalku-procurement** (routes.py + schemas.py, +117 lines, py_compile OK) — user deploys (commit→push→server git pull --ff-only + rebuild). Until then those 2 actions → "serverseitig noch nicht aktiv" toast (reply works now). **KEY correction:** preisanfrage poll uses `imap.search(SINCE …)` not UNSEEN (comment: emails read in Outlook still picked up) → reading/opening never breaks Angebot/Absage; only deleting/moving before a poll is a (bounded) risk. Browser E2E pending — shared :3000 (other process) blocks local; verify with user post-deploy.
+
 ## 2026-06-18 11:01 — Posteingang: In-Panel-Antworten (Reply-Composer)
 - Source: user chose "Reply to supplier emails" — in-panel send, badges on classified, without breaking preisanfrage
 - Branch: claude-auto/2026-06-17-import-bv-bieter (shared) — commit 49bf241 (panel) + uncommitted procurement edits
