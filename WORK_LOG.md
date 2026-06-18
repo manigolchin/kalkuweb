@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-06-18 12:45 — Posteingang: test + debug pass (composer remount fix)
+- Source: user "now check and test and debug"
+- Branch: claude-auto/2026-06-17-import-bv-bieter — commit 9e5da2f
+- Result: tested + 1 bug fixed → committed 9e5da2f → deployed (server cherry-pick 33703e2, all healthy, bundle index-HymUwNyV.js matches).
+- Notes: Verified all endpoints DEPLOYED on both sides (reply/compose/forward/poll → 401 live). Prod live-send NOT testable by me — classifier (correctly) blocked reading/using the prod PREISANFRAGE_SERVICE_JWT; live send is the user's to test. Tested panel-api layer in isolation: ran a local mock panel-api on :3002 + curled every endpoint incl. validation (missing recipient/empty body/bad company → correct 400s; no-auth → 401; valid → ok) — all pass. Browser-tested the UI via an isolated vite (new `PANEL_API_URL` proxy override → :3002, so the shared :3000 stays untouched): compose/reply/forward modals all render correctly (reply "AW:", forward "WG:" + attachment note), send flow closes on success. **Bug found+fixed:** the unified Composer kept stale To/Subject/Body when switching mode without unmounting (useState inits once) — added `key={mode:emailId}` to force a fresh remount. Normal open→close→open was already fine. Also added PANEL_API_URL support to vite.config (dev-only, defaults :3000).
+
 ## 2026-06-18 12:05 — Posteingang: complete email client (compose + forward)
 - Source: user "add new tab and work exactly like complete email like gmail … will not conflict with angebots/absage?" → then "be professional, do your best, be creative". Also corrected my wrong conflict claim (preisanfrage searches by SINCE date, not UNSEEN — reading is safe).
 - Branch: claude-auto/2026-06-17-import-bv-bieter (shared) — commit f6445d9 (panel) + uncommitted procurement edits
