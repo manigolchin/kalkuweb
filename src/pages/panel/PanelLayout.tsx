@@ -132,6 +132,7 @@ export default function PanelLayout() {
   const isWidePage = /^\/panel\/kalkulation\/[^/]+$/.test(location.pathname);
   const { theme, toggle: toggleTheme } = usePanelTheme();
   const [unreadFeedback, setUnreadFeedback] = useState<number>(0);
+  const [posteingangCount, setPosteingangCount] = useState<number>(0);
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem(SIDEBAR_KEY) === '1';
@@ -164,6 +165,25 @@ export default function PanelLayout() {
       alive = false;
     };
   }, [location.pathname]);
+
+  // Posteingang attention-count for the sidebar badge — only for users with the
+  // firmen permission; the overview is cached upstream (60 s) so this is cheap,
+  // and any failure just keeps the last value (never blocks navigation).
+  useEffect(() => {
+    if (!hasPanelPermission(user, 'firmen')) return;
+    let alive = true;
+    (async () => {
+      try {
+        const o = await api.posteingang.overview();
+        if (alive) setPosteingangCount(o.enabled ? o.totals.needsAttention : 0);
+      } catch {
+        /* badge keeps last value */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [location.pathname, user]);
 
   // Mark inbox as viewed when user enters it.
   useEffect(() => {
@@ -288,6 +308,7 @@ export default function PanelLayout() {
       <Sidebar
         collapsed={collapsed}
         unreadFeedback={unreadFeedback}
+        posteingangCount={posteingangCount}
         user={user}
         onLogout={onLogout}
         theme={theme}
@@ -307,6 +328,7 @@ export default function PanelLayout() {
           <Sidebar
             collapsed={false}
             unreadFeedback={unreadFeedback}
+            posteingangCount={posteingangCount}
             user={user}
             onLogout={onLogout}
             theme={theme}
@@ -382,6 +404,7 @@ export default function PanelLayout() {
 function Sidebar({
   collapsed,
   unreadFeedback,
+  posteingangCount,
   user,
   onLogout,
   theme,
@@ -392,6 +415,7 @@ function Sidebar({
 }: {
   collapsed: boolean;
   unreadFeedback: number;
+  posteingangCount: number;
   user: ReturnType<typeof useAuth>['user'];
   onLogout: () => void;
   theme: 'light' | 'dark';
@@ -457,11 +481,19 @@ function Sidebar({
                       {unreadFeedback > 99 ? '99+' : unreadFeedback}
                     </span>
                   )}
+                  {to === '/panel/posteingang' && posteingangCount > 0 && (
+                    <span className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-amber-500 text-white text-[11px] font-bold tabular-nums">
+                      {posteingangCount > 99 ? '99+' : posteingangCount}
+                    </span>
+                  )}
                   {comingSoon && <StatusBadge kind="soon" size="xs" />}
                 </>
               )}
               {/* Collapsed: tiny dot indicator for unread */}
               {collapsed && to === '/panel/feedback' && unreadFeedback > 0 && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-amber-500" />
+              )}
+              {collapsed && to === '/panel/posteingang' && posteingangCount > 0 && (
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-amber-500" />
               )}
             </>
