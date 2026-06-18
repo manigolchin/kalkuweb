@@ -36,6 +36,9 @@ import {
   ArchiveRestore,
   CheckCheck,
   Trash2,
+  FileEdit,
+  Tag,
+  Plus,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
@@ -50,9 +53,32 @@ import {
 
 type ClassFilter = 'all' | 'angebot' | 'rueckfrage' | 'absage' | 'unklar';
 type ComposerMode = 'reply' | 'forward' | 'new';
-type EmailState = { read: boolean; starred: boolean; archived: boolean; deleted: boolean };
-const EMPTY_STATE: EmailState = { read: false, starred: false, archived: false, deleted: false };
-type MailView = 'inbox' | 'sent' | 'archived' | 'trash';
+type EmailState = { read: boolean; starred: boolean; archived: boolean; deleted: boolean; labels: string[] };
+const EMPTY_STATE: EmailState = { read: false, starred: false, archived: false, deleted: false, labels: [] };
+type MailView = 'inbox' | 'sent' | 'drafts' | 'archived' | 'trash';
+type DraftEmail = {
+  id: string;
+  kind: 'reply' | 'compose' | 'forward';
+  to: string;
+  subject: string;
+  body: string;
+  inReplyToEmailId: number | null;
+  updatedAt: string;
+};
+/** Deterministic chip colour per label name. */
+const LABEL_COLORS = [
+  'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+  'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
+  'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+  'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300',
+  'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
+  'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300',
+];
+function labelColor(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return LABEL_COLORS[h % LABEL_COLORS.length];
+}
 type SentEmail = {
   id: string;
   kind: 'reply' | 'compose' | 'forward';
@@ -65,6 +91,7 @@ type SentEmail = {
 const VIEW_LABELS: Record<MailView, string> = {
   inbox: 'Posteingang',
   sent: 'Gesendet',
+  drafts: 'Entwürfe',
   archived: 'Archiv',
   trash: 'Papierkorb',
 };
@@ -172,13 +199,23 @@ export default function Posteingang() {
   const [companyQuery, setCompanyQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [polling, setPolling] = useState(false);
-  const [composer, setComposer] = useState<{ mode: ComposerMode; email: PosteingangEmail | null } | null>(null);
+  const [composer, setComposer] = useState<{
+    mode: ComposerMode;
+    email: PosteingangEmail | null;
+    draftId?: string;
+    initialTo?: string;
+    initialSubject?: string;
+    initialBody?: string;
+  } | null>(null);
   // Panel-local triage flags (read/starred/archived/deleted), keyed by email id.
   const [stateMap, setStateMap] = useState<Record<number, EmailState>>({});
   const [view, setView] = useState<MailView>('inbox');
   const [sentList, setSentList] = useState<SentEmail[] | null>(null);
   const [loadingSent, setLoadingSent] = useState(false);
   const [selectedSentId, setSelectedSentId] = useState<string | null>(null);
+  const [draftList, setDraftList] = useState<DraftEmail[] | null>(null);
+  const [loadingDrafts, setLoadingDrafts] = useState(false);
+  const [labelFilter, setLabelFilter] = useState<string | null>(null);
 
   // Master-detail navigation on < lg. On lg the three panes show side by side.
   const [mobilePane, setMobilePane] = useState<'companies' | 'list' | 'reading'>('companies');
@@ -315,6 +352,7 @@ export default function Posteingang() {
   function pickCompany(id: number) {
     setSelectedCompany(id);
     setClassFilter('all');
+    setLabelFilter(null);
     setQuery('');
     setView('inbox');
     setMobilePane('list');
@@ -338,10 +376,74 @@ export default function Posteingang() {
       alive = false;
     };
   }, [view, selectedCompany]);
+
+  const reloadDrafts = useCallback(async () => {
+    if (selectedCompany == null) return;
+    try {
+      const res = await api.posteingang.drafts(selectedCompany);
+      setDraftList(res.drafts);
+    } catch {
+      /* keep previous */
+    }
+  }, [selectedCompany]);
+
+  // Lazy-load the "Entwürfe" list when that folder is opened.
+  useEffect(() => {
+    if (view !== 'drafts' || selectedCompany == null) return;
+    let alive = true;
+    setLoadingDrafts(true);
+    api.posteingang
+      .drafts(selectedCompany)
+      .then((res) => alive && setDraftList(res.drafts))
+      .catch(() => alive && setDraftList([]))
+      .finally(() => alive && setLoadingDrafts(false));
+    return () => {
+      alive = false;
+    };
+  }, [view, selectedCompany]);
+
   function pickEmail(id: number) {
     setSelectedEmailId(id);
     setMobilePane('reading');
     if (!emState(id).read) void toggleState(id, { read: true });
+  }
+
+  function openDraft(d: DraftEmail) {
+    const original = d.inReplyToEmailId != null ? (emails ?? []).find((e) => e.id === d.inReplyToEmailId) ?? null : null;
+    const mode: ComposerMode = d.kind === 'compose' ? 'new' : d.kind;
+    setComposer({ mode, email: original, draftId: d.id, initialTo: d.to, initialSubject: d.subject, initialBody: d.body });
+  }
+  async function discardDraft(id: string) {
+    try {
+      await api.posteingang.deleteDraft(id);
+      await reloadDrafts();
+      toast.success('Entwurf gelöscht');
+    } catch {
+      toast.error('Konnte nicht löschen.');
+    }
+  }
+  function saveDraftFromComposer(vals: { to: string; subject: string; body: string }) {
+    if (!composer) return;
+    const companyId = composer.email?.companyId ?? selectedCompany;
+    if (companyId == null) return;
+    const { draftId, mode, email } = composer;
+    setComposer(null);
+    void (async () => {
+      try {
+        await api.posteingang.saveDraft(companyId, {
+          id: draftId,
+          kind: mode === 'new' ? 'compose' : mode,
+          to: vals.to,
+          subject: vals.subject,
+          body: vals.body,
+          inReplyToEmailId: email?.id ?? null,
+        });
+        await reloadDrafts();
+        toast.success('Entwurf gespeichert');
+      } catch {
+        toast.error('Entwurf konnte nicht gespeichert werden.');
+      }
+    })();
   }
 
   const companies = useMemo(() => overview?.companies ?? [], [overview]);
@@ -365,9 +467,10 @@ export default function Posteingang() {
   );
 
   const filteredEmails = useMemo(() => {
-    if (view === 'sent') return [];
+    if (view === 'sent' || view === 'drafts') return [];
     let list = (emails ?? []).filter((e) => matchesView(e.id));
     if (classFilter !== 'all') list = list.filter((e) => (e.classification ?? 'unklar') === classFilter);
+    if (labelFilter) list = list.filter((e) => (stateMap[e.id]?.labels ?? []).includes(labelFilter));
     const q = query.trim().toLowerCase();
     if (q) {
       list = list.filter(
@@ -379,12 +482,12 @@ export default function Posteingang() {
       );
     }
     return list;
-  }, [emails, classFilter, query, view, matchesView]);
+  }, [emails, classFilter, query, view, matchesView, labelFilter, stateMap]);
 
   // Filter-chip counts — scoped to the current folder.
   const classCounts = useMemo(() => {
     const c: Record<ClassFilter, number> = { all: 0, angebot: 0, rueckfrage: 0, absage: 0, unklar: 0 };
-    if (view === 'sent') return c;
+    if (view === 'sent' || view === 'drafts') return c;
     for (const e of emails ?? []) {
       if (!matchesView(e.id)) continue;
       c.all++;
@@ -394,6 +497,13 @@ export default function Posteingang() {
     }
     return c;
   }, [emails, view, matchesView]);
+
+  // All labels currently used in this company's mailbox (for the label filter).
+  const allLabels = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of emails ?? []) for (const l of stateMap[e.id]?.labels ?? []) set.add(l);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [emails, stateMap]);
 
   // Per-folder totals for the folder tabs + the unread badge.
   const folderCounts = useMemo(() => {
@@ -423,7 +533,7 @@ export default function Posteingang() {
   // Keep the selection valid as folder/filters change — and advance to the next
   // mail after the open one is archived/deleted (Gmail-style).
   useEffect(() => {
-    if (view === 'sent') return;
+    if (view === 'sent' || view === 'drafts') return;
     if (selectedEmailId != null && filteredEmails.some((e) => e.id === selectedEmailId)) return;
     setSelectedEmailId(filteredEmails[0]?.id ?? null);
   }, [filteredEmails, view, selectedEmailId]);
@@ -608,14 +718,19 @@ export default function Posteingang() {
             </div>
             {/* folder tabs */}
             <div className="flex items-center gap-1 px-2 pb-2 overflow-x-auto">
-              {(['inbox', 'sent', 'archived', 'trash'] as MailView[]).map((v) => {
-                const Icon = v === 'inbox' ? Inbox : v === 'sent' ? Send : v === 'archived' ? Archive : Trash2;
-                const count = v === 'inbox' ? folderCounts.inbox : v === 'archived' ? folderCounts.archived : v === 'trash' ? folderCounts.trash : null;
+              {(['inbox', 'sent', 'drafts', 'archived', 'trash'] as MailView[]).map((v) => {
+                const Icon = v === 'inbox' ? Inbox : v === 'sent' ? Send : v === 'drafts' ? FileEdit : v === 'archived' ? Archive : Trash2;
+                const count =
+                  v === 'inbox' ? folderCounts.inbox
+                  : v === 'archived' ? folderCounts.archived
+                  : v === 'trash' ? folderCounts.trash
+                  : v === 'drafts' ? (draftList?.length ?? null)
+                  : null;
                 return (
                   <button
                     key={v}
                     type="button"
-                    onClick={() => { setView(v); setClassFilter('all'); }}
+                    onClick={() => { setView(v); setClassFilter('all'); setLabelFilter(null); }}
                     className={`shrink-0 inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg text-xs font-medium transition-colors ${
                       view === v
                         ? 'bg-primary-600 text-white'
@@ -640,7 +755,7 @@ export default function Posteingang() {
                 aria-label="In E-Mails suchen"
               />
             </div>
-            {view !== 'sent' && (
+            {view !== 'sent' && view !== 'drafts' && (
               <div className="flex items-center gap-1 px-2 pb-2 overflow-x-auto">
                 {CLASS_FILTERS.map((f) => (
                   <button
@@ -659,6 +774,28 @@ export default function Posteingang() {
                     </span>
                   </button>
                 ))}
+              </div>
+            )}
+            {view !== 'sent' && view !== 'drafts' && allLabels.length > 0 && (
+              <div className="flex items-center gap-1 px-2 pb-2 overflow-x-auto">
+                <Tag className="w-3 h-3 text-slate-400 shrink-0" />
+                {allLabels.map((lab) => (
+                  <button
+                    key={lab}
+                    type="button"
+                    onClick={() => setLabelFilter((cur) => (cur === lab ? null : lab))}
+                    className={`shrink-0 inline-flex items-center h-6 px-2 rounded-full text-[11px] font-medium transition-colors ${
+                      labelFilter === lab ? 'ring-2 ring-primary-400 ' + labelColor(lab) : labelColor(lab) + ' opacity-80 hover:opacity-100'
+                    }`}
+                  >
+                    {lab}
+                  </button>
+                ))}
+                {labelFilter && (
+                  <button type="button" onClick={() => setLabelFilter(null)} className="shrink-0 text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 px-1">
+                    ×
+                  </button>
+                )}
               </div>
             )}
             {view === 'inbox' && folderCounts.unread > 0 && (
@@ -694,6 +831,21 @@ export default function Posteingang() {
                       active={s.id === selectedSentId}
                       onClick={() => { setSelectedSentId(s.id); setMobilePane('reading'); }}
                     />
+                  ))
+              )
+            ) : view === 'drafts' ? (
+              loadingDrafts ? (
+                <div className="p-2"><ListSkeleton rows={5} /></div>
+              ) : !draftList || draftList.length === 0 ? (
+                <EmptyHint icon={FileEdit} text="Keine Entwürfe." />
+              ) : (
+                draftList
+                  .filter((d) => {
+                    const q = query.trim().toLowerCase();
+                    return !q || d.to.toLowerCase().includes(q) || d.subject.toLowerCase().includes(q) || d.body.toLowerCase().includes(q);
+                  })
+                  .map((d) => (
+                    <DraftRow key={d.id} draft={d} onOpen={() => openDraft(d)} onDelete={() => void discardDraft(d.id)} />
                   ))
               )
             ) : loadingEmails ? (
@@ -732,7 +884,9 @@ export default function Posteingang() {
 
         {/* ── pane 3: reading ── */}
         <article className={`${mobilePane === 'reading' ? 'flex' : 'hidden'} lg:flex flex-col flex-1 min-w-0`}>
-          {view === 'sent' ? (
+          {view === 'drafts' ? (
+            <EmptyReading text="Entwurf anklicken, um ihn zu bearbeiten und zu senden." />
+          ) : view === 'sent' ? (
             selectedSent ? (
               <SentReadingPane sent={selectedSent} onBack={() => setMobilePane('list')} />
             ) : (
@@ -750,6 +904,7 @@ export default function Posteingang() {
               onToggleArchive={() => void toggleState(selectedEmail.id, { archived: !emState(selectedEmail.id).archived })}
               onToggleRead={() => void toggleState(selectedEmail.id, { read: !emState(selectedEmail.id).read })}
               onToggleDelete={() => void toggleState(selectedEmail.id, { deleted: !emState(selectedEmail.id).deleted })}
+              onSetLabels={(labels) => void toggleState(selectedEmail.id, { labels })}
             />
           ) : (
             <EmptyReading text="Wählen Sie eine E-Mail, um sie zu lesen." />
@@ -759,16 +914,24 @@ export default function Posteingang() {
 
       {composer && (composer.email?.companyId ?? selectedCompany) != null && (
         <Composer
-          // key forces a fresh mount (re-initialised fields) whenever the mode or
-          // target email changes — without it, switching mode while mounted would
-          // keep stale To/Subject/Body from useState.
-          key={`${composer.mode}:${composer.email?.id ?? 'new'}`}
+          // key forces a fresh mount (re-initialised fields) whenever the mode,
+          // target email, or draft changes — without it, useState would keep
+          // stale To/Subject/Body.
+          key={`${composer.mode}:${composer.draftId ?? composer.email?.id ?? 'new'}`}
           mode={composer.mode}
           companyId={(composer.email?.companyId ?? selectedCompany) as number}
           companyName={activeCompany?.name ?? ''}
           email={composer.email}
+          initialTo={composer.initialTo}
+          initialSubject={composer.initialSubject}
+          initialBody={composer.initialBody}
           onClose={() => setComposer(null)}
-          onSent={() => setComposer(null)}
+          onSent={() => {
+            const did = composer.draftId;
+            setComposer(null);
+            if (did) void api.posteingang.deleteDraft(did).then(reloadDrafts).catch(() => {});
+          }}
+          onSaveDraft={saveDraftFromComposer}
         />
       )}
     </div>
@@ -879,6 +1042,9 @@ function EmailRow({
       </div>
       <div className="mt-1 flex items-center gap-1.5">
         <span className={`inline-flex items-center h-4 px-1.5 rounded text-[10px] font-medium ${cm.badge}`}>{cm.label}</span>
+        {state.labels.slice(0, 3).map((l) => (
+          <span key={l} className={`inline-flex items-center h-4 px-1.5 rounded text-[10px] font-medium ${labelColor(l)}`}>{l}</span>
+        ))}
         {email.sharepointSaved && (
           <span className="inline-flex items-center h-4 px-1.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300">abgelegt</span>
         )}
@@ -905,6 +1071,7 @@ function ReadingPane({
   onToggleArchive,
   onToggleRead,
   onToggleDelete,
+  onSetLabels,
 }: {
   email: PosteingangEmail;
   state: EmailState;
@@ -916,6 +1083,7 @@ function ReadingPane({
   onToggleArchive: () => void;
   onToggleRead: () => void;
   onToggleDelete: () => void;
+  onSetLabels: (labels: string[]) => void;
 }) {
   const cm = classMeta(email.classification);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -1010,6 +1178,7 @@ function ReadingPane({
             )}
           </div>
         )}
+        <LabelEditor labels={state.labels} onChange={onSetLabels} />
       </header>
 
       {/* body */}
@@ -1185,19 +1354,27 @@ function Composer({
   companyId,
   companyName,
   email,
+  initialTo,
+  initialSubject,
+  initialBody,
   onClose,
   onSent,
+  onSaveDraft,
 }: {
   mode: ComposerMode;
   companyId: number;
   companyName: string;
   email: PosteingangEmail | null;
+  initialTo?: string;
+  initialSubject?: string;
+  initialBody?: string;
   onClose: () => void;
   onSent: () => void;
+  onSaveDraft: (vals: { to: string; subject: string; body: string }) => void;
 }) {
-  const [to, setTo] = useState(mode === 'reply' ? (email?.fromEmail ?? '') : '');
-  const [subject, setSubject] = useState(mode === 'new' ? '' : withPrefix(email?.subject ?? '', mode));
-  const [body, setBody] = useState('');
+  const [to, setTo] = useState(initialTo ?? (mode === 'reply' ? (email?.fromEmail ?? '') : ''));
+  const [subject, setSubject] = useState(initialSubject ?? (mode === 'new' ? '' : withPrefix(email?.subject ?? '', mode)));
+  const [body, setBody] = useState(initialBody ?? '');
   const [sending, setSending] = useState(false);
 
   const title = mode === 'new' ? 'Neue E-Mail' : mode === 'reply' ? 'Antworten' : 'Weiterleiten';
@@ -1328,6 +1505,15 @@ function Composer({
           </button>
           <button
             type="button"
+            onClick={() => onSaveDraft({ to: to.trim(), subject: subject.trim(), body: body.trim() })}
+            disabled={sending || (!to.trim() && !subject.trim() && !body.trim())}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 px-3 h-9 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
+            title="Als Entwurf speichern"
+          >
+            <FileEdit className="w-4 h-4" /> Entwurf
+          </button>
+          <button
+            type="button"
             onClick={() => !sending && onClose()}
             disabled={sending}
             className="rounded-lg border border-slate-200 dark:border-slate-700 px-3 h-9 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
@@ -1419,5 +1605,99 @@ function SentReadingPane({ sent, onBack }: { sent: SentEmail; onBack: () => void
         )}
       </div>
     </>
+  );
+}
+
+function DraftRow({ draft, onOpen, onDelete }: { draft: DraftEmail; onOpen: () => void; onDelete: () => void }) {
+  const kindLabel = draft.kind === 'reply' ? 'Antwort' : draft.kind === 'forward' ? 'Weiterleitung' : 'Neu';
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(ev) => {
+        if (ev.key === 'Enter' || ev.key === ' ') {
+          ev.preventDefault();
+          onOpen();
+        }
+      }}
+      className="group w-full cursor-pointer text-left px-3 py-2.5 border-b border-slate-100 dark:border-slate-800/70 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50 focus:outline-none focus-visible:bg-primary-50 dark:focus-visible:bg-primary-500/15"
+    >
+      <div className="flex items-center gap-2">
+        <span className="flex-1 min-w-0 truncate text-sm text-slate-700 dark:text-slate-300">{draft.to ? `An: ${draft.to}` : 'Ohne Empfänger'}</span>
+        <button
+          type="button"
+          onClick={(ev) => { ev.stopPropagation(); onDelete(); }}
+          className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 shrink-0"
+          title="Entwurf löschen"
+          aria-label="Entwurf löschen"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+        <span className="text-[11px] text-slate-400 dark:text-slate-500 shrink-0 tabular-nums">{relDate(draft.updatedAt)}</span>
+      </div>
+      <div className="mt-0.5 truncate text-sm text-slate-600 dark:text-slate-400">{draft.subject || '(kein Betreff)'}</div>
+      <div className="mt-1 flex items-center gap-1.5">
+        <span className="inline-flex items-center h-4 px-1.5 rounded text-[10px] font-medium bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300">
+          Entwurf · {kindLabel}
+        </span>
+        <span className="flex-1 min-w-0 truncate text-[11px] text-slate-400 dark:text-slate-500">{snippet(draft.body)}</span>
+      </div>
+    </div>
+  );
+}
+
+function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels: string[]) => void }) {
+  const [adding, setAdding] = useState(false);
+  const [val, setVal] = useState('');
+  function commit() {
+    const t = val.trim().slice(0, 40);
+    if (t && !labels.includes(t)) onChange([...labels, t]);
+    setVal('');
+    setAdding(false);
+  }
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+      {labels.map((l) => (
+        <span key={l} className={`inline-flex items-center gap-1 h-6 px-2 rounded-md text-[11px] font-medium ${labelColor(l)}`}>
+          {l}
+          <button
+            type="button"
+            onClick={() => onChange(labels.filter((x) => x !== l))}
+            className="hover:opacity-70"
+            aria-label={`Label ${l} entfernen`}
+          >
+            ×
+          </button>
+        </span>
+      ))}
+      {adding ? (
+        <input
+          autoFocus
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              commit();
+            } else if (e.key === 'Escape') {
+              setAdding(false);
+              setVal('');
+            }
+          }}
+          onBlur={commit}
+          placeholder="Label…"
+          className="h-6 w-24 px-2 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[11px] focus:outline-none focus:ring-2 focus:ring-primary-300 dark:focus:ring-primary-500/40"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setAdding(true)}
+          className="inline-flex items-center gap-1 h-6 px-2 rounded-md border border-dashed border-slate-300 dark:border-slate-600 text-[11px] text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:hover:border-slate-500"
+        >
+          <Plus className="w-3 h-3" /> Label
+        </button>
+      )}
+    </div>
   );
 }

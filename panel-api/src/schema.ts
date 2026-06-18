@@ -425,10 +425,31 @@ export const posteingangState = sqliteTable('posteingang_state', {
   archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
   /** Soft-delete → Papierkorb. Panel-local; never touches the mailbox. */
   deleted: integer('deleted', { mode: 'boolean' }).notNull().default(false),
+  /** Free-form labels (JSON array of strings). Panel-local team tags. */
+  labels: text('labels').notNull().default('[]'),
   updatedBy: text('updated_by').references(() => users.id),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
 });
 export type PosteingangState = typeof posteingangState.$inferSelect;
+
+/**
+ * Posteingang DRAFTS — unsent reply/compose/forward kept for later, per company.
+ * Panel-local; shared across the team. Reopened into the composer; deleted when
+ * sent or discarded.
+ */
+export const posteingangDraft = sqliteTable('posteingang_draft', {
+  id: text('id').primaryKey(),
+  companyId: integer('company_id').notNull(),
+  kind: text('kind', { enum: ['reply', 'compose', 'forward'] }).notNull(),
+  toAddr: text('to_addr').notNull().default(''),
+  subject: text('subject').notNull().default(''),
+  body: text('body').notNull().default(''),
+  /** For reply/forward: the incoming email this draft responds to. */
+  inReplyToEmailId: integer('in_reply_to_email_id'),
+  updatedBy: text('updated_by').references(() => users.id),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+});
+export type PosteingangDraft = typeof posteingangDraft.$inferSelect;
 
 /**
  * Posteingang SENT log — records every email the panel sends (reply / compose /

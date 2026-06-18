@@ -314,11 +314,25 @@ export function runMigrations() {
       sent_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_posteingang_sent_company ON posteingang_sent(company_id, sent_at);
+
+    -- Unsent drafts (reply/compose/forward) kept for later.
+    CREATE TABLE IF NOT EXISTS posteingang_draft (
+      id TEXT PRIMARY KEY,
+      company_id INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      to_addr TEXT NOT NULL DEFAULT '',
+      subject TEXT NOT NULL DEFAULT '',
+      body TEXT NOT NULL DEFAULT '',
+      in_reply_to_email_id INTEGER,
+      updated_by TEXT REFERENCES users(id),
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_posteingang_draft_company ON posteingang_draft(company_id, updated_at);
   `);
 
-  // Idempotent column-add: 'deleted' (Papierkorb) for DBs that predate it.
+  // Idempotent column-adds for posteingang_state (Papierkorb + Labels).
   const peCols = sqlite.prepare('PRAGMA table_info(posteingang_state)').all() as Array<{ name: string }>;
-  if (!peCols.some((c) => c.name === 'deleted')) {
-    sqlite.exec('ALTER TABLE posteingang_state ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0');
-  }
+  const peHas = (n: string) => peCols.some((c) => c.name === n);
+  if (!peHas('deleted')) sqlite.exec('ALTER TABLE posteingang_state ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0');
+  if (!peHas('labels')) sqlite.exec("ALTER TABLE posteingang_state ADD COLUMN labels TEXT NOT NULL DEFAULT '[]'");
 }

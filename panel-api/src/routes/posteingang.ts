@@ -19,7 +19,7 @@ import { eq, desc } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { requireAuth, type AuthVariables } from '../lib/middleware.js';
 import { db } from '../db.js';
-import { posteingangState, posteingangSent } from '../schema.js';
+import { posteingangState, posteingangSent, posteingangDraft } from '../schema.js';
 import {
   listCompanies,
   listInboxEmails,
@@ -77,6 +77,29 @@ async function recordSent(opts: {
   } catch (e) {
     console.warn('[posteingang] failed to record sent email:', e);
   }
+}
+
+/** Parse the labels JSON column → string[] (defensive against bad data). */
+function parseLabels(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Sanitise an incoming labels array (trim, dedupe, cap). */
+function cleanLabels(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const seen = new Set<string>();
+  for (const x of raw) {
+    if (typeof x !== 'string') continue;
+    const t = x.trim().slice(0, 40);
+    if (t) seen.add(t);
+  }
+  return Array.from(seen).slice(0, 20);
 }
 
 /** Hard cap on the overview fan-out. Managed companies (the ones with
@@ -296,8 +319,8 @@ export const posteingangRoute = new Hono<{ Variables: AuthVariables }>()
     const companyId = Number(c.req.query('company'));
     if (!Number.isInteger(companyId) || companyId <= 0) return c.json({ error: 'invalid_company' }, 400);
     const rows = await db.select().from(posteingangState).where(eq(posteingangState.companyId, companyId));
-    const state: Record<number, { read: boolean; starred: boolean; archived: boolean; deleted: boolean }> = {};
-    for (const r of rows) state[r.emailId] = { read: r.read, starred: r.starred, archived: r.archived, deleted: r.deleted };
+    const state: Record<number, { read: boolean; starred: boolean; archived: boolean; deleted: boolean; labels: string[] }> = {};
+    for (const r of rows) state[r.emailId] = { read: r.read, starred: r.starred, archived: r.archived, deleted: r.deleted, labels: parseLabels(r.labels) };
     return c.json({ companyId, state });
   })
   /** Toggle read/starred/archived for ONE email (upsert). */
@@ -313,7 +336,8 @@ export const posteingangRoute = new Hono<{ Variables: AuthVariables }>()
     const starred = bool('starred');
     const archived = bool('archived');
     const deleted = bool('deleted');
-    if (read === undefined && starred === undefined && archived === undefined && deleted === undefined) {
+    const labels = cleanLabels((raw as { labels?: unknown }).labels);
+    if (read === undefined && starred === undefined && archived === undefined && deleted === undefined && labels === undefined) {
       return c.json({ error: 'no_change' }, 400);
     }
     const userId = c.get('userId');
@@ -327,6 +351,7 @@ export const posteingangRoute = new Hono<{ Variables: AuthVariables }>()
         starred: starred ?? false,
         archived: archived ?? false,
         deleted: deleted ?? false,
+        labels: labels !== undefined ? JSON.stringify(labels) : '[]',
         updatedBy: userId,
         updatedAt: now,
       })
@@ -337,12 +362,13 @@ export const posteingangRoute = new Hono<{ Variables: AuthVariables }>()
           ...(starred !== undefined ? { starred } : {}),
           ...(archived !== undefined ? { archived } : {}),
           ...(deleted !== undefined ? { deleted } : {}),
+          ...(labels !== undefined ? { labels: JSON.stringify(labels) } : {}),
           updatedBy: userId,
           updatedAt: now,
         },
       });
     const row = await db.query.posteingangState.findFirst({ where: eq(posteingangState.emailId, emailId) });
-    return c.json({ ok: true, emailId, read: !!row?.read, starred: !!row?.starred, archived: !!row?.archived, deleted: !!row?.deleted });
+    return c.json({ ok: true, emailId, read: !!row?.read, starred: !!row?.starred, archived: !!row?.archived, deleted: !!row?.deleted, labels: parseLabels(row?.labels) });
   })
   /** Bulk-set one flag on many emails (e.g. "alle als gelesen markieren"). */
   .post('/posteingang/state-bulk', requireAuth, async (c) => {
@@ -411,4 +437,56 @@ export const posteingangRoute = new Hono<{ Variables: AuthVariables }>()
       sentAt: r.sentAt instanceof Date ? r.sentAt.toISOString() : new Date(r.sentAt as unknown as number).toISOString(),
     }));
     return c.json({ companyId, sent });
+  })
+  /** "Entwürfe" — list a company's drafts (newest first). */
+  .get('/posteingang/drafts', requireAuth, async (c) => {
+    const companyId = Number(c.req.query('company'));
+    if (!Number.isInteger(companyId) || companyId <= 0) return c.json({ error: 'invalid_company' }, 400);
+    const rows = await db
+      .select()
+      .from(posteingangDraft)
+      .where(eq(posteingangDraft.companyId, companyId))
+      .orderBy(desc(posteingangDraft.updatedAt))
+      .limit(100);
+    const drafts = rows.map((r) => ({
+      id: r.id,
+      kind: r.kind,
+      to: r.toAddr,
+      subject: r.subject,
+      body: r.body,
+      inReplyToEmailId: r.inReplyToEmailId,
+      updatedAt: r.updatedAt instanceof Date ? r.updatedAt.toISOString() : new Date(r.updatedAt as unknown as number).toISOString(),
+    }));
+    return c.json({ companyId, drafts });
+  })
+  /** Create or update a draft (upsert by id). */
+  .post('/posteingang/drafts', requireAuth, async (c) => {
+    const raw = await c.req.json().catch(() => ({}) as Record<string, unknown>);
+    const companyId = Number((raw as { company?: unknown }).company);
+    if (!Number.isInteger(companyId) || companyId <= 0) return c.json({ error: 'invalid_company' }, 400);
+    const kindRaw = (raw as { kind?: unknown }).kind;
+    const kind: 'reply' | 'compose' | 'forward' = kindRaw === 'reply' || kindRaw === 'forward' ? kindRaw : 'compose';
+    const str = (k: string) => (typeof (raw as Record<string, unknown>)[k] === 'string' ? ((raw as Record<string, string>)[k]) : '');
+    const idRaw = (raw as { id?: unknown }).id;
+    const id = typeof idRaw === 'string' && idRaw ? idRaw : nanoid();
+    const irt = Number((raw as { inReplyToEmailId?: unknown }).inReplyToEmailId);
+    const inReplyToEmailId = Number.isInteger(irt) && irt > 0 ? irt : null;
+    if (!str('to').trim() && !str('subject').trim() && !str('body').trim()) {
+      return c.json({ error: 'empty_draft' }, 400);
+    }
+    const userId = c.get('userId');
+    const now = new Date();
+    const values = { kind, toAddr: str('to'), subject: str('subject'), body: str('body'), inReplyToEmailId, updatedBy: userId, updatedAt: now };
+    await db
+      .insert(posteingangDraft)
+      .values({ id, companyId, ...values })
+      .onConflictDoUpdate({ target: posteingangDraft.id, set: values });
+    return c.json({ ok: true, id });
+  })
+  /** Discard a draft. */
+  .delete('/posteingang/drafts/:id', requireAuth, async (c) => {
+    const id = c.req.param('id');
+    if (!id) return c.json({ error: 'invalid_id' }, 400);
+    await db.delete(posteingangDraft).where(eq(posteingangDraft.id, id));
+    return c.json({ ok: true });
   });

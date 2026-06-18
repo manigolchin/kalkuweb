@@ -643,19 +643,19 @@ export const api = {
         `/posteingang/forward`,
         { method: 'POST', body: JSON.stringify({ emailId, company: companyId, to, note }) },
       ),
-    /** Panel-local triage flags (read/starred/archived/deleted) per email. */
+    /** Panel-local triage flags (read/starred/archived/deleted + labels) per email. */
     state: (companyId: number) =>
       request<{
         companyId: number;
-        state: Record<number, { read: boolean; starred: boolean; archived: boolean; deleted: boolean }>;
+        state: Record<number, { read: boolean; starred: boolean; archived: boolean; deleted: boolean; labels: string[] }>;
       }>(`/posteingang/state?company=${companyId}`),
-    /** Toggle a triage flag for one email. */
+    /** Toggle a triage flag (or set labels) for one email. */
     setState: (
       emailId: number,
       companyId: number,
-      patch: { read?: boolean; starred?: boolean; archived?: boolean; deleted?: boolean },
+      patch: { read?: boolean; starred?: boolean; archived?: boolean; deleted?: boolean; labels?: string[] },
     ) =>
-      request<{ ok: true; emailId: number; read: boolean; starred: boolean; archived: boolean; deleted: boolean }>(
+      request<{ ok: true; emailId: number; read: boolean; starred: boolean; archived: boolean; deleted: boolean; labels: string[] }>(
         `/posteingang/state/${emailId}`,
         { method: 'POST', body: JSON.stringify({ company: companyId, ...patch }) },
       ),
@@ -683,6 +683,32 @@ export const api = {
           sentAt: string;
         }>;
       }>(`/posteingang/sent?company=${companyId}`),
+    /** "Entwürfe" — list a company's saved drafts. */
+    drafts: (companyId: number) =>
+      request<{
+        companyId: number;
+        drafts: Array<{
+          id: string;
+          kind: 'reply' | 'compose' | 'forward';
+          to: string;
+          subject: string;
+          body: string;
+          inReplyToEmailId: number | null;
+          updatedAt: string;
+        }>;
+      }>(`/posteingang/drafts?company=${companyId}`),
+    /** Create or update a draft (omit id to create). */
+    saveDraft: (
+      companyId: number,
+      draft: { id?: string; kind: 'reply' | 'compose' | 'forward'; to: string; subject: string; body: string; inReplyToEmailId?: number | null },
+    ) =>
+      request<{ ok: true; id: string }>(`/posteingang/drafts`, {
+        method: 'POST',
+        body: JSON.stringify({ company: companyId, ...draft }),
+      }),
+    /** Discard a draft. */
+    deleteDraft: (id: string) =>
+      request<{ ok: true }>(`/posteingang/drafts/${id}`, { method: 'DELETE' }),
   },
   templates: {
     list: () => request<{ templates: PositionTemplate[] }>(`/templates`),
