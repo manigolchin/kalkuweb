@@ -5,7 +5,11 @@ Format defined in `CLAUDE.md`.
 
 ---
 
-## 2026-06-18 10:36 — Posteingang: „Jetzt abrufen" + neu/abgelegt-Chips
+## 2026-06-18 11:01 — Posteingang: In-Panel-Antworten (Reply-Composer)
+- Source: user chose "Reply to supplier emails" — in-panel send, badges on classified, without breaking preisanfrage
+- Branch: claude-auto/2026-06-17-import-bv-bieter (shared) — commit 49bf241 (panel) + uncommitted procurement edits
+- Result: PANEL side committed 49bf241 → pushed → deployed (server cherry-pick 8d79431, 4 containers healthy, bundle index-Ct_l33tg.js matches, /posteingang/reply → 401 live). PREISANFRAGE side WRITTEN but NOT deployed (user-deployed).
+- Notes: Reading-pane "Antworten" now opens an in-panel composer (To + textarea + Senden); sending routes THROUGH preisanfrage so the panel never holds SMTP creds — `POST /posteingang/reply` → `replyToEmail()` (30 s timeout) → preisanfrage `POST /inbox/emails/{id}/reply`. **preisanfrage endpoint written** (additive, +72 lines, uncommitted in ~/projects/kalku-procurement: `app/api/routes.py inbox_reply_email` + `app/models/schemas.py InboxReply{Request,Response}`; reuses `email_service.send_email`, threads via In-Reply-To, auth+company-access+feature+non-demo guards; `py_compile` OK). **USER deploys procurement** (harness blocks me): review diff → commit → push → on server `git pull --ff-only && docker compose -f docker-compose.prod.yml up --build -d`. Until then panel Senden → clean `reply_unavailable` 502 toast. A full raw mailbox was declined (would need passwords in panel + fight preisanfrage's IMAP seen-flags). Browser verify blocked again by shared :3000 (other process, not killed).
 - Source: user follow-up "will it show immediately?" + "have whole inbox and can also send email reply … badge for those preisanfrage classified"
 - Branch: claude-auto/2026-06-17-import-bv-bieter (shared) — commit d59d56a
 - Result: committed d59d56a → pushed → deployed (server cherry-pick ba3edce, ff-merge, rebuild — 4 containers healthy, preisanfrage enabled; live bundle index-CC2eMtHq.js matches local; prod /posteingang/poll → 401 = route live).
