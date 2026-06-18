@@ -674,3 +674,37 @@ export async function pollInbox(
     emailsError: raw.emails_error,
   };
 }
+
+export type PreisanfrageReplyResult = {
+  success: boolean;
+  to: string | null;
+  subject: string | null;
+  messageId: string | null;
+  error: string | null;
+};
+
+/** Send a plain-text reply to an incoming email THROUGH preisanfrage (which
+ *  owns the per-company SMTP credentials — the panel never holds them). Threads
+ *  to the original via In-Reply-To upstream. Requires the preisanfrage
+ *  `POST /inbox/emails/{id}/reply` endpoint to be deployed; until then upstream
+ *  404s and this surfaces as a clean error. SMTP send is slow → long timeout. */
+export async function replyToEmail(
+  emailId: number,
+  body: string,
+  subject?: string,
+): Promise<PreisanfrageReplyResult> {
+  if (isMockMode()) {
+    return { success: true, to: 'lieferant@example.de', subject: subject ?? 'AW: (Demo)', messageId: '<mock-reply@kalku.de>', error: null };
+  }
+  type Raw = { success: boolean; to: string | null; subject: string | null; message_id: string | null; error: string | null };
+  const raw = await call<Raw>(
+    `/api/inbox/emails/${emailId}/reply`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body, subject: subject ?? null }),
+    },
+    { timeoutMs: 30_000 },
+  );
+  return { success: raw.success, to: raw.to, subject: raw.subject, messageId: raw.message_id, error: raw.error };
+}

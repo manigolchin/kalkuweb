@@ -20,6 +20,7 @@ import {
   listCompanies,
   listInboxEmails,
   pollInbox,
+  replyToEmail,
   isPreisanfrageEnabled,
   isPreisanfrageMock,
   PreisanfrageError,
@@ -158,6 +159,45 @@ export const posteingangRoute = new Hono<{ Variables: AuthVariables }>()
       if (err instanceof PreisanfrageError && err.status === 400) {
         // preisanfrage: "IMAP/SMTP nicht konfiguriert" for this company.
         return c.json({ error: 'smtp_not_configured', companyId }, 400);
+      }
+      const { status, body: errBody } = handleUpstreamError(err);
+      return c.json(errBody, status);
+    }
+  })
+  /** Send a plain-text reply to an incoming email, THROUGH preisanfrage (which
+   *  holds the SMTP credentials — the panel never does). Needs the preisanfrage
+   *  reply endpoint deployed; until then upstream 404s → surfaced as 502. */
+  .post('/posteingang/reply', requireAuth, async (c) => {
+    const raw = await c.req.json().catch(() => ({}) as Record<string, unknown>);
+    const emailId = Number((raw as { emailId?: unknown }).emailId);
+    const text = typeof (raw as { body?: unknown }).body === 'string' ? ((raw as { body: string }).body) : '';
+    const subjRaw = (raw as { subject?: unknown }).subject;
+    const subject = typeof subjRaw === 'string' && subjRaw.trim() ? subjRaw.trim() : undefined;
+    if (!Number.isInteger(emailId) || emailId <= 0) {
+      return c.json({ error: 'invalid_email' }, 400);
+    }
+    if (!text.trim()) {
+      return c.json({ error: 'empty_body' }, 400);
+    }
+    if (!isPreisanfrageEnabled()) {
+      return c.json({ error: 'integration_disabled' }, 503);
+    }
+    try {
+      const res = await replyToEmail(emailId, text, subject);
+      if (!res.success) {
+        return c.json({ error: 'send_failed', detail: res.error }, 502);
+      }
+      return c.json({ ok: true, to: res.to, subject: res.subject, messageId: res.messageId });
+    } catch (err) {
+      if (err instanceof PreisanfrageError && err.status === 403) {
+        return c.json({ error: 'posteingang_disabled' }, 403);
+      }
+      if (err instanceof PreisanfrageError && err.status === 400) {
+        return c.json({ error: 'cannot_reply' }, 400);
+      }
+      if (err instanceof PreisanfrageError && err.status === 404) {
+        // reply endpoint not deployed on preisanfrage yet
+        return c.json({ error: 'reply_unavailable' }, 502);
       }
       const { status, body: errBody } = handleUpstreamError(err);
       return c.json(errBody, status);

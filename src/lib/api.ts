@@ -625,6 +625,12 @@ export const api = {
         emailsDuplicate: number;
         emailsError: number;
       }>(`/posteingang/poll`, { method: 'POST', body: JSON.stringify({ company: companyId }) }),
+    /** Send a plain-text reply to an incoming email (via preisanfrage's SMTP). */
+    reply: (emailId: number, body: string, subject?: string) =>
+      request<{ ok: true; to: string | null; subject: string | null; messageId: string | null }>(
+        `/posteingang/reply`,
+        { method: 'POST', body: JSON.stringify({ emailId, body, subject }) },
+      ),
   },
   templates: {
     list: () => request<{ templates: PositionTemplate[] }>(`/templates`),
