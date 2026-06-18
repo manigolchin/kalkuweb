@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-06-18 16:10 — Dashboard: Posteingang status card
+- Source: user "add more good features in kalku web panel, be professional and creative"
+- Branch: claude-auto/2026-06-17-import-bv-bieter — commit 4a6f466
+- Result: committed 4a6f466 → pushed → deployed (server cherry-pick 76243f9, all healthy, bundle index-BARTXDEV.js matches).
+- Notes: PanelHome (`src/pages/panel/PanelHome.tsx`) now shows a **Posteingang card** in the right column: open-count headline (totals.needsAttention) + Angebote/Rückfragen/Unklar pills + top-3 firms with activity (deep-linked `?company=`), "Öffnen" action, + a Posteingang quick-access shortcut. Reuses `api.posteingang.overview()` (read-only, 60 s cached upstream), **gated behind the `firmen` permission** + tolerant of failure (a 2nd useEffect; never blocks the dashboard). Browser-verified in the isolated mock stack (card shows 5 offen / 2 Angebote / 2 Rückfragen / 1 Unklar / Gesellchen 3 / MPB 2), 0 console errors. The mother-page landing now surfaces supplier-mail status at login.
+
 ## 2026-06-18 15:45 — Posteingang: Cc/Bcc (composer)
 - Source: user "yes do it [CC/BCC] but dont break features in my preisanfrage system"
 - Branch: claude-auto/2026-06-17-import-bv-bieter — commit 83e6807 (panel) + uncommitted procurement edits
