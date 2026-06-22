@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-06-22 16:36 — Default calc table to "Neue Ansicht" (v2) for new users
+- Source: user (screenshot of a new project opening in the old table) — "when new user is starting calculation it should be calculation table in neue ansicht and not old one"
+- Branch: claude-auto/2026-06-22-default-neue-ansicht — commit d1487d5
+- Result: committed d1487d5 → pushed → deployed (server cherry-pick onto deploy-main 687b324→59864be, all 4 containers healthy, health ok). Frontend rebuilt.
+- Notes: `readSavedTableVersion()` in ProjectDetail.tsx defaulted to `v1` (legacy table) unless localStorage `kalku.tableVersion` was explicitly `v2`, so every new user started calcs in the old view. Flipped the default: no saved choice → `v2` (Neue Ansicht); only an explicit earlier "Alte Ansicht" pick (stored `v1`) keeps the legacy table. One-line logic change + SSR/ catch fallbacks also default v2. Browser-verified in mock stack: cleared localStorage → project opens in v2 (toggle shows "Alte Ansicht"); set localStorage v1 → reload → old view respected (toggle shows "Neue Ansicht"). lint 0 errors + build OK.
+
 ## 2026-06-22 16:05 — Posteingang: search a firma's whole mailbox
 - Source: user — "in panel for posteingang for each firma we should be able to search for email or one email text"
 - Branch: claude-auto/2026-06-22-posteingang-mailbox-search — commit bd13599
