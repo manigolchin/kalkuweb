@@ -133,6 +133,12 @@ function mapPanelSent(s: {
 function bySentAtDesc(a: SentEmail, b: SentEmail): number {
   return (b.sentAt || '').localeCompare(a.sentAt || '');
 }
+// How many emails to load per firma initially (fast first paint), and the hard
+// ceiling preisanfrage will return (its list endpoint caps at 500) — used when
+// the user wants to search the whole mailbox rather than just the newest page.
+const INBOX_PAGE = 100;
+const MAILBOX_MAX = 500;
+
 const VIEW_LABELS: Record<MailView, string> = {
   inbox: 'Posteingang',
   sent: 'Gesendet',
@@ -237,6 +243,10 @@ export default function Posteingang() {
   const [emails, setEmails] = useState<PosteingangEmail[] | null>(null);
   const [emailsError, setEmailsError] = useState<string | null>(null);
   const [loadingEmails, setLoadingEmails] = useState(false);
+  // Total emails this firma has in preisanfrage (may exceed how many we loaded).
+  // Used to offer a "search the whole mailbox" action when a query is active.
+  const [emailsTotal, setEmailsTotal] = useState<number | null>(null);
+  const [loadingAll, setLoadingAll] = useState(false);
 
   const [selectedEmailId, setSelectedEmailId] = useState<number | null>(null);
   const [classFilter, setClassFilter] = useState<ClassFilter>('all');
@@ -293,21 +303,24 @@ export default function Posteingang() {
     void loadOverview();
   }, [loadOverview]);
 
-  // Load the selected company's emails.
-  const loadEmails = useCallback(async (companyId: number) => {
+  // Load the selected company's emails. `limit` defaults to a fast initial page;
+  // searching the whole mailbox bumps it up to MAILBOX_MAX (see loadAllForSearch).
+  const loadEmails = useCallback(async (companyId: number, limit = INBOX_PAGE) => {
     setLoadingEmails(true);
     setEmailsError(null);
     try {
       const [res, st] = await Promise.all([
-        api.posteingang.emails(companyId, { limit: 100 }),
+        api.posteingang.emails(companyId, { limit }),
         // Triage flags are a nice-to-have overlay — never let them break the inbox.
         api.posteingang.state(companyId).catch(() => ({ state: {} as Record<number, EmailState> })),
       ]);
       setEmails(res.emails);
+      setEmailsTotal(res.total);
       setStateMap(st.state ?? {});
       setSelectedEmailId(res.emails[0]?.id ?? null);
     } catch (e) {
       setEmails([]);
+      setEmailsTotal(null);
       setStateMap({});
       setSelectedEmailId(null);
       setEmailsError(e instanceof ApiError ? humanError(e) : 'E-Mails konnten nicht geladen werden.');
@@ -316,9 +329,27 @@ export default function Posteingang() {
     }
   }, []);
 
+  // Pull the firma's full mailbox (up to the upstream cap) so the search box
+  // covers every email, not just the newest page. Keeps the current selection
+  // and triage flags; only the email list grows.
+  const loadAllForSearch = useCallback(async () => {
+    if (selectedCompany == null || loadingAll) return;
+    setLoadingAll(true);
+    try {
+      const res = await api.posteingang.emails(selectedCompany, { limit: MAILBOX_MAX });
+      setEmails(res.emails);
+      setEmailsTotal(res.total);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? humanError(e) : 'Konnte nicht alle E-Mails laden.');
+    } finally {
+      setLoadingAll(false);
+    }
+  }, [selectedCompany, loadingAll]);
+
   useEffect(() => {
     if (selectedCompany == null) {
       setEmails(null);
+      setEmailsTotal(null);
       return;
     }
     void loadEmails(selectedCompany);
@@ -827,6 +858,24 @@ export default function Posteingang() {
                 aria-label="In E-Mails suchen"
               />
             </div>
+            {/* The search box only matches loaded mail. When a query is active and
+                the firma has more emails upstream than we've pulled, let the user
+                search the whole mailbox (up to preisanfrage's 500 cap). */}
+            {view !== 'sent' && view !== 'drafts' && query.trim() !== '' && emails != null && emailsTotal != null && emails.length < emailsTotal && emails.length < MAILBOX_MAX && (
+              <div className="px-3 pb-2 -mt-0.5">
+                <button
+                  type="button"
+                  onClick={() => void loadAllForSearch()}
+                  disabled={loadingAll}
+                  className="inline-flex items-center gap-1.5 text-[11px] text-primary-700 dark:text-primary-300 hover:underline disabled:opacity-60 disabled:no-underline"
+                >
+                  <RefreshCw className={`w-3 h-3 ${loadingAll ? 'animate-spin' : ''}`} />
+                  {loadingAll
+                    ? `Durchsuche alle ${emailsTotal} E-Mails…`
+                    : `Nur die neuesten ${emails.length} durchsucht — alle ${emailsTotal} durchsuchen`}
+                </button>
+              </div>
+            )}
             {view !== 'sent' && view !== 'drafts' && (
               <div className="flex items-center gap-1 px-2 pb-2 overflow-x-auto">
                 {CLASS_FILTERS.map((f) => (
