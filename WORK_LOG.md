@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-06-22 16:05 — Posteingang: search a firma's whole mailbox
+- Source: user — "in panel for posteingang for each firma we should be able to search for email or one email text"
+- Branch: claude-auto/2026-06-22-posteingang-mailbox-search — commit bd13599
+- Result: committed bd13599 → pushed → deployed (server cherry-pick onto deploy-main, all 4 containers healthy, panel-api db:ok + preisanfrage:enabled, live Posteingang-Ywmc4aYo.js carries the new string + hash matches local build). Frontend rebuilt.
+- Notes: The per-firma search box already filtered subject/sender/body, but only across the 100 newest emails loaded client-side — an older email or a phrase deeper in a busy supplier mailbox was never found. preisanfrage's /api/inbox/emails has no text-query param (and must not be modified from here), so added a panel-side "alle N durchsuchen" affordance: when a query is active and the firma has more mail upstream than is loaded, a button pulls the full mailbox (up to preisanfrage's 500 cap) and search covers all of it; hint hides once everything is loaded. Default initial page stays 100 for fast first paint. Verified in mock stack (demo@kalku.de): existing search still filters; temporarily lowered page size to prove the hint appears, the "search all" load surfaces a previously-hidden email, and the hint clears at full load; reverted; lint 0 errors + build OK; console clean.
+
 ## 2026-06-22 15:37 — Deep audit P0/P1 fixes (9 fixes + 5 review fixes)
 - Source: user "run a deeper multi-agent audit" → "P0 + P1 (recommended)" fix scope
 - Branch: claude-auto/2026-06-22-audit-p0-p1-fixes — commit fbaa687
