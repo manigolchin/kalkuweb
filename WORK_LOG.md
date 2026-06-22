@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-06-22 13:28 — Fix: share-link creation 400 for projects without an Angebote-folder link
+- Source: user (screenshot of „Mit Kunde teilen" + toast „Link konnte nicht erstellt werden.") — "debug share link for calculation why i cannot share"
+- Branch: claude-auto/2026-06-22-fix-share-empty-angebote-url — commit bea2db0
+- Result: committed bea2db0 → pushed → deployed (server cherry-pick onto deploy-main 46117c8→eaa5f63, all 4 containers healthy, panel-api health db:ok). Backend-only — frontend bundle unchanged.
+- Notes: ShareDialog ALWAYS sends `settings.angeboteFolderUrl`, using `''` when the project has no „04_Angebote" link. The backend `createShareSchema` validated it with `z.string().url()`, which rejects `''` — so `POST /projects/:id/shares` returned 400 `invalid_input` for EVERY project without a folder link. Fix: `z.preprocess` coerces empty/whitespace → `undefined` ("unset") BEFORE the URL check; real URLs still validated as http(s) (javascript:/ftp: still 400). Added 2 regression tests to `angebote-share.test.ts`. Verified: panel-api `tsc` clean, share suite 105/105 + angebote-share 8/8, main lint 0 errors + build OK.
+
 ## 2026-06-18 17:25 — Posteingang: real mailbox "Gesendet" view (IMAP Sent folder)
 - Source: user (screenshot of empty Gesendet) "it doesnt show the emails that i sent from everywhere?" → AskUserQuestion pick "Build real Sent view"
 - Branch: claude-auto/2026-06-17-import-bv-bieter — commit 4d39fbb (panel) + uncommitted procurement edits
