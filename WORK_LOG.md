@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-06-22 14:20 — Fix: panel sidebar scrolls away on long pages (name/logout unreachable)
+- Source: user (screenshots of Firmen list with no sidebar footer) — "when page is so long it doesnt show the left bar for logout or name, left side should be fix"
+- Branch: claude-auto/2026-06-22-fix-sidebar-sticky — commit 180d7a3
+- Result: committed 180d7a3 → pushed → deployed (server cherry-pick onto deploy-main eaa5f63→0ad5153, all 4 containers healthy, live PanelLayout-DD69rRpj.js carries lg:sticky/lg:self-start). Frontend rebuilt.
+- Notes: The desktop sidebar `<aside>` was a plain flex child of the `min-h-screen flex` row, so on long pages (Firmen=89 rows, Posteingang) it stretched to full page height and scrolled away with the body — nav + user/logout footer left the viewport. Added `lg:sticky lg:top-0 lg:h-screen lg:self-start` to the desktop sidebar invocation (same sticky mechanism as the top header; self-start stops flex-stretch from defeating sticky; inner <nav> keeps its own overflow-y-auto). Mobile drawer (fixed inset-y-0) untouched. Verified live in mock stack: footer stayed in-viewport at scrollY 0/2000/4000/max; lint 0 errors + build OK; console clean.
+
 ## 2026-06-22 13:28 — Fix: share-link creation 400 for projects without an Angebote-folder link
 - Source: user (screenshot of „Mit Kunde teilen" + toast „Link konnte nicht erstellt werden.") — "debug share link for calculation why i cannot share"
 - Branch: claude-auto/2026-06-22-fix-share-empty-angebote-url — commit bea2db0
