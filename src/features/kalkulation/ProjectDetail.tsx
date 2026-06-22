@@ -53,12 +53,14 @@ type TableVersion = 'v1' | 'v2';
 const TABLE_VERSION_KEY = 'kalku.tableVersion';
 
 function readSavedTableVersion(): TableVersion {
-  if (typeof window === 'undefined') return 'v1';
+  // Default to the new view (v2) for new users / anyone who hasn't chosen yet —
+  // only an explicit earlier "Alte Ansicht" pick keeps the legacy table.
+  if (typeof window === 'undefined') return 'v2';
   try {
     const v = window.localStorage.getItem(TABLE_VERSION_KEY);
-    return v === 'v2' ? 'v2' : 'v1';
+    return v === 'v1' ? 'v1' : 'v2';
   } catch {
-    return 'v1';
+    return 'v2';
   }
 }
 
