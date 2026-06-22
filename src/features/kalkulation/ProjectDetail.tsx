@@ -279,18 +279,25 @@ export default function ProjectDetail() {
     // ZSCHLG matrix + row-13 column headers + position rows) so the exported
     // .xlsx matches the example files in ~/Desktop/Claude/example {1-4}/
     // AND round-trips back through the kalku-xlsx importer cleanly.
-    const { exportToKalkulationVorlage } = await import('@/lib/kalku-xlsx/export');
-    const bytes = await exportToKalkulationVorlage(data);
-    const url = URL.createObjectURL(
-      new Blob([bytes as BlobPart], {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      }),
-    );
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${(data.name || 'kalkulation').replace(/[^a-zA-Z0-9_-]+/g, '_')}.xlsx`;
-    a.click();
-    URL.revokeObjectURL(url);
+    // Wrapped like the PDF/GAEB siblings so a lazy exceljs chunk-load failure
+    // (flaky connection) or writeBuffer error surfaces an error toast instead
+    // of failing silently with no download and no feedback. (Audit P1.)
+    try {
+      const { exportToKalkulationVorlage } = await import('@/lib/kalku-xlsx/export');
+      const bytes = await exportToKalkulationVorlage(data);
+      const url = URL.createObjectURL(
+        new Blob([bytes as BlobPart], {
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        }),
+      );
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(data.name || 'kalkulation').replace(/[^a-zA-Z0-9_-]+/g, '_')}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Excel-Export fehlgeschlagen.');
+    }
   }
 
   async function exportToPdf() {

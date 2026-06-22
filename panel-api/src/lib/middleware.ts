@@ -29,6 +29,31 @@ export const requireAuth: MiddlewareHandler<{ Variables: AuthVariables }> = asyn
   if (!user.isActive) {
     return c.json({ error: 'account_disabled' }, 403);
   }
+  // Forced password change must be enforced on the SERVER, not just by the
+  // React modal — otherwise a holder of a temporary, admin-issued (and
+  // log-printed) password can drive every authenticated MUTATION via the API
+  // without ever changing it (create/revoke customer share links, send real
+  // supplier mail, etc.). Block all state-changing methods until the password
+  // is changed; allow reads (so the forced-change screen + its data still load)
+  // and the change-password/logout endpoints themselves.
+  if (user.mustChangePassword) {
+    const method = c.req.method.toUpperCase();
+    const isMutation = method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE';
+    const path = c.req.path;
+    // The SSO handoff (GET /api/panel/sso/...) is a side-effecting GET: it mints
+    // a single-use cross-app login ticket and redirects into the linked
+    // preisanfrage app already authenticated. A force-change user must NOT be
+    // able to escalate out of the locked-down panel without changing their
+    // temporary password, so treat it like a mutation. (Segment match so the
+    // mount prefix is irrelevant.)
+    const isSsoHandoff = path.includes('/sso/');
+    // change-password is the one mutation a force-change user MUST reach to
+    // recover. (logout never runs requireAuth, so it doesn't reach here.)
+    const allowed = path.endsWith('/auth/change-password');
+    if ((isMutation || isSsoHandoff) && !allowed) {
+      return c.json({ error: 'password_change_required' }, 403);
+    }
+  }
   c.set('userId', user.id);
   c.set('userEmail', user.email);
   c.set('userRole', user.role);

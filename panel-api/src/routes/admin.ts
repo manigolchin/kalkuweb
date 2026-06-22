@@ -54,15 +54,6 @@ function serializeAdminUser(u: User, projectCount = 0) {
   };
 }
 
-/** Number of OTHER active admins (excludes `excludeId`). Drives the
- *  last-admin lockout guard so the panel can never end up with zero admins. */
-async function countOtherActiveAdmins(excludeId: string): Promise<number> {
-  const rows = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(and(eq(users.role, 'admin'), eq(users.isActive, true), ne(users.id, excludeId)));
-  return rows.length;
-}
 
 const permissionsSchema = z.record(z.string(), z.boolean());
 
@@ -176,12 +167,9 @@ export const adminRoute = new Hono<{ Variables: AuthVariables }>()
     if (isSelf && d.role === 'user') return c.json({ error: 'cannot_demote_self' }, 400);
     if (isSelf && d.isActive === false) return c.json({ error: 'cannot_deactivate_self' }, 400);
 
-    // Last-admin protection: never let the system reach zero active admins.
     const demotingAdmin = target.role === 'admin' && d.role === 'user';
     const deactivatingAdmin = target.role === 'admin' && d.isActive === false;
-    if ((demotingAdmin || deactivatingAdmin) && (await countOtherActiveAdmins(id)) === 0) {
-      return c.json({ error: 'last_admin' }, 400);
-    }
+    const guardLastAdmin = demotingAdmin || deactivatingAdmin;
 
     // Email change must stay unique.
     if (d.email !== undefined) {
@@ -202,7 +190,29 @@ export const adminRoute = new Hono<{ Variables: AuthVariables }>()
     if (d.companyPhone !== undefined) patch.companyPhone = d.companyPhone;
     if (d.companyContactEmail !== undefined) patch.companyContactEmail = d.companyContactEmail;
 
-    await db.update(users).set(patch).where(eq(users.id, id));
+    // Last-admin protection: count OTHER active admins and apply the patch in
+    // ONE synchronous SQLite transaction so two concurrent demotions can't both
+    // pass the check and drop the panel to zero admins (a TOCTOU that bricks the
+    // whole team — recovery needs DB surgery). (Audit P1.)
+    try {
+      db.transaction((tx) => {
+        if (guardLastAdmin) {
+          const others = tx
+            .select({ id: users.id })
+            .from(users)
+            .where(and(eq(users.role, 'admin'), eq(users.isActive, true), ne(users.id, id)))
+            .all();
+          if (others.length === 0) throw new Error('LAST_ADMIN');
+        }
+        tx.update(users).set(patch).where(eq(users.id, id)).run();
+      });
+    } catch (e) {
+      if (e instanceof Error && e.message === 'LAST_ADMIN') {
+        return c.json({ error: 'last_admin' }, 400);
+      }
+      throw e;
+    }
+
     const updated = await db.query.users.findFirst({ where: eq(users.id, id) });
     if (!updated) return c.json({ error: 'not_found' }, 404);
     return c.json({ user: serializeAdminUser(updated) });

@@ -32,6 +32,7 @@ const middleware = await import('../src/lib/middleware.js');
 const ratelimit = await import('../src/lib/ratelimit.js');
 const { authRoute } = await import('../src/routes/auth.js');
 const { projectsRoute } = await import('../src/routes/projects.js');
+const { ssoRoute } = await import('../src/routes/sso.js');
 const { bodyLimit } = await import('hono/body-limit');
 const { nanoid } = await import('nanoid');
 const { eq } = await import('drizzle-orm');
@@ -68,6 +69,9 @@ projectsApp.use(
   }),
 );
 projectsApp.route('/projects', projectsRoute);
+
+const ssoApp = new Hono();
+ssoApp.route('/sso', ssoRoute);
 
 before(() => {
   runMigrations();
@@ -713,6 +717,93 @@ describe('routes/projects — POST /projects (create)', () => {
       body: JSON.stringify({}),
     });
     assert.equal(r.status, 401);
+  });
+
+  // Audit P1: create now validates through the same schema as PUT, so a buggy
+  // client can't persist oversized/garbage data that later freezes into the
+  // customer snapshot.
+  test('rejects an oversized name (validation parity with PUT)', async () => {
+    const u = await seedUser();
+    const cookie = await makeAuthCookie(u.id, u.email);
+    const r = await projectsApp.request('/projects', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ name: 'x'.repeat(600) }),
+    });
+    assert.equal(r.status, 400);
+    const body = await r.json() as { error: string };
+    assert.equal(body.error, 'invalid_input');
+  });
+
+  // Review fix: a verbose GAEB Langtext from the "Kalkulation starten" seed must
+  // be TRUNCATED on create, not hard-rejected (which would dead-end the seed).
+  test('clamps an over-cap position longText instead of 400ing the seed', async () => {
+    const u = await seedUser();
+    const cookie = await makeAuthCookie(u.id, u.email);
+    const r = await projectsApp.request('/projects', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({
+        name: 'Seeded',
+        positions: [{ id: 'p1', oz: '1.1', quantity: 1, materialCost: 0, timeMinutes: 0, nuCost: 0, longText: 'L'.repeat(25000) }],
+      }),
+    });
+    assert.equal(r.status, 200);
+    const body = await r.json() as { data: schema.ProjectData };
+    assert.equal(body.data.positions[0].longText.length, 20000);
+  });
+});
+
+describe('routes/middleware — mustChangePassword gate (server-side)', () => {
+  // Audit P1: the forced password change must be enforced on the server, not
+  // just by the React modal. A holder of a temporary password must NOT be able
+  // to drive mutations via the API until they change it.
+  test('blocks a mutation with 403 password_change_required', async () => {
+    const u = await seedUser({ mustChangePassword: true });
+    const cookie = await makeAuthCookie(u.id, u.email);
+    const r = await projectsApp.request('/projects', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({}),
+    });
+    assert.equal(r.status, 403);
+    const body = await r.json() as { error: string };
+    assert.equal(body.error, 'password_change_required');
+  });
+
+  test('still allows reads (so the forced-change screen can load)', async () => {
+    const u = await seedUser({ mustChangePassword: true });
+    const cookie = await makeAuthCookie(u.id, u.email);
+    const r = await projectsApp.request('/projects', {
+      method: 'GET',
+      headers: { Cookie: cookie },
+    });
+    assert.equal(r.status, 200);
+  });
+
+  test('still allows the change-password endpoint itself', async () => {
+    const u = await seedUser({ password: 'temp-password-1234', mustChangePassword: true });
+    const cookie = await makeAuthCookie(u.id, u.email);
+    const r = await authApp.request('/auth/change-password', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ current: 'temp-password-1234', next: 'fresh-password-90123' }),
+    });
+    assert.equal(r.status, 200);
+  });
+
+  // The SSO handoff is a GET but mints a cross-app login ticket — a force-change
+  // user must not be able to escalate into the linked app without changing pw.
+  test('blocks the side-effecting SSO handoff (GET) with 403', async () => {
+    const u = await seedUser({ mustChangePassword: true });
+    const cookie = await makeAuthCookie(u.id, u.email);
+    const r = await ssoApp.request('/sso/preisanfrage', {
+      method: 'GET',
+      headers: { Cookie: cookie },
+    });
+    assert.equal(r.status, 403);
+    const body = await r.json() as { error: string };
+    assert.equal(body.error, 'password_change_required');
   });
 });
 

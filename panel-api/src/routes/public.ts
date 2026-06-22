@@ -140,23 +140,42 @@ async function gateShare(
   return { share };
 }
 
+// Basic shape check used ONLY to decide whether we attempt to *send* mail to a
+// customer-supplied address — never to gate input acceptance.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function isLikelyEmail(v: string | null | undefined): v is string {
+  return typeof v === 'string' && EMAIL_RE.test(v.trim());
+}
+
+// Optional, purely informational customer e-mail ("für Notizen"). A typo must
+// NEVER 400 the whole acceptance/feedback — that was the canonical share-bug
+// class on the legally-binding §145-BGB Annahme flow (a hard z.string().email()
+// rejected anything like "name@firma" without a TLD, hidden behind a generic
+// "bitte später erneut versuchen" toast). We coerce blank/whitespace → undefined
+// and accept any short string; the post-approve mail guards the address with
+// isLikelyEmail() before sending, so a malformed value is harmless.
+const optionalCustomerEmail = z.preprocess(
+  (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+  z.string().trim().max(200).optional(),
+);
+
 const commentSchema = z.object({
   positionOz: z.string().trim().min(1).max(200),
   intent: z.enum(['accept', 'change_menge', 'change_fabrikat', 'negotiate_ep', 'other']),
   text: z.string().trim().min(1).max(4000),
   authorName: z.string().trim().min(1).max(200).optional(),
-  authorEmail: z.string().email().max(200).optional(),
+  authorEmail: optionalCustomerEmail,
 });
 
 const approveSchema = z.object({
   customerName: z.string().trim().min(1).max(200),
-  customerEmail: z.string().email().max(200).optional(),
+  customerEmail: optionalCustomerEmail,
   message: z.string().max(4000).optional(),
 });
 
 const changesSchema = z.object({
   customerName: z.string().trim().min(1).max(200),
-  customerEmail: z.string().email().max(200).optional(),
+  customerEmail: optionalCustomerEmail,
   message: z.string().max(4000).optional(),
   changes: z
     .array(
@@ -172,7 +191,7 @@ const changesSchema = z.object({
 
 const changeRequestsSchema = z.object({
   customerName: z.string().trim().min(1).max(200).optional(),
-  customerEmail: z.string().email().max(200).optional(),
+  customerEmail: optionalCustomerEmail,
   items: z
     .array(
       z.object({
@@ -335,13 +354,24 @@ export const publicRoute = new Hono()
     // the data never reaches the customer (raw JSON included), so a hidden
     // toggle can't be bypassed by reading the network response.
     const st = share.settings;
-    const outPositions =
-      st.showCostBreakdown === false
-        ? snapshot.positions.map(({ gpLohn, gpMaterial, gpGeraet, gpNu, ...rest }) => {
-            void gpLohn; void gpMaterial; void gpGeraet; void gpNu;
-            return rest;
-          })
-        : snapshot.positions;
+    const hideBreakdown = st.showCostBreakdown === false;
+    // showLongText=false (the „Kurzfassung") must strip the Langtext from the
+    // PAYLOAD, not just hide it in the React UI / PDF — otherwise the customer
+    // can still read the suppressed detailed LV spec straight from the network
+    // response. Same payload-gating contract as showCostBreakdown above.
+    const hideLongText = st.showLongText === false;
+    const outPositions = snapshot.positions.map((p) => {
+      let out: typeof p = p;
+      if (hideBreakdown) {
+        const { gpLohn, gpMaterial, gpGeraet, gpNu, ...rest } = p;
+        void gpLohn; void gpMaterial; void gpGeraet; void gpNu;
+        out = rest as typeof p;
+      }
+      if (hideLongText && out.longText) {
+        out = { ...out, longText: '' };
+      }
+      return out;
+    });
     let outSummary = snapshot.summary ?? null;
     if (outSummary && st.showTotals === false) {
       outSummary = null; // no totals at all → no aggregate block
@@ -555,7 +585,11 @@ export const publicRoute = new Hono()
           settings: share.settings,
           owner: { name: owner.name, companyName: owner.companyName },
           customerName: parsed.data.customerName,
-          customerEmail: parsed.data.customerEmail,
+          // Only render a well-formed address on the legally-binding
+          // Annahmebestätigung — the lenient schema now accepts typos (so the
+          // acceptance can't be blocked), but a garbage value must not land on
+          // the evidence document. Falls back to just the name.
+          customerEmail: isLikelyEmail(parsed.data.customerEmail) ? parsed.data.customerEmail : undefined,
           approvedAt: now,
           ip: clientIp(c),
           userAgent: (c.req.header('user-agent') || ''),
@@ -596,9 +630,15 @@ export const publicRoute = new Hono()
           owner.companyContactEmail ? `E-Mail: ${owner.companyContactEmail}` : '',
         ].filter(Boolean).join('\n');
 
-        // Send to customer if they provided an email; CC owner contact for archive
+        // Send to customer ONLY if they supplied a well-formed address (the
+        // field is optional/informational and now accepts typos without 400ing
+        // the approval); otherwise fall back to the owner archive copy so a
+        // malformed value never costs the owner their record.
+        const customerEmail = isLikelyEmail(parsed.data.customerEmail)
+          ? parsed.data.customerEmail.trim()
+          : undefined;
         const recipients: string[] = [];
-        if (parsed.data.customerEmail) recipients.push(parsed.data.customerEmail);
+        if (customerEmail) recipients.push(customerEmail);
         const archive = owner.companyContactEmail || owner.email;
         if (recipients.length === 0 && archive) recipients.push(archive);
         if (recipients.length === 0) return;
@@ -606,7 +646,7 @@ export const publicRoute = new Hono()
         const safe = (snapshot.project.name || 'angebot').replace(/[^a-zA-Z0-9_-]+/g, '_');
         const result = await sendMail({
           to: recipients,
-          bcc: parsed.data.customerEmail && archive && archive !== parsed.data.customerEmail ? archive : undefined,
+          bcc: customerEmail && archive && archive !== customerEmail ? archive : undefined,
           // Don't fall back to owner.email — that's the *login* address and is
           // deliberately not customer-facing (see public-endpoint contract).
           replyTo: owner.companyContactEmail || undefined,

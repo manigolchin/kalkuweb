@@ -106,9 +106,12 @@ function serializeLocalAuschreibung(row: typeof localAuschreibungen.$inferSelect
 }
 
 const updateDefaultsSchema = z.object({
-  /** Decimal in [0, 1]. e.g. 0.12 = 12 %. Stored as basis-points server-side. */
-  materialZuschlag: z.number().finite().min(0).max(1),
-  nuZuschlag: z.number().finite().min(0).max(1),
+  /** Decimal markup, e.g. 0.12 = 12 %. Stored as basis-points server-side.
+   *  Capped at 10 (= 1000 %): Kleinmaterial / Verbrauchsmaterial markups well
+   *  above 100 % are routine in construction, so a 100 % ceiling (max 1) hard-
+   *  rejected normal inputs with an opaque invalid_input. */
+  materialZuschlag: z.number().finite().min(0).max(10),
+  nuZuschlag: z.number().finite().min(0).max(10),
   /** €/h, e.g. 49.90. Stored as cents server-side. */
   verrechnungslohn: z.number().finite().min(0).max(10000),
   geraeteStundensatz: z.number().finite().min(0).max(10000),

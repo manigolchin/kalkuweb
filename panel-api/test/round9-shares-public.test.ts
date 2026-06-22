@@ -753,14 +753,40 @@ describe('Round 9 — public.ts (customer-side)', () => {
     assert.equal(responses[0].customerName, 'Kunde Mustermann');
   });
 
-  test('POST /share/:token/approve with invalid customerEmail → 400', async () => {
+  test('POST /share/:token/approve tolerates a typo\'d optional customerEmail (no 400 on the legally-binding acceptance)', async () => {
     const { token } = await seedFull();
     const res = await publicApp.request(`/api/share/${token}/approve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ customerName: 'Kunde', customerEmail: 'not-an-email' }),
     });
-    assert.equal(res.status, 400);
+    // Audit P0: the e-mail field is optional/informational ("für Notizen") — a
+    // typo must NEVER 400 the §145-BGB Annahme behind a generic toast. It is
+    // accepted and stored verbatim; the post-approve mail simply skips an
+    // unsendable address (guarded by isLikelyEmail).
+    assert.equal(res.status, 200);
+  });
+
+  // Audit P1: showLongText=false must strip the Langtext from the PAYLOAD, not
+  // just hide it in the UI — otherwise the customer reads the suppressed LV spec
+  // straight from the network response.
+  test('showLongText=false strips longText from the public payload', async () => {
+    const longPos = fixturePos({ id: 'pl', oz: '1.1', shortText: 'Pos', longText: 'INTERNES_LANGTEXT_DETAIL', materialCost: 100, timeMinutes: 60, quantity: 1, unit: 'St' });
+    const { token } = await seedFull({ positions: [longPos], settings: { showLongText: false } });
+    const res = await publicApp.request(`/api/share/${token}`);
+    assert.equal(res.status, 200);
+    const raw = await res.text();
+    assert.ok(!raw.includes('INTERNES_LANGTEXT_DETAIL'), 'suppressed longText leaked into the public JSON');
+    const body = JSON.parse(raw) as { positions: Array<{ longText?: string }> };
+    assert.equal(body.positions[0].longText, '');
+  });
+
+  test('showLongText not set → longText is delivered (default on)', async () => {
+    const longPos = fixturePos({ id: 'pl', oz: '1.1', shortText: 'Pos', longText: 'SICHTBARES_LANGTEXT', materialCost: 100, timeMinutes: 60, quantity: 1, unit: 'St' });
+    const { token } = await seedFull({ positions: [longPos] });
+    const res = await publicApp.request(`/api/share/${token}`);
+    const body = await res.json() as { positions: Array<{ longText?: string }> };
+    assert.equal(body.positions[0].longText, 'SICHTBARES_LANGTEXT');
   });
 
   test('POST /share/:token/approve on revoked share → 410', async () => {

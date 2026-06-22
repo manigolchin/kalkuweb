@@ -211,12 +211,14 @@ export default function ShareView() {
     if (state.kind !== 'ready') return;
     if (!customerName.trim()) return;
     setSubmitting(true);
+    let storedPwd: string | undefined;
+    try { storedPwd = window.sessionStorage.getItem(sessionKey) ?? undefined; } catch { /* ignore */ }
     try {
       await api.public.approve(token, {
         customerName: customerName.trim(),
         customerEmail: customerEmail.trim() || undefined,
         message: generalMessage.trim() || undefined,
-      });
+      }, storedPwd);
       setSubmitted('approve');
     } catch {
       toast.error('Annahme konnte nicht gesendet werden. Bitte später erneut versuchen.');
@@ -231,13 +233,15 @@ export default function ShareView() {
     const items = Object.values(changes).filter((c) => c.text.trim().length > 0);
     if (items.length === 0 && !generalMessage.trim()) return;
     setSubmitting(true);
+    let storedPwd: string | undefined;
+    try { storedPwd = window.sessionStorage.getItem(sessionKey) ?? undefined; } catch { /* ignore */ }
     try {
       await api.public.requestChanges(token, {
         customerName: customerName.trim(),
         customerEmail: customerEmail.trim() || undefined,
         message: generalMessage.trim() || undefined,
         changes: items.length > 0 ? items : [{ positionId: 'general', type: 'comment', text: generalMessage.trim() }],
-      });
+      }, storedPwd);
       setSubmitted('changes');
     } catch {
       toast.error('Rückmeldung konnte nicht gesendet werden. Bitte später erneut versuchen.');

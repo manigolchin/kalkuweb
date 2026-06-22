@@ -798,10 +798,14 @@ export const api = {
     approve: (
       token: string,
       input: { customerName: string; customerEmail?: string; message?: string },
+      // Honor the share password gate — without this, accepting a
+      // password-protected share 401s and dies behind a generic toast.
+      password?: string,
     ) =>
       request<{ ok: true; respondedAt: string }>(`/share/${token}/approve`, {
         method: 'POST',
         body: JSON.stringify(input),
+        headers: password ? { 'X-Share-Password': password } : undefined,
       }),
     requestChanges: (
       token: string,
@@ -811,10 +815,12 @@ export const api = {
         message?: string;
         changes: Array<{ positionId: string; type: 'modify' | 'remove' | 'comment'; text: string }>;
       },
+      password?: string,
     ) =>
       request<{ ok: true; respondedAt: string }>(`/share/${token}/changes`, {
         method: 'POST',
         body: JSON.stringify(input),
+        headers: password ? { 'X-Share-Password': password } : undefined,
       }),
     /** PART K: granular per-position comment. Honors the share's password
      *  gate via the X-Share-Password header (set the same way as getShare). */

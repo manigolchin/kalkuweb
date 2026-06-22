@@ -30,6 +30,28 @@ const MAX_POSITIONS = 5000;
 // previous schema's z.array(z.any())).
 const fnum = (max = 1e12) => z.number().finite().min(-max).max(max);
 
+// Clamp upstream/customer-sourced position TEXT to the positionSchema caps so a
+// verbose GAEB Langtext or long hierarchical OZ from the preisanfrage
+// "Kalkulation starten" seed is TRUNCATED rather than hard-rejected on create
+// (which would dead-end the whole seed with no way to even open the project).
+// Numbers/structure stay strictly validated by the schema afterwards.
+function clampPositionStrings(p: unknown): unknown {
+  if (!p || typeof p !== 'object') return p;
+  const o = p as Record<string, unknown>;
+  const clamp = (v: unknown, n: number) =>
+    typeof v === 'string' && v.length > n ? v.slice(0, n) : v;
+  return {
+    ...o,
+    oz: clamp(o.oz, 64),
+    shortText: clamp(o.shortText, 2000),
+    longText: clamp(o.longText, 20000),
+    hinweisText: clamp(o.hinweisText, 2000),
+    unit: clamp(o.unit, 32),
+    sectionPath: clamp(o.sectionPath, 256),
+    internalNote: clamp(o.internalNote, 4000),
+  };
+}
+
 /**
  * Position type taxonomy. The four "internal" values are forced to
  * `visibleToCustomer: false` by the server below — a Wagnis line in a
@@ -233,7 +255,13 @@ export const projectsRoute = new Hono<{ Variables: AuthVariables }>()
     const body = await c.req.json().catch(() => ({}));
     const id = nanoid(16);
     const now = new Date();
-    const data: ProjectData = {
+    // Merge defaults FIRST (create may send a minimal/empty body), THEN validate
+    // + sanitize through the SAME schema as PUT. Previously create did zero
+    // validation, so a buggy or upstream "Kalkulation starten" client could
+    // persist NaN/Infinity quantities and oversized text that later froze into
+    // the legally-binding customer snapshot — exactly what the hardened PUT path
+    // is designed to reject. (Audit P1.)
+    const merged = {
       name: body.name || 'Neues Projekt',
       client: body.client || '',
       service: body.service || '',
@@ -241,11 +269,29 @@ export const projectsRoute = new Hono<{ Variables: AuthVariables }>()
       deadline: body.deadline || '',
       bidder: body.bidder || '',
       calcParams: { ...DEFAULT_CALC_PARAMS, ...(body.calcParams || {}) },
-      positions: body.positions || [],
+      positions: (Array.isArray(body.positions) ? body.positions : []).map(clampPositionStrings),
       notes: body.notes,
       angeboteFolderUrl: body.angeboteFolderUrl,
       sourceRef: body.sourceRef,
     };
+    const parsed = projectDataSchema.safeParse(merged);
+    if (!parsed.success) {
+      return c.json({ error: 'invalid_input', detail: parsed.error.issues }, 400);
+    }
+    // Server is the source of truth for derived EP/GP and for the default-deny
+    // on internal position types — recompute on create just like PUT does.
+    const recomputedPositions = recomputePositions(
+      parsed.data.positions,
+      parsed.data.calcParams,
+    ).map((p) => ({
+      ...p,
+      visibleToCustomer: INTERNAL_POSITION_TYPES.has(
+        (p.positionType ?? 'standard') as typeof POSITION_TYPES[number],
+      )
+        ? false
+        : p.visibleToCustomer,
+    }));
+    const data: ProjectData = { ...parsed.data, positions: recomputedPositions };
     await db.insert(projects).values({
       id,
       ownerId: c.get('userId'),
@@ -419,20 +465,50 @@ export const projectsRoute = new Hono<{ Variables: AuthVariables }>()
     const dataToStore = { ...parsed.data.data, positions: recomputedPositions };
 
     const bumpVersion = parsed.data.bumpVersion === true;
-    const nowDate = new Date();
-    await db
+    const nextVersion = bumpVersion ? existing.versionNumber + 1 : existing.versionNumber;
+    // Force the new updatedAt to be STRICTLY greater than the one we read, so a
+    // second writer in the same millisecond can't have its WHERE
+    // updatedAt = existing.updatedAt still match after we commit (which would
+    // re-open the lost-update window the atomic guard below closes).
+    const nowDate = new Date(Math.max(Date.now(), existing.updatedAt.getTime() + 1));
+    // Make the optimistic check atomic with the write: fold the "row hasn't
+    // changed since we read it" guard INTO the UPDATE's WHERE. The expectedTs
+    // check above is the fast path; this closes the race where a concurrent
+    // save lands between our read of `existing` and this write — two tabs both
+    // passing the read-time check would otherwise both write and one edit would
+    // be silently lost under a "saved" toast. (Audit P0.)
+    const useOptimistic = typeof parsed.data.expectedUpdatedAt === 'number';
+    const whereClause = useOptimistic
+      ? and(eq(projects.id, id), eq(projects.ownerId, userId), eq(projects.updatedAt, existing.updatedAt))
+      : and(eq(projects.id, id), eq(projects.ownerId, userId));
+    const written = await db
       .update(projects)
-      .set({
-        data: dataToStore,
-        versionNumber: bumpVersion ? existing.versionNumber + 1 : existing.versionNumber,
-        updatedAt: nowDate,
-      })
-      .where(eq(projects.id, id));
+      .set({ data: dataToStore, versionNumber: nextVersion, updatedAt: nowDate })
+      .where(whereClause)
+      .returning({ id: projects.id });
+
+    if (written.length === 0) {
+      // Lost the optimistic race (updatedAt moved after our read). Report the
+      // conflict instead of silently dropping the edit; the client shows the
+      // merge/reload banner.
+      const current = await db.query.projects.findFirst({
+        where: and(eq(projects.id, id), eq(projects.ownerId, userId)),
+      });
+      if (!current) return c.json({ error: 'not_found' }, 404);
+      return c.json(
+        {
+          error: 'version_conflict',
+          currentUpdatedAt: current.updatedAt.getTime(),
+          currentVersionNumber: current.versionNumber,
+        },
+        409,
+      );
+    }
 
     return c.json({
       id: existing.id,
       data: dataToStore,
-      versionNumber: bumpVersion ? existing.versionNumber + 1 : existing.versionNumber,
+      versionNumber: nextVersion,
       updatedAt: nowDate,
     });
   })
