@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-06-22 15:37 — Deep audit P0/P1 fixes (9 fixes + 5 review fixes)
+- Source: user "run a deeper multi-agent audit" → "P0 + P1 (recommended)" fix scope
+- Branch: claude-auto/2026-06-22-audit-p0-p1-fixes — commit fbaa687
+- Result: committed fbaa687 → pushed → deployed (server cherry-pick onto deploy-main 0ad5153→21daf53, all 4 containers healthy, panel-api db:ok + preisanfrage:enabled). Backend + frontend both rebuilt.
+- Notes: Two Workflow runs — (1) 54-agent audit (8 dimensions × 2-lens adversarial verify → 17 confirmed); (2) 6-agent review of the fix diff (5 issues, all addressed). 9 P0/P1 fixes: lenient customer e-mail (no more 400 on typo'd Annahme), share-password header on approve/changes, atomic optimistic lock (projects PUT, +monotonic updatedAt), server-side mustChangePassword gate (+SSO handoff), per-Firma Zuschlag cap 100%→1000%, atomic last-admin transaction, POST /projects validation+recompute (clamps over-cap seed text), showLongText payload strip (leak), Excel-export try/catch. +8 regression tests. Verified: backend 570/570, frontend 1165/1165 + tsc + lint + build; live stack curl (password approve 401→200, email typo→200, optimistic lock 200→409, Zuschlag 150%→200) + browser (password-share accept). No prod mutations exercised (identical verified commit). Uncertain/P2 audit findings (firmaCalcDefaults shared-by-design, share+audit non-atomic, approve idempotency, one-cent rounding, XFF rate-limit) NOT fixed — deferred.
+
 ## 2026-06-22 14:20 — Fix: panel sidebar scrolls away on long pages (name/logout unreachable)
 - Source: user (screenshots of Firmen list with no sidebar footer) — "when page is so long it doesnt show the left bar for logout or name, left side should be fix"
 - Branch: claude-auto/2026-06-22-fix-sidebar-sticky — commit 180d7a3
