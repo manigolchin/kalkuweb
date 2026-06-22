@@ -314,7 +314,12 @@ export default function PanelLayout() {
         theme={theme}
         onToggleTheme={toggleTheme}
         onToggleCollapsed={() => setCollapsedAndPersist(!collapsed)}
-        className="hidden lg:flex"
+        // Pin the desktop sidebar to the viewport so its nav + the user/logout
+        // footer stay visible on long pages (Firmen, Posteingang) instead of
+        // scrolling away with the body. h-screen caps it at one viewport;
+        // self-start stops the flex row from stretching it to full page height
+        // (which would defeat the sticky). The inner <nav> scrolls on its own.
+        className="hidden lg:flex lg:sticky lg:top-0 lg:h-screen lg:self-start"
       />
 
       {/* ─── Sidebar (mobile drawer) ───────────────────────────────── */}
