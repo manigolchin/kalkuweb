@@ -158,6 +158,34 @@ describe('04_Angebote share gate', () => {
     assert.equal(body.settings.angeboteFolderUrl, undefined);
   });
 
+  // Regression: the share dialog ALWAYS sends angeboteFolderUrl, using '' when
+  // the project has no „04_Angebote" link. An empty string must be treated as
+  // "unset" — NOT rejected by .url() — otherwise share creation 400s for every
+  // project without a folder link ("Link konnte nicht erstellt werden").
+  test('empty-string angeboteFolderUrl is treated as unset (200, no link)', async () => {
+    const { ownerId, projectId } = await seedOwnerOnly();
+    const res = await createShare(ownerId, projectId, {
+      showAngebote: false, angeboteFolderUrl: '',
+    });
+    assert.equal(res.status, 200);
+    const { id, token } = await res.json() as { id: string; token: string };
+
+    // Empty string must NOT persist on the row ...
+    const row = await db.query.shares.findFirst({ where: eq(schema.shares.id, id) });
+    assert.equal((row!.settings as { angeboteFolderUrl?: string }).angeboteFolderUrl, undefined);
+
+    // ... and the customer view carries no link.
+    const view = await publicApp.request(`/api/share/${token}`);
+    const body = await view.json() as { settings: { angeboteFolderUrl?: string } };
+    assert.equal(body.settings.angeboteFolderUrl, undefined);
+  });
+
+  test('whitespace-only angeboteFolderUrl is treated as unset (200)', async () => {
+    const { ownerId, projectId } = await seedOwnerOnly();
+    const res = await createShare(ownerId, projectId, { angeboteFolderUrl: '   ' });
+    assert.equal(res.status, 200);
+  });
+
   test('javascript: URL rejected at create (400)', async () => {
     const { ownerId, projectId } = await seedOwnerOnly();
     const res = await createShare(ownerId, projectId, {

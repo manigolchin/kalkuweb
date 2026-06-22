@@ -37,11 +37,22 @@ const createShareSchema = z.object({
     // can never be persisted and later rendered as a button href in the
     // customer view (the public route also re-checks before exposing it).
     showAngebote: z.boolean().optional(),
+    // The share dialog ALWAYS sends this field, using '' when the project has
+    // no „04_Angebote"-Ordner link. An empty string is not a valid URL, so a
+    // bare `.url()` would 400 the entire share-creation request for every
+    // project without a folder link. Coerce empty/whitespace → undefined
+    // ("unset") FIRST, then validate any real value as an http(s) URL — so a
+    // javascript:/data: URL still can never be persisted.
     angeboteFolderUrl: z
-      .string()
-      .max(1000)
-      .url()
-      .refine((u) => /^https?:\/\//i.test(u), { message: 'must be http(s)' })
+      .preprocess(
+        (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+        z
+          .string()
+          .max(1000)
+          .url()
+          .refine((u) => /^https?:\/\//i.test(u), { message: 'must be http(s)' })
+          .optional(),
+      )
       .optional(),
     bindefristDays: z.number().int().min(1).max(365).optional(),
     /** PART J: optional gate password. Plaintext over TLS, server hashes
