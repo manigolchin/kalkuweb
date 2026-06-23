@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-06-23 16:55 — Daily backup of the panel calculations DB
+- Source: user — "after each calculation will save it and dont delet it? ... should we have also backup if sth happen to our server?"
+- Branch: claude-auto/2026-06-23-live-collaboration — commit 0f2ebaf (server-ops; no container redeploy)
+- Result: verified persistence (named volume `kalku-website_kalku-panel-data`, 52 projects intact, survives deploys) + found the existing 3am cron backs up ONLY procurement, not the panel. Added `~/backups/backup-panel-db.sh` (repo `scripts/backup-panel-db.sh`) + cron 3:15 daily: VACUUM INTO snapshot → gzip (~900 KB) → 30-day retention. Ran once + restore-tested (unzipped → 52 projects). Existing crontab entries preserved.
+- Notes: OneDrive off-site upload is built into the script (rclone, gated) but PENDING — rclone not installed (no passwordless sudo → install to ~/bin) and OneDrive/SharePoint needs the user's one-time Microsoft OAuth (can't enter their creds). Gzipped backup ~27 MB/month → size is a non-issue for OneDrive. See [[reference_panel_db_backup.md]].
+
 ## 2026-06-23 16:45 — True live sync (SSE push) for collaboration
 - Source: user — "so we can 2 people work together and will show immediatly?" → chose "True live sync (SSE push)" over the ~6s polling
 - Branch: claude-auto/2026-06-23-live-collaboration — commit 0125c07
