@@ -15,14 +15,20 @@ set -uo pipefail
 BACKUP_DIR="${BACKUP_DIR:-/home/admin/backups}"
 CONTAINER="${CONTAINER:-kalku-panel-api}"
 DB_IN_CONTAINER="${DB_IN_CONTAINER:-/app/data/kalku.db}"
-RETENTION_DAYS="${RETENTION_DAYS:-30}"
 
-# OneDrive / off-site (optional until configured). Set up once with rclone:
-#   rclone config   # create a remote (OneDrive personal OR a SharePoint site)
-# then this script auto-uploads each new backup. Override the remote/path here
-# or via env if your remote isn't named "onedrive".
+# RETENTION POLICY: KEEP EVERYTHING — never delete a backup (user request
+# 2026-06-23: "back up all our calculations and dont delete them because after
+# 6 month maybe i will need that auschreibung calculation"). Each daily file is
+# a full snapshot of every calc, so any deleted-from-the-app calc stays
+# recoverable from any older backup. Size is trivial (~900 KB/day → ~0.3 GB/yr).
+# If on-server disk ever needs trimming, prune OLD LOCAL files only — the
+# OneDrive copies are the permanent archive and must stay untouched.
+
+# OneDrive off-site (rclone remote "onedrive" = the IT-Team Shared Documents
+# library). Uploads into ONE dedicated NEW folder; nothing else in the library
+# is ever read, moved, or deleted.
 ONEDRIVE_REMOTE="${ONEDRIVE_REMOTE:-onedrive}"
-ONEDRIVE_PATH="${ONEDRIVE_PATH:-IT-Team - Documents/kalku-backups}"
+ONEDRIVE_PATH="${ONEDRIVE_PATH:-kalku-backups}"
 
 TS="$(date +%Y%m%d_%H%M%S)"
 OUT="${BACKUP_DIR}/kalku_website_${TS}.db.gz"
@@ -52,17 +58,17 @@ fi
 SIZE="$(du -h "${OUT}" | cut -f1)"
 echo "$(date): panel backup OK: ${OUT} (${SIZE})"
 
-# 3. Retention — keep the last ${RETENTION_DAYS} days on-server.
-find "${BACKUP_DIR}" -name 'kalku_website_*.db.gz' -mtime "+${RETENTION_DAYS}" -delete
+# 3. NO local deletion — keep every snapshot (see retention policy above).
 
-# 4. Off-site copy (OneDrive/SharePoint via rclone) — only if configured. Until
-#    then this is a no-op and the local backup still succeeds.
+# 4. Off-site copy to OneDrive (only if rclone + the remote are configured).
+#    `copy` is upload-only + additive: it can never delete or overwrite anything
+#    in the library, and it only ever writes inside the dedicated folder. There
+#    is intentionally NO delete/sync/move anywhere here — backups are kept
+#    forever off-site too.
 RCLONE="$(command -v rclone || echo "${HOME}/bin/rclone")"
 if [ -x "${RCLONE}" ] && "${RCLONE}" listremotes 2>/dev/null | grep -q "^${ONEDRIVE_REMOTE}:"; then
   if "${RCLONE}" copy "${OUT}" "${ONEDRIVE_REMOTE}:${ONEDRIVE_PATH}/"; then
-    echo "$(date): off-site copy to ${ONEDRIVE_REMOTE}:${ONEDRIVE_PATH} OK"
-    # Mirror the 30-day retention off-site too.
-    "${RCLONE}" delete --min-age "${RETENTION_DAYS}d" "${ONEDRIVE_REMOTE}:${ONEDRIVE_PATH}/" 2>/dev/null || true
+    echo "$(date): off-site copy to ${ONEDRIVE_REMOTE}:${ONEDRIVE_PATH} OK (kept forever)"
   else
     echo "$(date): off-site copy to OneDrive FAILED (local backup still saved)"
   fi
