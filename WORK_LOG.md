@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-06-23 16:30 — Team dialog member picker + collaboration hardening
+- Source: user ("it should show list of members" — screenshot of the free-text email box) + self-run adversarial review of the live-collaboration feature
+- Branch: claude-auto/2026-06-23-live-collaboration — commit 9fb175a
+- Result: committed 9fb175a → pushed → deployed (server cherry-pick 636dac3→c5d71ca, all 4 containers healthy, health ok, live index hash index-BfdBzx23.js matches local, /assignable-users returns 401 = mounted). Both kalku-website + kalku-panel-api rebuilt.
+- Notes: Replaced the free-text email field in the "Team / Zugriff" dialog with a member PICKER — new manager-only `GET /projects/:id/assignable-users` (active users minus owner + existing collaborators), rendered as avatar+name+email rows with per-row Hinzufügen + a search box past 5 users. Ran a 4-dimension adversarial Workflow review (23 agents) over the whole feature; verdict FIX-FIRST, 10 confirmed findings. Fixed: (M) calcParams now merges FIELD-by-field so two people changing different Stellschrauben don't silently revert each other (real data-loss gap); (M) plain collaborators can now LEAVE via a LogOut action on their own row; (low) POST collaborators returns uniform 404 not 403 to non-members (existence-oracle); (low) baseline the dirty-check against normalized+recalc'd payload to kill a phantom save on first open of legacy calcs; (low) unref'd presence sweep + sendBeacon-on-pagehide leave; (low) dialog focus-trap + restore, per-avatar aria on presence bar, distinct add-error/directory-load-failure messages. Tests: collab 12 + merge 11 (added oracle, presence-sweep, calcParams cases); panel-api 582 green; lint+build clean; browser-verified picker (lists Sascha/Vanessa, add moves to roster).
+
 ## 2026-06-23 15:55 — Live collaboration: multiple users edit one calculation at once
 - Source: user (boss WhatsApp screenshot) — "es muss zudem möglich sein dass mehrere Leute gleichzeitig an einer Kalkulation arbeiten können"
 - Branch: claude-auto/2026-06-23-live-collaboration — commit 40cfb4c
