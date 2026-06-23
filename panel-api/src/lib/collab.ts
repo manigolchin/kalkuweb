@@ -93,6 +93,64 @@ export function leave(projectId: string, userId: string): void {
   if (peers.size === 0) presenceByProject.delete(projectId);
 }
 
+/** All live peers on a project (including the caller) — for SSE presence pushes
+ *  where each recipient filters itself out client-side. */
+export function listAllPeers(projectId: string, now: number = Date.now()): PresencePeer[] {
+  const peers = presenceByProject.get(projectId);
+  if (!peers) return [];
+  prune(peers, now);
+  return [...peers.values()];
+}
+
+// ── Live push (Server-Sent Events) ───────────────────────────────────────────
+// True live sync: a save (or presence change) is pushed to every open editor of
+// that project over an SSE stream, so changes appear in well under a second
+// instead of waiting for the next poll. Single Node process, so a Map of open
+// streams per project is the whole mechanism.
+
+export type ProjectEvent = { type: string; [key: string]: unknown };
+export type SseSubscriber = { id: string; userId: string; send: (data: string) => void };
+
+const subsByProject = new Map<string, Map<string, SseSubscriber>>();
+
+/** Register an open SSE stream for a project. */
+export function subscribe(projectId: string, sub: SseSubscriber): void {
+  let m = subsByProject.get(projectId);
+  if (!m) {
+    m = new Map();
+    subsByProject.set(projectId, m);
+  }
+  m.set(sub.id, sub);
+}
+
+/** Remove a closed SSE stream. */
+export function unsubscribe(projectId: string, subId: string): void {
+  const m = subsByProject.get(projectId);
+  if (!m) return;
+  m.delete(subId);
+  if (m.size === 0) subsByProject.delete(projectId);
+}
+
+/** Push an event to every open stream of a project. Best-effort per subscriber —
+ *  a write to a dead stream is swallowed (its onAbort will unsubscribe it). */
+export function publish(projectId: string, event: ProjectEvent): void {
+  const m = subsByProject.get(projectId);
+  if (!m) return;
+  const data = JSON.stringify(event);
+  for (const sub of m.values()) {
+    try {
+      sub.send(data);
+    } catch {
+      /* dead stream — cleanup happens on its abort handler */
+    }
+  }
+}
+
+/** Open SSE streams for a project (test/diagnostics). */
+export function subscriberCount(projectId: string): number {
+  return subsByProject.get(projectId)?.size ?? 0;
+}
+
 /**
  * Reclaim presence for fully-abandoned projects. heartbeat() only prunes the
  * project it touches, so a project whose last viewer hard-closed the tab (no
@@ -112,7 +170,8 @@ export function sweep(now: number = Date.now()): void {
 const sweepTimer = setInterval(() => sweep(), PRESENCE_TTL_MS);
 sweepTimer.unref?.();
 
-/** Test-only: wipe all presence state between cases. */
+/** Test-only: wipe all presence + subscriber state between cases. */
 export function _resetPresence(): void {
   presenceByProject.clear();
+  subsByProject.clear();
 }

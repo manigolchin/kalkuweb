@@ -293,6 +293,37 @@ describe('Live-Zusammenarbeit — access grants', () => {
     assert.equal(missing.status, 404, 'non-existent project → 404 (indistinguishable)');
   });
 
+  test('SSE pub/sub: publish reaches live subscribers, not unsubscribed ones', async () => {
+    const pid = 'sse-' + nanoid(6);
+    const a: string[] = [];
+    const b: string[] = [];
+    collab.subscribe(pid, { id: 's1', userId: 'u1', send: (d) => a.push(d) });
+    collab.subscribe(pid, { id: 's2', userId: 'u2', send: (d) => b.push(d) });
+    assert.equal(collab.subscriberCount(pid), 2);
+
+    collab.publish(pid, { type: 'project-updated', updatedAt: 123, versionNumber: 2 });
+    assert.equal(a.length, 1);
+    assert.equal(b.length, 1);
+    assert.deepEqual(JSON.parse(a[0]), { type: 'project-updated', updatedAt: 123, versionNumber: 2 });
+
+    collab.unsubscribe(pid, 's2');
+    assert.equal(collab.subscriberCount(pid), 1);
+    collab.publish(pid, { type: 'presence', peers: [] });
+    assert.equal(a.length, 2, 's1 still receives');
+    assert.equal(b.length, 1, 's2 no longer receives');
+
+    // A throwing subscriber must not break delivery to the others.
+    collab.subscribe(pid, {
+      id: 's3',
+      userId: 'u3',
+      send: () => {
+        throw new Error('dead stream');
+      },
+    });
+    assert.doesNotThrow(() => collab.publish(pid, { type: 'ping' }));
+    assert.equal(a.length, 3, 's1 still gets it despite s3 throwing');
+  });
+
   test('presence sweep prunes peers past the TTL', async () => {
     const owner = await seedUser();
     const pid = await seedProject(owner.id);

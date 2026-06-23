@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { streamSSE } from 'hono/streaming';
 import { z } from 'zod';
 import { and, desc, eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
@@ -8,7 +9,15 @@ import { requireAuth, type AuthVariables } from '../lib/middleware.js';
 import { recomputePositions } from '../lib/snapshot.js';
 import { evaluateAufmass } from '../lib/aufmass.js';
 import { getProjectPositions, isPreisanfrageEnabled } from '../lib/preisanfrage.js';
-import { resolveProjectAccess, heartbeat, leave } from '../lib/collab.js';
+import {
+  resolveProjectAccess,
+  heartbeat,
+  leave,
+  listAllPeers,
+  subscribe,
+  unsubscribe,
+  publish,
+} from '../lib/collab.js';
 
 const DEFAULT_CALC_PARAMS = {
   mittellohn: 30.0,
@@ -538,11 +547,56 @@ export const projectsRoute = new Hono<{ Variables: AuthVariables }>()
       );
     }
 
+    // Live push: tell every open editor of this project to pull the new version
+    // now, so changes land in well under a second instead of on the next poll.
+    publish(id, {
+      type: 'project-updated',
+      updatedAt: nowDate.getTime(),
+      versionNumber: nextVersion,
+    });
+
     return c.json({
       id: existing.id,
       data: dataToStore,
       versionNumber: nextVersion,
       updatedAt: nowDate,
+    });
+  })
+
+  // SSE live-sync stream — an open editor subscribes here and receives a push
+  // whenever the project is saved or the presence set changes. Kept-alive with
+  // periodic pings; the client also keeps a slow poll as a fallback if the
+  // stream drops. X-Accel-Buffering disables nginx proxy buffering so events
+  // flush immediately.
+  .get('/:id/events', requireAuth, async (c) => {
+    const id = c.req.param('id');
+    const userId = c.get('userId');
+    const access = await resolveProjectAccess(id, userId);
+    if (!access || !access.canAccess) return c.json({ error: 'not_found' }, 404);
+    c.header('Cache-Control', 'no-cache, no-transform');
+    c.header('X-Accel-Buffering', 'no');
+    return streamSSE(c, async (stream) => {
+      const subId = nanoid(10);
+      subscribe(id, {
+        id: subId,
+        userId,
+        send: (data) => {
+          stream.writeSSE({ data }).catch(() => {});
+        },
+      });
+      // On disconnect: drop the subscriber AND the presence entry, then tell the
+      // others so the bar clears instantly instead of waiting out the TTL.
+      stream.onAbort(() => {
+        unsubscribe(id, subId);
+        leave(id, userId);
+        publish(id, { type: 'presence', peers: listAllPeers(id) });
+      });
+      await stream.writeSSE({ event: 'hello', data: JSON.stringify({ ok: true }) });
+      while (!stream.aborted) {
+        await stream.sleep(25_000);
+        if (stream.aborted) break;
+        await stream.writeSSE({ event: 'ping', data: '1' }).catch(() => {});
+      }
     });
   })
 
@@ -577,6 +631,9 @@ export const projectsRoute = new Hono<{ Variables: AuthVariables }>()
       columns: { name: true },
     });
     const peers = heartbeat(id, { userId, name: me?.name || 'Unbekannt' }, editing);
+    // Push the updated roster to the other open editors so joins + editing dots
+    // appear live (each filters itself out client-side).
+    publish(id, { type: 'presence', peers: listAllPeers(id) });
     return c.json({ peers });
   })
 
@@ -586,6 +643,7 @@ export const projectsRoute = new Hono<{ Variables: AuthVariables }>()
     const id = c.req.param('id');
     const userId = c.get('userId');
     leave(id, userId);
+    publish(id, { type: 'presence', peers: listAllPeers(id) });
     return c.json({ ok: true });
   })
 

@@ -31,6 +31,7 @@ import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { Helmet } from 'react-helmet-async';
 import { api, ApiError, VersionConflictError } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import type {
   CalcParams,
   Position,
@@ -73,6 +74,8 @@ function readSavedTableVersion(): TableVersion {
 
 export default function ProjectDetail() {
   const { id = '' } = useParams<{ id: string }>();
+  const { user } = useAuth();
+  const currentUserId = user?.id ?? null;
   const [project, setProject] = useState<ProjectDetailType | null>(null);
   const [data, setData] = useState<ProjectData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -326,6 +329,57 @@ export default function ProjectDetail() {
       api.projects.presenceLeave(id).catch(() => {});
     };
   }, [id, loading, error, reconcileWithServer]);
+
+  // True live sync: an SSE stream pushes a "project-updated" the instant a
+  // coworker saves (sub-second), and a "presence" event when the roster changes.
+  // The polling effect above stays as a fallback if the stream drops; EventSource
+  // reconnects on its own. Both paths funnel through reconcileWithServer(), whose
+  // updatedAt guard + reconcilingRef make double-delivery a no-op.
+  useEffect(() => {
+    if (!id || loading || error) return;
+    let es: EventSource | null = null;
+    try {
+      es = new EventSource(`/api/panel/projects/${id}/events`);
+    } catch {
+      return; // EventSource unsupported — the poll fallback covers it.
+    }
+    es.onmessage = (e) => {
+      let ev: { type?: string; updatedAt?: number; peers?: PresencePeer[] };
+      try {
+        ev = JSON.parse(e.data);
+      } catch {
+        return;
+      }
+      if (ev.type === 'project-updated') {
+        if (
+          savingStateRef.current !== 'saving' &&
+          !reconcilingRef.current &&
+          typeof ev.updatedAt === 'number' &&
+          ev.updatedAt > updatedAtRef.current
+        ) {
+          reconcileWithServer();
+        }
+      } else if (ev.type === 'presence' && Array.isArray(ev.peers)) {
+        setPeers(ev.peers.filter((p) => p.userId !== currentUserId));
+      }
+    };
+    // onerror is non-fatal: EventSource auto-reconnects, and the poll is backup.
+    es.onerror = () => {};
+    return () => {
+      es?.close();
+    };
+  }, [id, loading, error, reconcileWithServer, currentUserId]);
+
+  // When my editing-state flips, beat presence immediately (instead of waiting
+  // for the 6s loop) so the "bearbeitet gerade" dot lights up live for others.
+  const isEditing = savingState === 'pending' || savingState === 'saving';
+  useEffect(() => {
+    if (!id || loading || error) return;
+    api.projects
+      .presence(id, isEditing)
+      .then(({ peers }) => setPeers(peers))
+      .catch(() => {});
+  }, [isEditing, id, loading, error]);
 
   const totals = useMemo(
     () => (data ? calcTotals(data.positions, data.calcParams) : null),

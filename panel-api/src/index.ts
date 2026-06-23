@@ -40,7 +40,10 @@ const app = new Hono();
 app.use('*', requestId());
 app.use('*', logger());
 app.use('*', securityHeaders());
-app.use('*', compress());
+// Compress everything EXCEPT the SSE live-sync stream — compression buffers the
+// response and would stop events from flushing in real time.
+const compressMw = compress();
+app.use('*', (c, next) => (c.req.path.endsWith('/events') ? next() : compressMw(c, next)));
 
 const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5174,http://localhost:4173')
   .split(',')
