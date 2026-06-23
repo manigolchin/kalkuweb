@@ -144,8 +144,16 @@ export default function ProjectDetail() {
         const detail = await api.projects.get(id);
         if (!alive) return;
         setProject(detail);
-        setData(normalizeProject(detail.data));
-        lastSavedRef.current = JSON.stringify(detail.data);
+        const norm = normalizeProject(detail.data);
+        setData(norm);
+        // Baseline must match what the auto-save effect computes ({...data,
+        // positions: recalcAll(...)}); using the RAW server data here made every
+        // legacy record look "dirty" on open and fire a phantom save + cross-tab
+        // reconcile toast. (Audit follow-up.)
+        lastSavedRef.current = JSON.stringify({
+          ...norm,
+          positions: recalcAll(norm.positions, norm.calcParams),
+        });
         updatedAtRef.current = new Date(detail.updatedAt).getTime();
         // Fire-and-forget — runs in parallel with the initial render.
         refreshCommentCounts();
@@ -299,9 +307,21 @@ export default function ProjectDetail() {
     };
     beat();
     const timer = setInterval(beat, COLLAB_POLL_MS);
+    // A normal fetch doesn't reliably flush on hard tab close, so also fire the
+    // leave via sendBeacon on pagehide — that clears the presence bar for the
+    // others immediately instead of waiting out the server TTL.
+    const onPageHide = () => {
+      try {
+        navigator.sendBeacon?.(`/api/panel/projects/${id}/presence/leave`);
+      } catch {
+        /* sendBeacon unsupported / blocked — TTL is the fallback */
+      }
+    };
+    window.addEventListener('pagehide', onPageHide);
     return () => {
       cancelled = true;
       clearInterval(timer);
+      window.removeEventListener('pagehide', onPageHide);
       // Clear my presence for the others right away instead of waiting for TTL.
       api.projects.presenceLeave(id).catch(() => {});
     };

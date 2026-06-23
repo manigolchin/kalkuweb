@@ -624,13 +624,42 @@ export const projectsRoute = new Hono<{ Variables: AuthVariables }>()
     });
   })
 
+  // Directory of panel users this project can still be shared WITH — active
+  // accounts minus the owner and anyone already added. Powers the "add member"
+  // picker so the owner chooses from a list instead of typing emails. Limited to
+  // someone who can manage (owner/admin) — a plain collaborator never sees the
+  // full user directory.
+  .get('/:id/assignable-users', requireAuth, async (c) => {
+    const id = c.req.param('id');
+    const userId = c.get('userId');
+    const access = await resolveProjectAccess(id, userId);
+    if (!access || !access.canAccess) return c.json({ error: 'not_found' }, 404);
+    const canManage = access.isOwner || c.get('userRole') === 'admin';
+    if (!canManage) return c.json({ error: 'forbidden' }, 403);
+    const existing = await db
+      .select({ userId: projectCollaborators.userId })
+      .from(projectCollaborators)
+      .where(eq(projectCollaborators.projectId, id));
+    const taken = new Set<string>([access.ownerId, ...existing.map((r) => r.userId)]);
+    const all = await db
+      .select({ id: users.id, name: users.name, email: users.email })
+      .from(users)
+      .where(eq(users.isActive, true))
+      .orderBy(users.name);
+    return c.json({ users: all.filter((u) => !taken.has(u.id)) });
+  })
+
   // Grant edit access to another panel user (by id or email). Owner/admin only.
   .post('/:id/collaborators', requireAuth, async (c) => {
     const id = c.req.param('id');
     const userId = c.get('userId');
     const access = await resolveProjectAccess(id, userId);
-    if (!access) return c.json({ error: 'not_found' }, 404);
-    const canManage = access.isOwner || c.get('userRole') === 'admin';
+    const isAdmin = c.get('userRole') === 'admin';
+    // Match the uniform 404 the rest of the file returns for non-existent OR
+    // inaccessible projects, so a plain user can't probe which ids exist. Admins
+    // legitimately manage projects they aren't a member of, so they're exempt.
+    if (!access || (!access.canAccess && !isAdmin)) return c.json({ error: 'not_found' }, 404);
+    const canManage = access.isOwner || isAdmin;
     if (!canManage) return c.json({ error: 'forbidden' }, 403);
     const body = await c.req.json().catch(() => null);
     const parsed = z

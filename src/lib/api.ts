@@ -238,6 +238,10 @@ export const api = {
     /** Owner + collaborators of a project. */
     collaborators: (id: string) =>
       request<ProjectCollaborators>(`/projects/${id}/collaborators`),
+    /** Panel users this project can still be shared with (the add-member picker).
+     *  Owner/admin only; excludes the owner + existing collaborators. */
+    assignableUsers: (id: string) =>
+      request<{ users: ProjectCollaborator[] }>(`/projects/${id}/assignable-users`),
     /** Grant edit access to another panel user (by id or email). Owner/admin only. */
     addCollaborator: (id: string, input: { userId?: string; email?: string }) =>
       request<{ ok: true; collaborator: ProjectCollaborator }>(

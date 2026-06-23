@@ -228,6 +228,94 @@ describe('Live-Zusammenarbeit — access grants', () => {
     assert.equal(after.status, 404, 'access revoked after leaving');
   });
 
+  test('assignable-users lists candidates minus owner + existing + inactive', async () => {
+    const owner = await seedUser();
+    const alice = await seedUser();
+    const bob = await seedUser();
+    const inactive = await seedUser({ isActive: false });
+    const pid = await seedProject(owner.id);
+    const ownerCookie = await cookie(owner.id, owner.email);
+
+    // Alice is already a collaborator → must NOT appear as a candidate.
+    await app.request(
+      `/projects/${pid}/collaborators`,
+      json({ userId: alice.id }, { Cookie: ownerCookie }),
+    );
+
+    const res = await app.request(`/projects/${pid}/assignable-users`, {
+      headers: { Cookie: ownerCookie },
+    });
+    assert.equal(res.status, 200);
+    const { users } = (await res.json()) as { users: Array<{ id: string }> };
+    const ids = users.map((u) => u.id);
+    assert.ok(ids.includes(bob.id), 'free user is a candidate');
+    assert.ok(!ids.includes(owner.id), 'owner is not a candidate');
+    assert.ok(!ids.includes(alice.id), 'existing collaborator is not a candidate');
+    assert.ok(!ids.includes(inactive.id), 'inactive user is not a candidate');
+  });
+
+  test('assignable-users is manager-only (collaborator gets 403)', async () => {
+    const owner = await seedUser();
+    const coworker = await seedUser();
+    const pid = await seedProject(owner.id);
+    const ownerCookie = await cookie(owner.id, owner.email);
+    const coCookie = await cookie(coworker.id, coworker.email);
+    await app.request(
+      `/projects/${pid}/collaborators`,
+      json({ userId: coworker.id }, { Cookie: ownerCookie }),
+    );
+
+    const res = await app.request(`/projects/${pid}/assignable-users`, {
+      headers: { Cookie: coCookie },
+    });
+    assert.equal(res.status, 403, 'a plain collaborator cannot read the user directory');
+  });
+
+  test('add-collaborator returns 404 (not 403) to a non-member — no existence oracle', async () => {
+    const owner = await seedUser();
+    const stranger = await seedUser();
+    const victim = await seedUser();
+    const pid = await seedProject(owner.id);
+    const strangerCookie = await cookie(stranger.id, stranger.email);
+
+    // A plain user who is neither owner nor collaborator must get the SAME 404
+    // as for a non-existent project, so they can't probe which ids exist.
+    const real = await app.request(
+      `/projects/${pid}/collaborators`,
+      json({ userId: victim.id }, { Cookie: strangerCookie }),
+    );
+    assert.equal(real.status, 404, 'existing-but-inaccessible project → 404');
+
+    const missing = await app.request(
+      `/projects/does-not-exist/collaborators`,
+      json({ userId: victim.id }, { Cookie: strangerCookie }),
+    );
+    assert.equal(missing.status, 404, 'non-existent project → 404 (indistinguishable)');
+  });
+
+  test('presence sweep prunes peers past the TTL', async () => {
+    const owner = await seedUser();
+    const pid = await seedProject(owner.id);
+    const t0 = 1_000_000;
+    // Two peers heartbeat at t0.
+    collab.heartbeat(pid, { userId: 'u1', name: 'One' }, false, t0);
+    collab.heartbeat(pid, { userId: 'u2', name: 'Two' }, false, t0);
+    // u2 refreshes just before the sweep; u1 has gone silent past the TTL.
+    collab.heartbeat(pid, { userId: 'u2', name: 'Two' }, false, t0 + collab.PRESENCE_TTL_MS - 1);
+    collab.sweep(t0 + collab.PRESENCE_TTL_MS + 1);
+    // After the sweep u1 is gone; u2 (seen from u1's perspective) remains.
+    const peersFromU1 = collab.heartbeat(
+      pid,
+      { userId: 'u1', name: 'One' },
+      false,
+      t0 + collab.PRESENCE_TTL_MS + 2,
+    );
+    assert.ok(
+      peersFromU1.some((p) => p.userId === 'u2'),
+      'u2 still present (refreshed in time)',
+    );
+  });
+
   test('admin (non-owner) can manage collaborators', async () => {
     const owner = await seedUser();
     const admin = await seedUser({ role: 'admin' });

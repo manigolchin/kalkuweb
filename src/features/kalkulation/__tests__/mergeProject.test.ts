@@ -116,4 +116,25 @@ describe('mergeProjectData — top-level fields', () => {
     const merged = mergeProjectData(base, mine, theirs);
     expect(merged.notes).toBe('coworker note');
   });
+
+  test('two people change DIFFERENT calcParams (Stellschrauben) → both survive', () => {
+    const cp = (over: Partial<ProjectData['calcParams']>) =>
+      ({ verrechnungslohn: 49.9, mittellohn: 30, materialZuschlag: 0.12, ...over }) as ProjectData['calcParams'];
+    const base = projectData([pos('a')], { calcParams: cp({}) });
+    const mine = projectData([pos('a')], { calcParams: cp({ mittellohn: 42 }) }); // I changed Mittellohn
+    const theirs = projectData([pos('a')], { calcParams: cp({ materialZuschlag: 0.2 }) }); // they changed Zuschlag
+    const merged = mergeProjectData(base, mine, theirs);
+    expect(merged.calcParams.mittellohn).toBe(42);
+    expect(merged.calcParams.materialZuschlag).toBe(0.2);
+    expect(merged.calcParams.verrechnungslohn).toBe(49.9);
+  });
+
+  test('same calcParam edited by both → mine wins, never silently reverted', () => {
+    const cp = (v: number) => ({ verrechnungslohn: v } as ProjectData['calcParams']);
+    const base = projectData([pos('a')], { calcParams: cp(49.9) });
+    const mine = projectData([pos('a')], { calcParams: cp(60) });
+    const theirs = projectData([pos('a')], { calcParams: cp(55) });
+    const merged = mergeProjectData(base, mine, theirs);
+    expect(merged.calcParams.verrechnungslohn).toBe(60);
+  });
 });

@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Users, X, UserPlus, Crown, Loader2, AlertCircle, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Users, X, UserPlus, Crown, Loader2, AlertCircle, Trash2, Search, LogOut } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 import { api, ApiError } from '@/lib/api';
-import type { PresencePeer, ProjectCollaborators } from './types';
+import { useAuth } from '@/lib/auth';
+import type { PresencePeer, ProjectCollaborator, ProjectCollaborators } from './types';
 
 /** Deterministic, accessible colour per person so the same name always gets the
  *  same avatar tint across tabs. */
@@ -41,6 +43,8 @@ export function PresenceBar({ peers }: { peers: PresencePeer[] }) {
   const overflow = peers.length - shown.length;
   return (
     <div
+      role="status"
+      aria-live="polite"
       className="flex items-center gap-1.5 pl-1 pr-2 h-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60"
       aria-label={`${peers.length} weitere Person${peers.length === 1 ? '' : 'en'} aktiv`}
       title={peers.map((p) => p.name + (p.editing ? ' (bearbeitet)' : '')).join(', ')}
@@ -49,6 +53,9 @@ export function PresenceBar({ peers }: { peers: PresencePeer[] }) {
         {shown.map((p) => (
           <span
             key={p.userId}
+            role="img"
+            aria-label={p.name + (p.editing ? ' — bearbeitet gerade' : ' — online')}
+            title={p.name + (p.editing ? ' (bearbeitet)' : '')}
             className={clsx(
               'inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold text-white ring-2',
               tintFor(p.userId),
@@ -85,17 +92,41 @@ type TeamDialogProps = {
  * roster. Backs "Bülent + Unternehmer + Mitarbeiter an einer Kalkulation".
  */
 export function TeamDialog({ projectId, open, onClose }: TeamDialogProps) {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const currentUserId = user?.id ?? null;
   const [roster, setRoster] = useState<ProjectCollaborators | null>(null);
+  const [assignable, setAssignable] = useState<ProjectCollaborator[]>([]);
+  const [assignableError, setAssignableError] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [email, setEmail] = useState('');
-  const [adding, setAdding] = useState(false);
+  const [filter, setFilter] = useState('');
+  const [addingId, setAddingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeBtnRef = useRef<HTMLButtonElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      setRoster(await api.projects.collaborators(projectId));
+      const r = await api.projects.collaborators(projectId);
+      setRoster(r);
+      // Only managers get the directory of people to add (server enforces it too).
+      if (r.canManage) {
+        try {
+          const { users } = await api.projects.assignableUsers(projectId);
+          setAssignable(users);
+          setAssignableError(false);
+        } catch {
+          // Distinct from "everyone already has access" so the empty-state copy
+          // doesn't masquerade as success when the directory fetch failed.
+          setAssignable([]);
+          setAssignableError(true);
+        }
+      } else {
+        setAssignable([]);
+        setAssignableError(false);
+      }
     } catch {
       setError('Team konnte nicht geladen werden.');
     } finally {
@@ -104,56 +135,102 @@ export function TeamDialog({ projectId, open, onClose }: TeamDialogProps) {
   }, [projectId]);
 
   useEffect(() => {
-    if (open) load();
+    if (open) {
+      setFilter('');
+      load();
+    }
   }, [open, load]);
 
+  // Focus management: move focus into the dialog on open, trap Tab inside it,
+  // and restore focus to the opener on close. (WCAG 2.4.3 / 2.1.2.)
   useEffect(() => {
     if (!open) return;
+    const opener = document.activeElement as HTMLElement | null;
+    closeBtnRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const root = dialogRef.current;
+      if (!root) return;
+      const focusable = root.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      opener?.focus?.();
+    };
   }, [open, onClose]);
-
-  if (!open) return null;
 
   const canManage = roster?.canManage ?? false;
 
-  async function addByEmail(e: React.FormEvent) {
-    e.preventDefault();
-    const value = email.trim().toLowerCase();
-    if (!value) return;
-    setAdding(true);
+  const filteredAssignable = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    if (!q) return assignable;
+    return assignable.filter(
+      (u) => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q),
+    );
+  }, [assignable, filter]);
+
+  if (!open) return null;
+
+  async function addUser(u: ProjectCollaborator) {
+    setAddingId(u.id);
     setError(null);
     try {
-      const { collaborator } = await api.projects.addCollaborator(projectId, { email: value });
-      toast.success(`${collaborator.name} kann jetzt mitarbeiten.`);
-      setEmail('');
+      await api.projects.addCollaborator(projectId, { userId: u.id });
+      toast.success(`${u.name} kann jetzt mitarbeiten.`);
       await load();
     } catch (err) {
-      if (err instanceof ApiError && err.status === 404) {
-        setError('Kein Panel-Benutzer mit dieser E-Mail gefunden.');
-      } else if (err instanceof ApiError && err.message === 'already_owner') {
-        setError('Diese Person ist bereits Eigentümer der Kalkulation.');
-      } else if (err instanceof ApiError && err.status === 403) {
-        setError('Nur der Eigentümer kann Personen hinzufügen.');
-      } else {
-        setError('Hinzufügen fehlgeschlagen.');
-      }
+      const status = err instanceof ApiError ? err.status : 0;
+      setError(
+        status === 403
+          ? 'Keine Berechtigung mehr — bitte neu laden.'
+          : status === 404
+            ? 'Benutzer oder Projekt nicht gefunden.'
+            : 'Hinzufügen fehlgeschlagen.',
+      );
     } finally {
-      setAdding(false);
+      setAddingId(null);
     }
   }
 
-  async function remove(userId: string, name: string) {
-    if (typeof window !== 'undefined' && !window.confirm(`${name} den Zugriff entziehen?`)) return;
+  // Owner/admin remove anyone; a collaborator removes only themselves ("leave").
+  async function removeOrLeave(u: ProjectCollaborator, isSelf: boolean) {
+    const ok =
+      typeof window === 'undefined' ||
+      window.confirm(
+        isSelf
+          ? 'Diese Kalkulation verlassen? Sie verlieren den Zugriff.'
+          : `${u.name} den Zugriff entziehen?`,
+      );
+    if (!ok) return;
     try {
-      await api.projects.removeCollaborator(projectId, userId);
-      toast.success(`${name} entfernt.`);
+      await api.projects.removeCollaborator(projectId, u.id);
+      if (isSelf) {
+        toast.success('Sie haben die Kalkulation verlassen.');
+        onClose();
+        navigate('/panel/kalkulation');
+        return;
+      }
+      toast.success(`${u.name} entfernt.`);
       await load();
     } catch {
-      toast.error('Entfernen fehlgeschlagen.');
+      toast.error(isSelf ? 'Verlassen fehlgeschlagen.' : 'Entfernen fehlgeschlagen.');
     }
   }
 
@@ -166,6 +243,7 @@ export function TeamDialog({ projectId, open, onClose }: TeamDialogProps) {
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
         className="w-full max-w-lg rounded-2xl bg-white dark:bg-slate-900 shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[calc(100vh-4rem)]"
         onClick={(e) => e.stopPropagation()}
       >
@@ -178,6 +256,7 @@ export function TeamDialog({ projectId, open, onClose }: TeamDialogProps) {
             </p>
           </div>
           <button
+            ref={closeBtnRef}
             onClick={onClose}
             aria-label="Schließen"
             className="ml-auto p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 dark:hover:text-slate-200 dark:hover:bg-slate-800"
@@ -239,15 +318,24 @@ export function TeamDialog({ projectId, open, onClose }: TeamDialogProps) {
                     </div>
                     <div className="text-xs text-slate-500 truncate">{c.email}</div>
                   </div>
-                  {canManage && (
-                    <button
-                      onClick={() => remove(c.id, c.name)}
-                      aria-label={`${c.name} entfernen`}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
+                  {(() => {
+                    const isSelf = c.id === currentUserId;
+                    if (!canManage && !isSelf) return null;
+                    return (
+                      <button
+                        onClick={() => removeOrLeave(c, isSelf && !canManage)}
+                        aria-label={isSelf && !canManage ? 'Projekt verlassen' : `${c.name} entfernen`}
+                        title={isSelf && !canManage ? 'Projekt verlassen' : `${c.name} entfernen`}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                      >
+                        {isSelf && !canManage ? (
+                          <LogOut className="w-4 h-4" />
+                        ) : (
+                          <Trash2 className="w-4 h-4" />
+                        )}
+                      </button>
+                    );
+                  })()}
                 </li>
               ))}
               {roster && roster.collaborators.length === 0 && (
@@ -260,31 +348,70 @@ export function TeamDialog({ projectId, open, onClose }: TeamDialogProps) {
           )}
 
           {canManage && (
-            <form
-              onSubmit={addByEmail}
-              className="flex items-center gap-2 pt-3 border-t border-slate-200 dark:border-slate-800"
-            >
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="kollege@kalku.de"
-                className="input flex-1"
-                aria-label="E-Mail des Kollegen"
-              />
-              <button
-                type="submit"
-                disabled={adding || !email.trim()}
-                className="btn btn-primary flex items-center gap-2 whitespace-nowrap disabled:opacity-50"
-              >
-                {adding ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <UserPlus className="w-4 h-4" />
-                )}
-                Hinzufügen
-              </button>
-            </form>
+            <div className="pt-3 border-t border-slate-200 dark:border-slate-800">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">
+                Kolleg:innen hinzufügen
+              </div>
+              {assignable.length > 5 && (
+                <div className="relative mb-2">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={filter}
+                    onChange={(e) => setFilter(e.target.value)}
+                    placeholder="Name oder E-Mail suchen…"
+                    className="input w-full pl-9"
+                    aria-label="Benutzer suchen"
+                  />
+                </div>
+              )}
+              {filteredAssignable.length === 0 ? (
+                <p className="text-xs text-slate-400 px-1 py-2">
+                  {assignableError
+                    ? 'Benutzerliste konnte nicht geladen werden.'
+                    : assignable.length === 0
+                      ? 'Alle aktiven Benutzer haben bereits Zugriff.'
+                      : 'Kein Benutzer passt zur Suche.'}
+                </p>
+              ) : (
+                <ul className="space-y-1 max-h-52 overflow-y-auto">
+                  {filteredAssignable.map((u) => (
+                    <li
+                      key={u.id}
+                      className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                    >
+                      <span
+                        className={clsx(
+                          'inline-flex items-center justify-center w-8 h-8 rounded-full text-xs font-bold text-white',
+                          tintFor(u.id),
+                        )}
+                      >
+                        {initials(u.name)}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
+                          {u.name}
+                        </div>
+                        <div className="text-xs text-slate-500 truncate">{u.email}</div>
+                      </div>
+                      <button
+                        onClick={() => addUser(u)}
+                        disabled={addingId === u.id}
+                        className="btn btn-secondary flex items-center gap-1.5 whitespace-nowrap text-sm disabled:opacity-50"
+                        aria-label={`${u.name} hinzufügen`}
+                      >
+                        {addingId === u.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <UserPlus className="w-4 h-4" />
+                        )}
+                        Hinzufügen
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
           {!canManage && roster && (
             <p className="text-xs text-slate-400 pt-2 border-t border-slate-200 dark:border-slate-800">

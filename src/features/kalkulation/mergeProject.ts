@@ -85,6 +85,26 @@ export function mergePositions(
   return result;
 }
 
+/** Field-level three-way merge of a flat record (the global Stellschrauben).
+ *  Same rule as rows: my field wins if I changed it, else theirs. Lets two
+ *  estimators tweak DIFFERENT calcParams (e.g. Mittellohn vs Material-Zuschlag)
+ *  at once without one silently reverting the other. */
+function mergeRecord<T extends Record<string, unknown>>(
+  base: T | undefined,
+  mine: T | undefined,
+  theirs: T | undefined,
+): T {
+  const b = base ?? ({} as T);
+  const m = mine ?? ({} as T);
+  const t = theirs ?? ({} as T);
+  const out: Record<string, unknown> = {};
+  const keys = new Set<string>([...Object.keys(b), ...Object.keys(m), ...Object.keys(t)]);
+  for (const k of keys) {
+    out[k] = changed(m[k], b[k]) ? m[k] : t[k];
+  }
+  return out as T;
+}
+
 /** Three-way merge of a whole ProjectData. See module doc for the rules. */
 export function mergeProjectData(
   base: ProjectData,
@@ -98,7 +118,8 @@ export function mergeProjectData(
     ...Object.keys(theirs),
   ]);
   for (const key of keys) {
-    if (key === 'positions') continue;
+    // positions (row-level) and calcParams (field-level) are merged below.
+    if (key === 'positions' || key === 'calcParams') continue;
     const b = (base as Record<string, unknown>)[key];
     const m = (mine as Record<string, unknown>)[key];
     const t = (theirs as Record<string, unknown>)[key];
@@ -109,6 +130,13 @@ export function mergeProjectData(
     base.positions ?? [],
     mine.positions ?? [],
     theirs.positions ?? [],
+  );
+  // calcParams drives EP/GP for every position — merge it field-by-field so a
+  // coworker's concurrent Stellschraube change isn't silently dropped.
+  result.calcParams = mergeRecord(
+    base.calcParams as unknown as Record<string, unknown>,
+    mine.calcParams as unknown as Record<string, unknown>,
+    theirs.calcParams as unknown as Record<string, unknown>,
   );
   return result as unknown as ProjectData;
 }

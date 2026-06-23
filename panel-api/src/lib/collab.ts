@@ -93,6 +93,25 @@ export function leave(projectId: string, userId: string): void {
   if (peers.size === 0) presenceByProject.delete(projectId);
 }
 
+/**
+ * Reclaim presence for fully-abandoned projects. heartbeat() only prunes the
+ * project it touches, so a project whose last viewer hard-closed the tab (no
+ * leave ever sent) would keep its stale entry for the process lifetime. This
+ * sweep, run on an interval, prunes every project and drops the empty ones.
+ * Exported + `now`-injectable for the unit test.
+ */
+export function sweep(now: number = Date.now()): void {
+  for (const [projectId, peers] of presenceByProject) {
+    prune(peers, now);
+    if (peers.size === 0) presenceByProject.delete(projectId);
+  }
+}
+
+// Single process-wide sweep timer. unref() so it never keeps the Node process
+// (or a test runner) alive on its own.
+const sweepTimer = setInterval(() => sweep(), PRESENCE_TTL_MS);
+sweepTimer.unref?.();
+
 /** Test-only: wipe all presence state between cases. */
 export function _resetPresence(): void {
   presenceByProject.clear();
