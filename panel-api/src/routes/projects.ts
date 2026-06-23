@@ -3,11 +3,12 @@ import { z } from 'zod';
 import { and, desc, eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { db } from '../db.js';
-import { projects, shares, type ProjectData } from '../schema.js';
+import { projects, projectCollaborators, shares, users, type ProjectData } from '../schema.js';
 import { requireAuth, type AuthVariables } from '../lib/middleware.js';
 import { recomputePositions } from '../lib/snapshot.js';
 import { evaluateAufmass } from '../lib/aufmass.js';
 import { getProjectPositions, isPreisanfrageEnabled } from '../lib/preisanfrage.js';
+import { resolveProjectAccess, heartbeat, leave } from '../lib/collab.js';
 
 const DEFAULT_CALC_PARAMS = {
   mittellohn: 30.0,
@@ -221,7 +222,7 @@ export function parsePreisanfrageRef(
 export const projectsRoute = new Hono<{ Variables: AuthVariables }>()
   .get('/', requireAuth, async (c) => {
     const userId = c.get('userId');
-    const rows = await db
+    const owned = await db
       .select({
         id: projects.id,
         data: projects.data,
@@ -233,22 +234,44 @@ export const projectsRoute = new Hono<{ Variables: AuthVariables }>()
       .where(eq(projects.ownerId, userId))
       .orderBy(desc(projects.updatedAt));
 
-    return c.json({
-      projects: rows.map((r) => ({
-        id: r.id,
-        name: r.data.name,
-        client: r.data.client,
-        // The Bauunternehmer the calc is for — lets the list group by Firma
-        // the same way the Kunden-Feedback inbox does. Full `data` is already
-        // loaded here, so this is free.
-        bidder: r.data.bidder || '',
-        service: r.data.service,
-        positionCount: r.data.positions?.length || 0,
-        updatedAt: r.updatedAt,
-        createdAt: r.createdAt,
-        versionNumber: r.versionNumber,
-      })),
+    // Live-Zusammenarbeit: also surface calculations a coworker shared with me,
+    // so they show up in my list and I can open + edit them. Joined on the
+    // collaborator grants for this user.
+    const shared = await db
+      .select({
+        id: projects.id,
+        data: projects.data,
+        versionNumber: projects.versionNumber,
+        createdAt: projects.createdAt,
+        updatedAt: projects.updatedAt,
+      })
+      .from(projectCollaborators)
+      .innerJoin(projects, eq(projects.id, projectCollaborators.projectId))
+      .where(eq(projectCollaborators.userId, userId))
+      .orderBy(desc(projects.updatedAt));
+
+    const toSummary = (r: (typeof owned)[number], role: 'owner' | 'collaborator') => ({
+      id: r.id,
+      name: r.data.name,
+      client: r.data.client,
+      // The Bauunternehmer the calc is for — lets the list group by Firma
+      // the same way the Kunden-Feedback inbox does. Full `data` is already
+      // loaded here, so this is free.
+      bidder: r.data.bidder || '',
+      service: r.data.service,
+      positionCount: r.data.positions?.length || 0,
+      updatedAt: r.updatedAt,
+      createdAt: r.createdAt,
+      versionNumber: r.versionNumber,
+      role,
     });
+
+    const all = [
+      ...owned.map((r) => toSummary(r, 'owner')),
+      ...shared.map((r) => toSummary(r, 'collaborator')),
+    ].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+
+    return c.json({ projects: all });
   })
 
   .post('/', requireAuth, async (c) => {
@@ -306,9 +329,9 @@ export const projectsRoute = new Hono<{ Variables: AuthVariables }>()
   .get('/:id', requireAuth, async (c) => {
     const id = c.req.param('id');
     const userId = c.get('userId');
-    const row = await db.query.projects.findFirst({
-      where: and(eq(projects.id, id), eq(projects.ownerId, userId)),
-    });
+    const access = await resolveProjectAccess(id, userId);
+    if (!access || !access.canAccess) return c.json({ error: 'not_found' }, 404);
+    const row = await db.query.projects.findFirst({ where: eq(projects.id, id) });
     if (!row) return c.json({ error: 'not_found' }, 404);
 
     const projectShares = await db
@@ -323,6 +346,9 @@ export const projectsRoute = new Hono<{ Variables: AuthVariables }>()
       versionNumber: row.versionNumber,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
+      // Live-Zusammenarbeit: tells the client whether this viewer is the owner
+      // (may delete / manage collaborators) or a granted collaborator.
+      role: access.isOwner ? ('owner' as const) : ('collaborator' as const),
       shares: projectShares.map((s) => ({
         id: s.id,
         token: s.token,
@@ -357,9 +383,9 @@ export const projectsRoute = new Hono<{ Variables: AuthVariables }>()
     const userId = c.get('userId');
     const refresh = c.req.query('refresh') === '1';
 
-    const row = await db.query.projects.findFirst({
-      where: and(eq(projects.id, id), eq(projects.ownerId, userId)),
-    });
+    const access = await resolveProjectAccess(id, userId);
+    if (!access || !access.canAccess) return c.json({ error: 'not_found' }, 404);
+    const row = await db.query.projects.findFirst({ where: eq(projects.id, id) });
     if (!row) return c.json({ error: 'not_found' }, 404);
     const data = row.data;
 
@@ -413,8 +439,12 @@ export const projectsRoute = new Hono<{ Variables: AuthVariables }>()
       return c.json({ error: 'invalid_input', detail: parsed.error.issues }, 400);
     }
 
+    // Live-Zusammenarbeit: owner OR a granted collaborator may save. Access is
+    // checked first so a non-collaborator gets the same 404 as before.
+    const access = await resolveProjectAccess(id, userId);
+    if (!access || !access.canAccess) return c.json({ error: 'not_found' }, 404);
     const existing = await db.query.projects.findFirst({
-      where: and(eq(projects.id, id), eq(projects.ownerId, userId)),
+      where: eq(projects.id, id),
     });
     if (!existing) return c.json({ error: 'not_found' }, 404);
 
@@ -478,9 +508,12 @@ export const projectsRoute = new Hono<{ Variables: AuthVariables }>()
     // passing the read-time check would otherwise both write and one edit would
     // be silently lost under a "saved" toast. (Audit P0.)
     const useOptimistic = typeof parsed.data.expectedUpdatedAt === 'number';
+    // Access already verified above, so the WHERE no longer pins ownerId — a
+    // granted collaborator writes the same row. The optimistic guard keeps the
+    // lost-update race closed.
     const whereClause = useOptimistic
-      ? and(eq(projects.id, id), eq(projects.ownerId, userId), eq(projects.updatedAt, existing.updatedAt))
-      : and(eq(projects.id, id), eq(projects.ownerId, userId));
+      ? and(eq(projects.id, id), eq(projects.updatedAt, existing.updatedAt))
+      : eq(projects.id, id);
     const written = await db
       .update(projects)
       .set({ data: dataToStore, versionNumber: nextVersion, updatedAt: nowDate })
@@ -492,7 +525,7 @@ export const projectsRoute = new Hono<{ Variables: AuthVariables }>()
       // conflict instead of silently dropping the edit; the client shows the
       // merge/reload banner.
       const current = await db.query.projects.findFirst({
-        where: and(eq(projects.id, id), eq(projects.ownerId, userId)),
+        where: eq(projects.id, id),
       });
       if (!current) return c.json({ error: 'not_found' }, 404);
       return c.json(
@@ -513,9 +546,156 @@ export const projectsRoute = new Hono<{ Variables: AuthVariables }>()
     });
   })
 
+  // ── Live-Zusammenarbeit ──────────────────────────────────────────────────
+  // Cheap change-poll: the open editor calls this every few seconds to learn if
+  // a coworker saved (without re-downloading the whole LV each time). When
+  // updatedAt advances past what the tab last saw, it pulls the full project.
+  .get('/:id/head', requireAuth, async (c) => {
+    const id = c.req.param('id');
+    const userId = c.get('userId');
+    const access = await resolveProjectAccess(id, userId);
+    if (!access || !access.canAccess) return c.json({ error: 'not_found' }, 404);
+    const row = await db.query.projects.findFirst({
+      where: eq(projects.id, id),
+      columns: { updatedAt: true, versionNumber: true },
+    });
+    if (!row) return c.json({ error: 'not_found' }, 404);
+    return c.json({ updatedAt: row.updatedAt.getTime(), versionNumber: row.versionNumber });
+  })
+
+  // Presence heartbeat — register that this user is viewing the project and get
+  // back the other live peers. In-memory + TTL'd (see lib/collab.ts).
+  .post('/:id/presence', requireAuth, async (c) => {
+    const id = c.req.param('id');
+    const userId = c.get('userId');
+    const access = await resolveProjectAccess(id, userId);
+    if (!access || !access.canAccess) return c.json({ error: 'not_found' }, 404);
+    const body = await c.req.json().catch(() => ({}));
+    const editing = (body as { editing?: unknown })?.editing === true;
+    const me = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { name: true },
+    });
+    const peers = heartbeat(id, { userId, name: me?.name || 'Unbekannt' }, editing);
+    return c.json({ peers });
+  })
+
+  // Explicit leave — fired on tab close / navigate away so the bar clears
+  // immediately instead of waiting for the heartbeat to time out.
+  .post('/:id/presence/leave', requireAuth, async (c) => {
+    const id = c.req.param('id');
+    const userId = c.get('userId');
+    leave(id, userId);
+    return c.json({ ok: true });
+  })
+
+  // List the people who can edit this project: the owner plus every granted
+  // collaborator. Any viewer with access can read it (so the bar shows names).
+  .get('/:id/collaborators', requireAuth, async (c) => {
+    const id = c.req.param('id');
+    const userId = c.get('userId');
+    const access = await resolveProjectAccess(id, userId);
+    if (!access || !access.canAccess) return c.json({ error: 'not_found' }, 404);
+    const owner = await db.query.users.findFirst({
+      where: eq(users.id, access.ownerId),
+      columns: { id: true, name: true, email: true },
+    });
+    const collabRows = await db
+      .select({
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        addedAt: projectCollaborators.createdAt,
+      })
+      .from(projectCollaborators)
+      .innerJoin(users, eq(users.id, projectCollaborators.userId))
+      .where(eq(projectCollaborators.projectId, id))
+      .orderBy(desc(projectCollaborators.createdAt));
+    return c.json({
+      owner: owner ? { id: owner.id, name: owner.name, email: owner.email } : null,
+      collaborators: collabRows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        email: r.email,
+        addedAt: r.addedAt.getTime(),
+      })),
+      // Only the owner (or an admin) may add/remove collaborators.
+      canManage: access.isOwner || c.get('userRole') === 'admin',
+    });
+  })
+
+  // Grant edit access to another panel user (by id or email). Owner/admin only.
+  .post('/:id/collaborators', requireAuth, async (c) => {
+    const id = c.req.param('id');
+    const userId = c.get('userId');
+    const access = await resolveProjectAccess(id, userId);
+    if (!access) return c.json({ error: 'not_found' }, 404);
+    const canManage = access.isOwner || c.get('userRole') === 'admin';
+    if (!canManage) return c.json({ error: 'forbidden' }, 403);
+    const body = await c.req.json().catch(() => null);
+    const parsed = z
+      .object({ userId: z.string().min(1).optional(), email: z.string().email().optional() })
+      .safeParse(body);
+    if (!parsed.success || (!parsed.data.userId && !parsed.data.email)) {
+      return c.json({ error: 'invalid_input' }, 400);
+    }
+    const target = parsed.data.userId
+      ? await db.query.users.findFirst({ where: eq(users.id, parsed.data.userId) })
+      : await db.query.users.findFirst({ where: eq(users.email, parsed.data.email!.toLowerCase()) });
+    if (!target) return c.json({ error: 'user_not_found' }, 404);
+    if (!target.isActive) return c.json({ error: 'user_inactive' }, 400);
+    if (target.id === access.ownerId) return c.json({ error: 'already_owner' }, 400);
+    // Idempotent — re-inviting an existing collaborator is a no-op (UNIQUE).
+    const existingGrant = await db.query.projectCollaborators.findFirst({
+      where: and(
+        eq(projectCollaborators.projectId, id),
+        eq(projectCollaborators.userId, target.id),
+      ),
+    });
+    if (!existingGrant) {
+      await db.insert(projectCollaborators).values({
+        id: nanoid(16),
+        projectId: id,
+        userId: target.id,
+        addedBy: userId,
+        createdAt: new Date(),
+      });
+    }
+    return c.json({
+      ok: true,
+      collaborator: { id: target.id, name: target.name, email: target.email },
+    });
+  })
+
+  // Revoke access. Owner/admin can remove anyone; a collaborator can remove
+  // themselves ("Projekt verlassen").
+  .delete('/:id/collaborators/:collabUserId', requireAuth, async (c) => {
+    const id = c.req.param('id');
+    const userId = c.get('userId');
+    const collabUserId = c.req.param('collabUserId');
+    const access = await resolveProjectAccess(id, userId);
+    if (!access || !access.canAccess) return c.json({ error: 'not_found' }, 404);
+    const canManage = access.isOwner || c.get('userRole') === 'admin';
+    if (!canManage && collabUserId !== userId) {
+      return c.json({ error: 'forbidden' }, 403);
+    }
+    await db
+      .delete(projectCollaborators)
+      .where(
+        and(
+          eq(projectCollaborators.projectId, id),
+          eq(projectCollaborators.userId, collabUserId),
+        ),
+      );
+    leave(id, collabUserId);
+    return c.json({ ok: true });
+  })
+
   .delete('/:id', requireAuth, async (c) => {
     const id = c.req.param('id');
     const userId = c.get('userId');
+    // Deleting a shared calc stays OWNER-ONLY — a collaborator can leave it but
+    // cannot delete it out from under everyone else.
     const existing = await db.query.projects.findFirst({
       where: and(eq(projects.id, id), eq(projects.ownerId, userId)),
     });

@@ -68,6 +68,20 @@ export function runMigrations() {
 
     CREATE INDEX IF NOT EXISTS idx_projects_owner ON projects(owner_id);
 
+    -- Live-Zusammenarbeit — extra panel users granted edit access to a project
+    -- so several people can work one calculation at once. Owner is implicit and
+    -- never stored here. UNIQUE(project_id,user_id) so re-inviting is idempotent.
+    CREATE TABLE IF NOT EXISTS project_collaborators (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      added_by TEXT REFERENCES users(id),
+      created_at INTEGER NOT NULL,
+      UNIQUE(project_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_project_collab_project ON project_collaborators(project_id);
+    CREATE INDEX IF NOT EXISTS idx_project_collab_user ON project_collaborators(user_id);
+
     CREATE TABLE IF NOT EXISTS shares (
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,

@@ -80,6 +80,24 @@ export const projects = sqliteTable('projects', {
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
 });
 
+/**
+ * Live-Zusammenarbeit — explicit edit grants so more than one panel user can
+ * open AND edit the same calculation ("mehrere Leute gleichzeitig an einer
+ * Kalkulation", boss request 2026-06-23). The owner always has access; each row
+ * here grants one additional panel `user` full edit access to one project.
+ * Access = (project.ownerId === userId) OR (a row exists for (projectId,userId)).
+ * Deliberately explicit grants (not "every admin sees all") so access stays
+ * regulated — the boss's "Zugang/Login geregelt".
+ */
+export const projectCollaborators = sqliteTable('project_collaborators', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  /** Who granted access (owner or admin). Audit trail for "wer hat wen eingeladen". */
+  addedBy: text('added_by').references(() => users.id),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+});
+
 export const shares = sqliteTable('shares', {
   id: text('id').primaryKey(),
   projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),

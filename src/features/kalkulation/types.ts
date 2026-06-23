@@ -317,6 +317,9 @@ export type ProjectSummary = {
   createdAt: string;
   updatedAt: string;
   versionNumber: number;
+  /** Live-Zusammenarbeit: 'owner' for my own calcs, 'collaborator' for ones a
+   *  coworker shared with me. Optional for back-compat with older servers. */
+  role?: 'owner' | 'collaborator';
 };
 
 export type ProjectDetail = {
@@ -326,6 +329,36 @@ export type ProjectDetail = {
   createdAt: string;
   updatedAt: string;
   shares: ShareSummary[];
+  /** Whether this viewer owns the calc (may delete + manage collaborators) or
+   *  is a granted collaborator. Optional for back-compat. */
+  role?: 'owner' | 'collaborator';
+};
+
+/** Live-Zusammenarbeit — a panel user who can edit a project. */
+export type ProjectCollaborator = {
+  id: string;
+  name: string;
+  email: string;
+  /** Epoch ms the grant was created. Absent for the owner entry. */
+  addedAt?: number;
+};
+
+/** Live-Zusammenarbeit — owner + collaborators of one project. */
+export type ProjectCollaborators = {
+  owner: ProjectCollaborator | null;
+  collaborators: ProjectCollaborator[];
+  /** True if the current viewer may add/remove collaborators (owner or admin). */
+  canManage: boolean;
+};
+
+/** Live-Zusammenarbeit — a coworker currently viewing/editing the same calc. */
+export type PresencePeer = {
+  userId: string;
+  name: string;
+  /** Last heartbeat (epoch ms). */
+  lastSeen: number;
+  /** True if their tab has unsaved local edits in flight. */
+  editing: boolean;
 };
 
 export type ShareSettings = {

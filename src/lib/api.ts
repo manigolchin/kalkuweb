@@ -6,6 +6,9 @@ import type {
   InboxEntry,
   PanelPermissionKey,
   PositionTemplate,
+  PresencePeer,
+  ProjectCollaborator,
+  ProjectCollaborators,
   ProjectDetail,
   ProjectData,
   ProjectSummary,
@@ -219,6 +222,31 @@ export const api = {
       }),
     delete: (id: string) =>
       request<{ ok: true }>(`/projects/${id}`, { method: 'DELETE' }),
+    /** Live-Zusammenarbeit: cheap change-poll — has anyone saved since I last
+     *  loaded? Returns the server's current updatedAt (epoch ms) + version. */
+    head: (id: string) =>
+      request<{ updatedAt: number; versionNumber: number }>(`/projects/${id}/head`),
+    /** Heartbeat: register that I'm viewing the project; get back live peers. */
+    presence: (id: string, editing: boolean) =>
+      request<{ peers: PresencePeer[] }>(`/projects/${id}/presence`, {
+        method: 'POST',
+        body: JSON.stringify({ editing }),
+      }),
+    /** Drop my presence immediately (tab close / navigate away). */
+    presenceLeave: (id: string) =>
+      request<{ ok: true }>(`/projects/${id}/presence/leave`, { method: 'POST' }),
+    /** Owner + collaborators of a project. */
+    collaborators: (id: string) =>
+      request<ProjectCollaborators>(`/projects/${id}/collaborators`),
+    /** Grant edit access to another panel user (by id or email). Owner/admin only. */
+    addCollaborator: (id: string, input: { userId?: string; email?: string }) =>
+      request<{ ok: true; collaborator: ProjectCollaborator }>(
+        `/projects/${id}/collaborators`,
+        { method: 'POST', body: JSON.stringify(input) },
+      ),
+    /** Revoke a collaborator (owner/admin), or leave a shared project (self). */
+    removeCollaborator: (id: string, userId: string) =>
+      request<{ ok: true }>(`/projects/${id}/collaborators/${userId}`, { method: 'DELETE' }),
     /** Auto-resolve the „04_Angebote" folder share link for this project's
      *  Ausschreibung (via preisanfrage). Returns `{ angeboteFolderUrl: null }`
      *  with a reason when nothing can be resolved — never throws on a missing

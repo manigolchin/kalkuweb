@@ -25,6 +25,7 @@ import {
   FileSpreadsheet,
   FileCode2,
   FileDigit,
+  Users,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -33,11 +34,14 @@ import { api, ApiError, VersionConflictError } from '@/lib/api';
 import type {
   CalcParams,
   Position,
+  PresencePeer,
   ProjectData,
   ProjectDetail as ProjectDetailType,
   ShareSummary,
 } from './types';
 import { calcTotals, formatEUR, formatNum, DEFAULT_CALC_PARAMS, recalcAll, baseNetto, solveZielAufschlag } from './calc';
+import { mergeProjectData } from './mergeProject';
+import { PresenceBar, TeamDialog } from './Collaboration';
 import { fillBlankMeta } from './importMeta';
 import { Breadcrumb } from '@/pages/panel/ui';
 import PositionTable from './PositionTable';
@@ -48,6 +52,9 @@ import SnapshotDiffDialog from './SnapshotDiffDialog';
 import SubmitValidatorDialog from './SubmitValidatorDialog';
 
 const SAVE_DEBOUNCE_MS = 800;
+/** Live-Zusammenarbeit: how often a tab heartbeats presence + polls for a
+ *  coworker's save. 6 s keeps "live enough" without hammering the API. */
+const COLLAB_POLL_MS = 6000;
 
 type TableVersion = 'v1' | 'v2';
 const TABLE_VERSION_KEY = 'kalku.tableVersion';
@@ -79,6 +86,9 @@ export default function ProjectDetail() {
   const [showSubmit, setShowSubmit] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [tableVersion, setTableVersion] = useState<TableVersion>(() => readSavedTableVersion());
+  // Live-Zusammenarbeit — coworkers currently in this calc + the Team dialog.
+  const [peers, setPeers] = useState<PresencePeer[]>([]);
+  const [showTeam, setShowTeam] = useState(false);
   // PART K: per-OZ customer-comment counts. Refreshed on project load and
   // whenever an auto-save lands (in case the customer commented in the
   // meantime). Empty {} = no badges render.
@@ -98,6 +108,18 @@ export default function ProjectDetail() {
   // locking — read inside the debounced save so rapid edits don't carry a stale
   // value from when the effect was queued.
   const updatedAtRef = useRef<number>(0);
+  // Live-Zusammenarbeit refs — let the polling interval read the freshest data
+  // and save-state without restarting on every keystroke, and guard against two
+  // reconciles overlapping.
+  const dataRef = useRef<ProjectData | null>(null);
+  const savingStateRef = useRef<typeof savingState>('idle');
+  const reconcilingRef = useRef(false);
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
+  useEffect(() => {
+    savingStateRef.current = savingState;
+  }, [savingState]);
 
   // PART K: fetch comment counts (cheap aggregate, safe to call on every
   // project mount + after each save). Silent on failure — badges just stay
@@ -142,6 +164,58 @@ export default function ProjectDetail() {
     };
   }, [id, refreshCommentCounts]);
 
+  // Live-Zusammenarbeit: pull a coworker's latest save and fold MY unsaved edits
+  // onto it via a row-level 3-way merge — replacing the old "please reload" wall
+  // that risked losing work. Returns true if it adopted/merged a newer version.
+  //  - clean tab  → silently adopt the coworker's version.
+  //  - dirty tab  → merge (different rows from both survive); the resulting
+  //    setData triggers the auto-save, which persists the merge.
+  // `force` skips the freshness guard (used by the save-conflict path, where the
+  // server already advanced past us).
+  const reconcileWithServer = useCallback(
+    async (opts: { silent?: boolean; force?: boolean } = {}): Promise<boolean> => {
+      if (reconcilingRef.current) return false;
+      reconcilingRef.current = true;
+      try {
+        const detail = await api.projects.get(id);
+        const serverTs = new Date(detail.updatedAt).getTime();
+        if (!opts.force && serverTs <= updatedAtRef.current) return false;
+        const theirs = normalizeProject(detail.data);
+        const mine = dataRef.current;
+        const base = normalizeProject(
+          lastSavedRef.current
+            ? (JSON.parse(lastSavedRef.current) as ProjectData)
+            : detail.data,
+        );
+        const myPayload = mine
+          ? JSON.stringify({ ...mine, positions: recalcAll(mine.positions, mine.calcParams) })
+          : '';
+        const dirty = Boolean(mine) && myPayload !== lastSavedRef.current;
+
+        // Update refs FIRST so the auto-save effect that fires after setData
+        // reads the coworker's timestamp + baseline (so its next PUT matches).
+        updatedAtRef.current = serverTs;
+        lastSavedRef.current = JSON.stringify(detail.data);
+
+        if (dirty && mine) {
+          setData(normalizeProject(mergeProjectData(base, mine, theirs)));
+          if (!opts.silent) toast('Änderungen eines Kollegen zusammengeführt.', { icon: '🔀' });
+        } else {
+          setData(theirs);
+          if (!opts.silent) toast('Aktualisiert — ein Kollege hat gespeichert.', { icon: '🔄' });
+        }
+        setProject(detail);
+        refreshCommentCounts();
+        return true;
+      } catch {
+        return false;
+      } finally {
+        reconcilingRef.current = false;
+      }
+    },
+    [id, refreshCommentCounts],
+  );
+
   // auto-save: server is now the source of truth for derived EP/GP (P1-2) — it
   // recomputes on PUT. We still recalc client-side for instant feedback.
   // P1-4: send expectedUpdatedAt from updatedAtRef (refreshed on every save)
@@ -171,14 +245,22 @@ export default function ProjectDetail() {
         setSavingState('saved');
         setTimeout(() => setSavingState((s) => (s === 'saved' ? 'idle' : s)), 1200);
       } catch (err) {
-        setSavingState('error');
         if (err instanceof VersionConflictError) {
-          updatedAtRef.current = err.currentUpdatedAt;
-          toast.error(
-            'Das Projekt wurde in einem anderen Fenster verändert. Bitte die Seite neu laden, um die aktuellen Daten zu sehen.',
-            { duration: 6000 },
-          );
+          // A coworker saved between our read and write. Instead of the old
+          // reload wall, merge their version with our pending edits; the merge's
+          // setData schedules a fresh save that lands on the new base.
+          setSavingState('pending');
+          const ok = await reconcileWithServer({ silent: true, force: true });
+          if (ok) {
+            toast('Mit den Änderungen eines Kollegen zusammengeführt.', { icon: '🔀' });
+          } else {
+            setSavingState('error');
+            toast.error('Speichern fehlgeschlagen — bitte die Seite neu laden.', {
+              duration: 6000,
+            });
+          }
         } else {
+          setSavingState('error');
           toast.error('Speichern fehlgeschlagen.');
         }
       }
@@ -186,7 +268,44 @@ export default function ProjectDetail() {
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [data, id]);
+  }, [data, id, reconcileWithServer]);
+
+  // Live-Zusammenarbeit: one interval that (1) heartbeats my presence and reads
+  // back who else is here, and (2) polls the cheap /head to learn if a coworker
+  // saved — pulling + merging their change when so. Best-effort throughout: a
+  // failed beat never disrupts editing.
+  useEffect(() => {
+    if (!id || loading || error) return;
+    let cancelled = false;
+    const beat = async () => {
+      if (cancelled) return;
+      const editing =
+        savingStateRef.current === 'pending' || savingStateRef.current === 'saving';
+      try {
+        const { peers: live } = await api.projects.presence(id, editing);
+        if (!cancelled) setPeers(live);
+      } catch {
+        /* presence is best-effort */
+      }
+      if (cancelled || savingStateRef.current === 'saving' || reconcilingRef.current) return;
+      try {
+        const head = await api.projects.head(id);
+        if (!cancelled && head.updatedAt > updatedAtRef.current) {
+          await reconcileWithServer();
+        }
+      } catch {
+        /* poll is best-effort */
+      }
+    };
+    beat();
+    const timer = setInterval(beat, COLLAB_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      // Clear my presence for the others right away instead of waiting for TTL.
+      api.projects.presenceLeave(id).catch(() => {});
+    };
+  }, [id, loading, error, reconcileWithServer]);
 
   const totals = useMemo(
     () => (data ? calcTotals(data.positions, data.calcParams) : null),
@@ -401,6 +520,7 @@ export default function ProjectDetail() {
 
         <div className="flex items-center gap-2 flex-wrap">
           <SaveIndicator state={savingState} />
+          <PresenceBar peers={peers} />
           <TableVersionToggle version={tableVersion} onChange={switchTableVersion} />
           <button
             onClick={() => setShowSettings((s) => !s)}
@@ -416,6 +536,19 @@ export default function ProjectDetail() {
           <button onClick={snapshotVersion} className="btn btn-secondary flex items-center gap-2">
             <History className="w-4 h-4" />
             v{project.versionNumber}
+          </button>
+          <button
+            onClick={() => setShowTeam(true)}
+            className="btn btn-secondary flex items-center gap-2"
+            title="Team / Zugriff — wer darf mitarbeiten"
+          >
+            <Users className="w-4 h-4" />
+            Team
+            {peers.length > 0 && (
+              <span className="inline-flex items-center justify-center min-w-[1.1rem] h-[1.1rem] px-1 rounded-full bg-emerald-500 text-white text-[10px] font-bold">
+                {peers.length}
+              </span>
+            )}
           </button>
           <ToolsMenu
             projectId={project.id}
@@ -597,6 +730,8 @@ export default function ProjectDetail() {
         projectName={data.name || 'Projekt'}
         shares={project.shares}
       />
+
+      <TeamDialog projectId={project.id} open={showTeam} onClose={() => setShowTeam(false)} />
 
       <SubmitValidatorDialog
         open={showSubmit}
