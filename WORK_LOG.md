@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-06-23 16:45 — True live sync (SSE push) for collaboration
+- Source: user — "so we can 2 people work together and will show immediatly?" → chose "True live sync (SSE push)" over the ~6s polling
+- Branch: claude-auto/2026-06-23-live-collaboration — commit 0125c07
+- Result: committed 0125c07 → pushed → deployed (server cherry-pick c5d71ca→a102808, all 4 containers healthy, health ok, live index hash index-BZDPVnsx.js matches local, /events returns 401 = mounted). Both kalku-website + kalku-panel-api rebuilt.
+- Notes: Added Server-Sent-Events so a coworker's save pushes to every open editor instantly instead of waiting for the 6s poll. Server: in-process SSE pub/sub in collab.ts (subscribe/unsubscribe/publish + listAllPeers); GET /projects/:id/events (Hono streamSSE, 25s keepalive pings, X-Accel-Buffering off, presence cleanup on disconnect); PUT publishes project-updated; presence endpoints publish the roster. index.ts excludes /events from compress() (compression buffers streams). Client (ProjectDetail): EventSource → reconcileWithServer on project-updated, setPeers on presence; immediate presence beat when editing-state flips; the 6s poll stays as a fallback (both paths guarded by updatedAt + reconcilingRef, no double-merge). Prod path Cloudflare→Traefik→panel-api streams SSE (no nginx in /api/panel path); fallback poll covers any buffering proxy. Browser-verified: direct SSE 8ms, full UI update 60ms, no console errors. Tests: SSE pub/sub unit test added; panel-api 583 green; lint+build clean.
+
 ## 2026-06-23 16:30 — Team dialog member picker + collaboration hardening
 - Source: user ("it should show list of members" — screenshot of the free-text email box) + self-run adversarial review of the live-collaboration feature
 - Branch: claude-auto/2026-06-23-live-collaboration — commit 9fb175a
