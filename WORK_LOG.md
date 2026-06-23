@@ -5,11 +5,17 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-06-23 17:20 — OneDrive off-site backup live + keep-forever policy
+- Source: user — "done ... make new folder in onedrive and dont touch sth else ... back up all our calculations and dont delete them because after 6 month maybe i will need that auschreibung calculation"
+- Branch: claude-auto/2026-06-23-live-collaboration — commit e6376e6 (server-ops)
+- Result: rclone v1.74.3 installed on server + the user's Mac (no sudo; Mac via direct binary, their Homebrew was broken). User did the SharePoint OAuth (browser); config scp'd to server. Backup script updated: ONEDRIVE_PATH=`kalku-backups` (a NEW folder in the IT-Team Shared Documents library) and ALL deletion removed (keep forever, both local + OneDrive). Ran once → file `kalku_website_*.db.gz` confirmed in `onedrive:kalku-backups`, and verified all 11 existing library folders untouched. Daily 3:15 cron now does local snapshot + OneDrive upload, never deletes.
+- Notes: I cannot do the Microsoft sign-in (account auth = prohibited even with permission); the token stayed with the user (never via chat). rclone SharePoint setup gotcha: the "search" option garbled the site ID via terminal paste (400 errors) — use the URL option `3` + full site URL; tenant BLANK; advanced config `n`; driveid = Enter. See [[reference_panel_db_backup.md]].
+
 ## 2026-06-23 16:55 — Daily backup of the panel calculations DB
 - Source: user — "after each calculation will save it and dont delet it? ... should we have also backup if sth happen to our server?"
 - Branch: claude-auto/2026-06-23-live-collaboration — commit 0f2ebaf (server-ops; no container redeploy)
-- Result: verified persistence (named volume `kalku-website_kalku-panel-data`, 52 projects intact, survives deploys) + found the existing 3am cron backs up ONLY procurement, not the panel. Added `~/backups/backup-panel-db.sh` (repo `scripts/backup-panel-db.sh`) + cron 3:15 daily: VACUUM INTO snapshot → gzip (~900 KB) → 30-day retention. Ran once + restore-tested (unzipped → 52 projects). Existing crontab entries preserved.
-- Notes: OneDrive off-site upload is built into the script (rclone, gated) but PENDING — rclone not installed (no passwordless sudo → install to ~/bin) and OneDrive/SharePoint needs the user's one-time Microsoft OAuth (can't enter their creds). Gzipped backup ~27 MB/month → size is a non-issue for OneDrive. See [[reference_panel_db_backup.md]].
+- Result: verified persistence (named volume `kalku-website_kalku-panel-data`, 52 projects intact, survives deploys) + found the existing 3am cron backs up ONLY procurement, not the panel. Added `~/backups/backup-panel-db.sh` (repo `scripts/backup-panel-db.sh`) + cron 3:15 daily: VACUUM INTO snapshot → gzip (~900 KB). Ran once + restore-tested (unzipped → 52 projects). Existing crontab entries preserved.
+- Notes: OneDrive off-site finished in the 17:20 unit above. Gzipped backup ~0.3 GB/year → size is a non-issue. See [[reference_panel_db_backup.md]].
 
 ## 2026-06-23 16:45 — True live sync (SSE push) for collaboration
 - Source: user — "so we can 2 people work together and will show immediatly?" → chose "True live sync (SSE push)" over the ~6s polling
