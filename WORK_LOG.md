@@ -5,6 +5,12 @@ Format defined in `CLAUDE.md`.
 
 ---
 
+## 2026-06-23 15:55 — Live collaboration: multiple users edit one calculation at once
+- Source: user (boss WhatsApp screenshot) — "es muss zudem möglich sein dass mehrere Leute gleichzeitig an einer Kalkulation arbeiten können"
+- Branch: claude-auto/2026-06-23-live-collaboration — commit 40cfb4c
+- Result: committed 40cfb4c → pushed → deployed (server cherry-pick onto deploy-main 59864be→636dac3, all 4 containers healthy, website healthz ok, panel-api health ok/preisanfrage enabled, live index hash index-BVcbldh5.js matches local, new /projects/:id/head endpoint returns 401 = mounted). Both kalku-website + kalku-panel-api rebuilt.
+- Notes: Built on the EXISTING panel-api — deliberately NOT the boss's Cloudflare/Durable-Objects backend (that stays his gated decision). Gap was: a project had a single ownerId so a coworker got 404 on it, and concurrent edits hit a 409 "reload" wall (data-loss risk). Added `project_collaborators` table + owner-OR-collaborator access on GET/PUT/list/head/angebote-link (DELETE stays owner-only); collaborator CRUD (add by email/id, leave); in-memory TTL presence heartbeat + cheap /head change-poll. Frontend: row-level 3-way merge (mergeProject.ts) replaces the reload wall — different rows from both editors survive, same row = last-write-wins, auto-save merges+retries on 409, a 6 s poll pulls coworkers' saves in live; presence bar + "Team/Zugriff" dialog. Deferred (told user): per-user UI language (DE/EN/AR) = separate i18n; WebSocket realtime = boss's call. Tests: 9 merge unit + 8 collab integration; panel-api suite 578 green; lint+build clean; browser-verified live-pull end-to-end (coworker's name+price change appeared with no reload, no console errors).
+
 ## 2026-06-22 16:36 — Default calc table to "Neue Ansicht" (v2) for new users
 - Source: user (screenshot of a new project opening in the old table) — "when new user is starting calculation it should be calculation table in neue ansicht and not old one"
 - Branch: claude-auto/2026-06-22-default-neue-ansicht — commit d1487d5
