@@ -35,6 +35,12 @@ const DEFAULT_CALC_PARAMS = {
 
 const MAX_POSITIONS = 5000;
 
+// How often the SSE live-sync stream emits a keepalive ping. 25s in prod (long
+// enough to be cheap, short enough to keep proxies from idling the stream out);
+// overridable so tests can use a short interval and have the server-side loop
+// notice a client disconnect — and end cleanly — without a 25s dangling timer.
+const SSE_KEEPALIVE_MS = Number(process.env.SSE_KEEPALIVE_MS) || 25_000;
+
 // Finite number — rejects NaN/Infinity that bleeds through from buggy clients
 // and silently corrupts totals (the audit found ep=NaN was acceptable to the
 // previous schema's z.array(z.any())).
@@ -593,7 +599,7 @@ export const projectsRoute = new Hono<{ Variables: AuthVariables }>()
       });
       await stream.writeSSE({ event: 'hello', data: JSON.stringify({ ok: true }) });
       while (!stream.aborted) {
-        await stream.sleep(25_000);
+        await stream.sleep(SSE_KEEPALIVE_MS);
         if (stream.aborted) break;
         await stream.writeSSE({ event: 'ping', data: '1' }).catch(() => {});
       }
