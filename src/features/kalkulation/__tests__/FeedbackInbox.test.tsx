@@ -412,6 +412,29 @@ describe('FeedbackInbox — detail pane', () => {
     expect(screen.getAllByText('Detail Bau GmbH').length).toBeGreaterThanOrEqual(2);
   });
 
+  test('view-only thread (opened, no feedback) shows the "Noch keine Rückmeldung" hint', async () => {
+    // Default fixture: viewCount 3, no responses/comments/changeRequests.
+    inboxListMock.mockResolvedValueOnce(listPayload([buildEntry({})]));
+    renderInbox();
+    await waitFor(() => expect(screen.getByText('Gesellchen GmbH')).toBeDefined());
+    fireEvent.click(screen.getByRole('button', { name: /Sanierung Marktplatz/ }));
+
+    await waitFor(() => expect(screen.getByText('Noch keine Rückmeldung')).toBeDefined());
+    expect(screen.getByText(/nur geöffnet/)).toBeDefined();
+  });
+
+  test('thread WITH feedback does not show the "Noch keine Rückmeldung" hint', async () => {
+    inboxListMock.mockResolvedValueOnce(
+      listPayload([buildEntry({ responses: [buildResponse({ responseType: 'approve' })] })]),
+    );
+    renderInbox();
+    await waitFor(() => expect(screen.getByText('Gesellchen GmbH')).toBeDefined());
+    fireEvent.click(screen.getByRole('button', { name: /Sanierung Marktplatz/ }));
+
+    await waitFor(() => expect(screen.getByText('Angebot angenommen')).toBeDefined());
+    expect(screen.queryByText('Noch keine Rückmeldung')).toBeNull();
+  });
+
   test('change cards show position OZ + shortText + the change text', async () => {
     inboxListMock.mockResolvedValueOnce(
       listPayload([

@@ -731,6 +731,12 @@ function ThreadDetail({
   const project = entry.project!;
   const feed = useMemo(() => buildFeed(entry), [entry]);
   const changeReqs = entry.changeRequests ?? [];
+  // "Echte" Rückmeldung = Annahme/Ablehnung, Kommentar oder Änderungswunsch.
+  // Reine Aufrufe (nur geöffnet) zählen NICHT — dann ist der Feed leer und der
+  // Hinweis unten macht klar, dass noch nichts vorliegt (statt eines Eindrucks,
+  // die Anzeige sei defekt).
+  const hasFeedback =
+    entry.responses.length > 0 || entry.comments.length > 0 || changeReqs.length > 0;
   const openCrIds = changeReqs.filter((cr) => !cr.resolvedAt).map((cr) => cr.id);
   const rollup = rollupChangeRequests(changeReqs);
   const shareUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/share/${entry.share.token}`;
@@ -840,6 +846,23 @@ function ThreadDetail({
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Kunde hat nur geöffnet, aber (noch) nichts zurückgemeldet. */}
+      {!hasFeedback && (
+        <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3.5 dark:border-slate-800 dark:bg-slate-800/30">
+          <Eye className="mt-0.5 h-4 w-4 shrink-0 text-violet-500" />
+          <div className="min-w-0 text-sm">
+            <p className="font-medium text-slate-700 dark:text-slate-200">
+              Noch keine Rückmeldung
+            </p>
+            <p className="mt-0.5 text-slate-500 dark:text-slate-400">
+              {entry.share.viewCount > 0
+                ? 'Der Kunde hat das Angebot bisher nur geöffnet. Sobald er es annimmt, ablehnt oder eine Position kommentiert, erscheint es hier — mit genauer Position und gewünschter Änderung.'
+                : 'Das Angebot wurde noch nicht geöffnet. Sobald der Kunde den Link aufruft und reagiert, erscheint die Rückmeldung hier.'}
+            </p>
+          </div>
         </div>
       )}
 
