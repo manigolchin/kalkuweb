@@ -41,12 +41,20 @@ import {
   ChevronDown,
   SlidersHorizontal,
   RotateCcw,
+  ListChecks,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 import { api } from '@/lib/api';
 import type { InboxEntry, InboxComment, InboxChangeRequest, ShareResponse } from './types';
-import { FIELD_LABEL, DIRECTION_LABEL, formatChangeValue, rollupChangeRequests, formatSignedEUR } from './changeRequest';
+import {
+  FIELD_LABEL,
+  FIELD_SHORT,
+  DIRECTION_LABEL,
+  formatChangeValue,
+  rollupChangeRequests,
+  formatSignedEUR,
+} from './changeRequest';
 import { formatEUR } from './calc';
 import { Skeleton, Breadcrumb } from '@/pages/panel/ui';
 
@@ -225,6 +233,71 @@ function buildFeed(entry: InboxEntry): FeedEvent[] {
   if (entry.share.lastViewedAt) events.push({ kind: 'viewed', ts: Date.parse(entry.share.lastViewedAt) });
   events.push({ kind: 'created', ts: Date.parse(entry.share.createdAt) });
   return events.sort((a, b) => b.ts - a.ts);
+}
+
+/* ── "Gewünschte Änderungen" overview ──────────────────────────────────
+ * A consolidated worklist of EVERYTHING the customer wants changed — at a
+ * glance, without scrolling the chronological feed. Aggregates two sources:
+ *   1. structured Änderungswünsche (changeRequests) — field + Ist→Wunsch diff
+ *   2. free-text changes inside a "changes" response (payload.changes)
+ * Each row resolves to WHICH position (OZ + Kurztext) so the calculator sees
+ * the full to-do list. Open items first, position-wise, Gesamtangebot last. */
+type OverviewItem = {
+  key: string;
+  scope: 'position' | 'global';
+  oz: string | null;
+  shortText: string | null;
+  /** Field short label (e.g. "Menge") or the change type (e.g. "Streichen"). */
+  label: string;
+  /** Compact wish: "10 → 8", "Wunsch 950,00 €", "günstiger" — or '' for free-text. */
+  wish: string;
+  /** The customer's note / free-text, if any. */
+  note: string | null;
+  resolved: boolean;
+};
+
+/** "10,00 → 8,00" / "Wunsch 950,00 €" / "günstiger" for one change request. */
+function wishLine(cr: InboxChangeRequest): string {
+  const cur = cr.currentValue != null ? formatChangeValue(cr.currentValue, cr.unit) : null;
+  const req = cr.requestedValue != null ? formatChangeValue(cr.requestedValue, cr.unit) : null;
+  if (cur && req) return `${cur} → ${req}`;
+  if (req) return `Wunsch ${req}`;
+  return DIRECTION_LABEL[cr.direction];
+}
+
+function collectChangeItems(entry: InboxEntry): OverviewItem[] {
+  const items: OverviewItem[] = [];
+  for (const cr of entry.changeRequests ?? []) {
+    items.push({
+      key: `cr-${cr.id}`,
+      scope: cr.scope === 'global' ? 'global' : 'position',
+      oz: cr.scope === 'global' ? null : cr.positionOz ?? null,
+      shortText: cr.shortText ?? null,
+      label: FIELD_SHORT[cr.field],
+      wish: wishLine(cr),
+      note: cr.note?.trim() || null,
+      resolved: !!cr.resolvedAt,
+    });
+  }
+  for (const r of entry.responses) {
+    (r.payload.changes ?? []).forEach((ch, i) => {
+      items.push({
+        key: `ch-${r.id}-${i}`,
+        scope: ch.positionId === 'general' ? 'global' : 'position',
+        oz: ch.oz ?? null,
+        shortText: ch.shortText ?? null,
+        label: CHANGE_LABEL[ch.type],
+        wish: '',
+        note: ch.text?.trim() || null,
+        resolved: false,
+      });
+    });
+  }
+  const ozKey = (it: OverviewItem) => (it.scope === 'global' ? '￿' : it.oz ?? '￾');
+  return items.sort((a, b) => {
+    if (a.resolved !== b.resolved) return a.resolved ? 1 : -1;
+    return ozKey(a).localeCompare(ozKey(b), undefined, { numeric: true });
+  });
 }
 
 export default function FeedbackInbox() {
@@ -731,6 +804,7 @@ function ThreadDetail({
   const project = entry.project!;
   const feed = useMemo(() => buildFeed(entry), [entry]);
   const changeReqs = entry.changeRequests ?? [];
+  const overview = useMemo(() => collectChangeItems(entry), [entry]);
   // "Echte" Rückmeldung = Annahme/Ablehnung, Kommentar oder Änderungswunsch.
   // Reine Aufrufe (nur geöffnet) zählen NICHT — dann ist der Feed leer und der
   // Hinweis unten macht klar, dass noch nichts vorliegt (statt eines Eindrucks,
@@ -849,6 +923,9 @@ function ThreadDetail({
         </div>
       )}
 
+      {/* Überblick: WAS der Kunde geändert haben möchte (konsolidierte Liste). */}
+      {overview.length > 0 && <ChangeOverview items={overview} />}
+
       {/* Kunde hat nur geöffnet, aber (noch) nichts zurückgemeldet. */}
       {!hasFeedback && (
         <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3.5 dark:border-slate-800 dark:bg-slate-800/30">
@@ -879,6 +956,81 @@ function ThreadDetail({
         ))}
       </div>
     </div>
+  );
+}
+
+/** Consolidated "Gewünschte Änderungen" — the customer's whole change worklist
+ *  in one compact, scannable list (position · field · Ist→Wunsch · note). */
+function ChangeOverview({ items }: { items: OverviewItem[] }) {
+  const open = items.filter((it) => !it.resolved).length;
+  return (
+    <section
+      data-testid="change-overview"
+      className="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900"
+    >
+      <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
+        <ListChecks className="h-4 w-4 text-primary-600 dark:text-primary-300" />
+        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+          Gewünschte Änderungen
+        </h3>
+        <span className="inline-flex items-center rounded-full bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+          {items.length}
+        </span>
+        {open > 0 && open < items.length && (
+          <span className="text-xs text-slate-400 dark:text-slate-500">· {open} offen</span>
+        )}
+      </div>
+      <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+        {items.map((it) => (
+          <li
+            key={it.key}
+            className={clsx(
+              'flex items-start gap-3 px-4 py-2.5',
+              it.resolved && 'opacity-55',
+            )}
+          >
+            <span className="mt-0.5 shrink-0">
+              {it.scope === 'global' ? (
+                <span className="inline-flex items-center rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                  Gesamt
+                </span>
+              ) : it.oz ? (
+                <span className="inline-flex items-center rounded bg-primary-50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-primary-700 dark:bg-primary-500/15 dark:text-primary-300">
+                  {it.oz}
+                </span>
+              ) : (
+                <span className="inline-flex items-center font-mono text-[11px] text-slate-400">—</span>
+              )}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="inline-flex items-center rounded-md bg-primary-50 px-1.5 py-0.5 text-[11px] font-semibold text-primary-700 ring-1 ring-inset ring-primary-200 dark:bg-primary-500/15 dark:text-primary-300 dark:ring-primary-500/30">
+                  {it.label}
+                </span>
+                {it.wish && (
+                  <span className="tabular-nums text-xs font-semibold text-slate-700 dark:text-slate-200">
+                    {it.wish}
+                  </span>
+                )}
+                {it.shortText && (
+                  <span className="truncate text-xs text-slate-500 dark:text-slate-400">{it.shortText}</span>
+                )}
+                {it.resolved && (
+                  <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle2 className="h-3 w-3" /> erledigt
+                  </span>
+                )}
+              </div>
+              {it.note && (
+                <p className="mt-0.5 line-clamp-2 whitespace-pre-wrap text-xs text-slate-500 dark:text-slate-400">
+                  {it.note}
+                </p>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

@@ -18,7 +18,7 @@ import { render, screen, waitFor, fireEvent, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
 import FeedbackInbox from '../FeedbackInbox';
-import type { InboxEntry, InboxComment, ShareResponse } from '../types';
+import type { InboxEntry, InboxComment, InboxChangeRequest, ShareResponse } from '../types';
 
 vi.mock('react-hot-toast', () => ({
   default: { success: vi.fn(), error: vi.fn() },
@@ -89,6 +89,25 @@ function buildComment(over: Partial<InboxComment> = {}): InboxComment {
     intent: 'other',
     text: 'Können wir hier Granit statt Beton nehmen?',
     authorName: 'Frau Müller',
+    createdAt: '2026-05-20T13:00:00Z',
+    resolvedAt: null,
+    ...over,
+  };
+}
+
+function buildChangeRequest(over: Partial<InboxChangeRequest> = {}): InboxChangeRequest {
+  return {
+    id: 'cr1',
+    scope: 'position',
+    positionOz: '1.4',
+    shortText: 'Erdarbeiten',
+    field: 'material',
+    unit: 'eur',
+    currentValue: 1071.54,
+    requestedValue: 950,
+    direction: 'lower',
+    note: '',
+    authorName: 'Herr Schmidt',
     createdAt: '2026-05-20T13:00:00Z',
     resolvedAt: null,
     ...over,
@@ -435,6 +454,54 @@ describe('FeedbackInbox — detail pane', () => {
     expect(screen.queryByText('Noch keine Rückmeldung')).toBeNull();
   });
 
+  test('change overview consolidates structured + free-text changes into one worklist', async () => {
+    inboxListMock.mockResolvedValueOnce(
+      listPayload([
+        buildEntry({
+          responses: [
+            buildResponse({
+              responseType: 'changes',
+              payload: {
+                changes: [
+                  buildChange({
+                    positionId: 'pos-7',
+                    oz: '2.1',
+                    shortText: 'Pflasterfläche',
+                    type: 'modify',
+                    text: 'Anderen Belag bitte.',
+                  }),
+                ],
+              },
+            }),
+          ],
+          changeRequests: [
+            buildChangeRequest({
+              scope: 'position',
+              positionOz: '1.4',
+              shortText: 'Erdarbeiten',
+              field: 'menge',
+              unit: 'qty',
+              currentValue: 10,
+              requestedValue: 8,
+            }),
+          ],
+        }),
+      ]),
+    );
+    renderInbox();
+    await waitFor(() => expect(screen.getByText('Gesellchen GmbH')).toBeDefined());
+    fireEvent.click(screen.getByRole('button', { name: /Sanierung Marktplatz/ }));
+
+    const overview = await screen.findByTestId('change-overview');
+    // Both sources land in the overview: the structured Menge wish (1.4) ...
+    expect(within(overview).getByText('1.4')).toBeDefined();
+    expect(within(overview).getByText('Menge')).toBeDefined();
+    expect(within(overview).getByText('Erdarbeiten')).toBeDefined();
+    // ... and the free-text change (2.1).
+    expect(within(overview).getByText('2.1')).toBeDefined();
+    expect(within(overview).getByText('Pflasterfläche')).toBeDefined();
+  });
+
   test('change cards show position OZ + shortText + the change text', async () => {
     inboxListMock.mockResolvedValueOnce(
       listPayload([
@@ -461,11 +528,11 @@ describe('FeedbackInbox — detail pane', () => {
     await waitFor(() => expect(screen.getByText('Gesellchen GmbH')).toBeDefined());
     fireEvent.click(screen.getByRole('button', { name: /Sanierung Marktplatz/ }));
 
-    // OZ + shortText are detail-only (the list snippet shows just the change
-    // text). The change text shows in BOTH the list snippet and the detail
-    // card, hence getAllByText.
-    await waitFor(() => expect(screen.getByText('3.4')).toBeDefined());
-    expect(screen.getByText('Entwässerungsrinne')).toBeDefined();
+    // OZ + shortText surface in BOTH the "Gewünschte Änderungen" overview and
+    // the detail feed card; the change text additionally shows in the list
+    // snippet — hence getAllByText throughout.
+    await waitFor(() => expect(screen.getAllByText('3.4').length).toBeGreaterThanOrEqual(1));
+    expect(screen.getAllByText('Entwässerungsrinne').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('Andere Rinne gewünscht.').length).toBeGreaterThanOrEqual(1);
   });
 
