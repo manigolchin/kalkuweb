@@ -43,7 +43,7 @@ const TRADE_TILE_CLASSES: Record<string, string> = {
 
 const TITLE = 'KALKU Baukalkulationen — Wir kalkulieren Ihre Ausschreibung. Sie unterschreiben.';
 const DESCRIPTION =
-  'Outsourced Baukalkulation für GU und Bauunternehmen. Spezialisiert auf öffentliche Ausschreibungen (VOB/A, VgV) in 10 Gewerken. LV in 12 h bepreist. Festpreis ab 200 €. Saarbrücken.';
+  'Outsourced Baukalkulation für GU und Bauunternehmen. Spezialisiert auf öffentliche Ausschreibungen (VOB/A, VgV) in fast allen Gewerken. LV in 12 h bepreist. Festpreis ab 200 €. Saarbrücken.';
 
 export default function Home() {
   return (
@@ -100,7 +100,7 @@ export default function Home() {
                   <Clock className="w-4 h-4 text-primary-600" /> LV in 12 h bepreist
                 </span>
                 <span className="inline-flex items-center gap-1.5">
-                  <Layers3 className="w-4 h-4 text-primary-600" /> 10 Gewerke
+                  <Layers3 className="w-4 h-4 text-primary-600" /> Fast alle Gewerke
                 </span>
                 <span className="inline-flex items-center gap-1.5">
                   <Award className="w-4 h-4 text-primary-600" /> Festpreis ab 200 €
@@ -128,7 +128,7 @@ export default function Home() {
                 Gewerke
               </p>
               <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-gray-900">
-                Zehn Gewerke. Ein Kalkulationsteam.
+                Fast alle Gewerke aus der Baubranche. Ein Kalkulationsteam.
               </h2>
               <p className="mt-3 text-sm text-gray-600">
                 Hochbau, Tiefbau, Straßenbau, GaLaBau, HLS, Innenausbau, Erd-/Abbruch, Elektro, Fenster, Schadstoff — alle Gewerke aus einer Hand.
